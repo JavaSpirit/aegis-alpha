@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aegis-alpha"
+version = "0.1.0"
+description = "Hermes-powered A-share trading research and watchlist assistant."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastmcp-slim[server]==3.3.1",
+    "pydantic==2.13.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.0.3",
+]
+
+[project.scripts]
+aegis-alpha-mcp = "aegis_alpha.mcp.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aegis_alpha"]
