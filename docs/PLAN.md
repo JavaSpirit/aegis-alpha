@@ -2,7 +2,7 @@
 
 ## Summary
 
-Aegis Alpha starts as a read-only MCP server for Hermes. Its first job is to help observe A-share markets, especially morning limit-up and break-board behavior, without touching real accounts or credentials.
+Aegis Alpha starts as a Hermes companion plus read-only MCP server. Its first job is to help install or verify Hermes, then help observe A-share markets, especially morning limit-up and break-board behavior, without touching real accounts or credentials.
 
 The long-term direction is a layered trading assistant:
 
@@ -14,6 +14,18 @@ Hermes memory and skills
   -> Paper trading
   -> Controlled real trading
 ```
+
+## Phase 0: Hermes Companion Setup
+
+Provide a thin helper around the official Hermes installer and document how to register Aegis Alpha in `~/.hermes/config.yaml`.
+
+Rules:
+
+- Do not fork Hermes.
+- Do not patch Hermes.
+- Do not vendor Hermes code.
+- Use documented MCP configuration as the integration surface.
+- Keep installer execution explicit through `scripts/install_hermes.sh --run`.
 
 ## Phase 1: Read-Only MCP
 
@@ -113,4 +125,3 @@ Required controls:
 - Price deviation checks.
 - Global kill switch.
 - Human confirmation.
-

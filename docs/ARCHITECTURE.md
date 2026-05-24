@@ -2,9 +2,11 @@
 
 ## Design Principle
 
-Aegis Alpha separates reasoning from execution.
+Aegis Alpha separates reasoning from execution and integration from ownership.
 
 Hermes may observe, summarize, ask questions, and propose watchlist conditions. It should not directly hold broker credentials or place real orders. Aegis Alpha exposes a controlled MCP boundary and keeps risky capabilities behind explicit future modules.
+
+Aegis Alpha does not fork or patch Hermes. It treats Hermes as an upstream runtime and integrates through documented MCP configuration.
 
 ## Runtime Shape
 
@@ -17,6 +19,22 @@ Hermes Agent
 ```
 
 The MVP uses `MockMarketDataAdapter`. Real providers should be added behind the same adapter boundary so the MCP tool contracts remain stable.
+
+## Hermes Companion Boundary
+
+Aegis Alpha may provide:
+
+- Hermes install and verification helpers.
+- Hermes MCP configuration examples.
+- Trading-specific MCP tools.
+- Trading-specific Hermes skill guidance.
+
+Aegis Alpha must not:
+
+- Vendor Hermes source code.
+- Patch Hermes internals.
+- Depend on undocumented Hermes storage or runtime internals.
+- Expose real trading tools without a separate risk-controlled module.
 
 ## MCP Boundary
 
@@ -63,4 +81,3 @@ The MVP is a Python package because the contracts are still evolving. Once the M
 - A managed local service launched by Hermes.
 
 Packaging must preserve the same safety boundary: no real trading unless explicitly enabled by a future risk-controlled module.
-

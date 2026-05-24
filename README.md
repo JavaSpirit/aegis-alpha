@@ -1,6 +1,6 @@
 # Aegis Alpha
 
-Aegis Alpha is a Hermes-powered A-share trading research and watchlist assistant. It exposes read-only MCP tools for market observation, limit-up monitoring, theme analysis, and candidate explanation.
+Aegis Alpha is a Hermes companion for A-share trading research and watchlist assistance. It helps install or verify Hermes, then exposes read-only MCP tools for market observation, limit-up monitoring, theme analysis, and candidate explanation.
 
 The MVP is intentionally conservative:
 
@@ -12,7 +12,7 @@ The MVP is intentionally conservative:
 
 ## What It Is
 
-Aegis Alpha is designed as a safe tool boundary between an AI agent such as Hermes and traditional trading infrastructure.
+Aegis Alpha is designed as a safe capability pack for Hermes. It does not fork or modify Hermes; it adapts to Hermes through documented MCP configuration.
 
 ```text
 Hermes Agent
@@ -26,9 +26,9 @@ The first version only provides read-only tools. Future versions can add real da
 ## Requirements
 
 - Python 3.11+
-- A local MCP-compatible agent runtime, such as Hermes
+- Hermes Agent, or another MCP-compatible agent runtime
 
-## Install
+## Install Aegis Alpha
 
 ```bash
 python3.11 -m venv .venv
@@ -41,6 +41,17 @@ If your package manager does not support optional extras yet, install the base p
 ```bash
 python -m pip install -e .
 ```
+
+## Install Or Verify Hermes
+
+Aegis Alpha includes a helper that checks for Hermes and can run the official Hermes installer when explicitly requested:
+
+```bash
+scripts/install_hermes.sh
+scripts/install_hermes.sh --run
+```
+
+The helper defaults to dry-run mode. It does not modify Hermes, fork Hermes, or vendor Hermes code. See [docs/HERMES.md](docs/HERMES.md) for the integration details.
 
 ## Run The MCP Server
 
@@ -93,4 +104,3 @@ Real trading tools are intentionally absent from this MVP. Future trading action
 ## Packaging Direction
 
 The MVP ships as a Python package with a console command because this is easiest to inspect and debug while MCP contracts are still evolving. Once stable, the same server can be packaged as a Docker image or standalone binary.
-
