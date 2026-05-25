@@ -45,7 +45,19 @@ source .venv/bin/activate
 python -m pip install -e ".[dev]"
 ```
 
-Then add Aegis Alpha to `~/.hermes/config.yaml`:
+Then install the bundled MCP config snippet:
+
+```bash
+scripts/install_hermes_mcp_config.sh
+```
+
+The source snippet lives at:
+
+```text
+.hermes/config/aegis-alpha-mcp.yaml
+```
+
+It contains:
 
 ```yaml
 mcp_servers:
@@ -68,6 +80,12 @@ mcp_servers:
         - explain_second_board_candidate
       prompts: false
       resources: false
+```
+
+Check the local integration state:
+
+```bash
+scripts/check_hermes_integration.sh
 ```
 
 Restart Hermes, or reload MCP if Hermes is already running:

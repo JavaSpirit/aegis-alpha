@@ -107,6 +107,20 @@ scripts/install_hermes_skill.sh
 
 See [docs/AI_INTEGRATION.md](docs/AI_INTEGRATION.md) for the AI integration model.
 
+## Install Hermes MCP Config
+
+Install the Aegis Alpha MCP config snippet into Hermes:
+
+```bash
+scripts/install_hermes_mcp_config.sh
+```
+
+Check the local Hermes integration state:
+
+```bash
+scripts/check_hermes_integration.sh
+```
+
 ## Run The MCP Server
 
 ```bash

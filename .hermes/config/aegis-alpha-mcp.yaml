@@ -1,0 +1,21 @@
+mcp_servers:
+  aegis_alpha:
+    command: "/Users/xietian/Documents/trading/.venv/bin/aegis-alpha-mcp"
+    args: []
+    enabled: true
+    supports_parallel_tool_calls: true
+    tools:
+      include:
+        - get_market_snapshot
+        - get_market_sentiment_gate
+        - get_limitup_pool
+        - get_break_board_pool
+        - get_stock_realtime_snapshot
+        - get_stock_history_limitup_stats
+        - get_theme_strength
+        - get_second_board_candidates
+        - explain_candidate
+        - explain_second_board_candidate
+      prompts: false
+      resources: false
+
