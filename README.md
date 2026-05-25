@@ -55,6 +55,31 @@ If your package manager does not support optional extras yet, install the base p
 python -m pip install -e .
 ```
 
+## Install jvQuant Market Data Dependency
+
+The MVP runs on mock data by default. To prepare the read-only jvQuant adapter work, install the jvQuant package into the local environment:
+
+```bash
+scripts/install_jvquant.sh
+```
+
+Or install through the optional dependency group:
+
+```bash
+python -m pip install -e ".[jvquant]"
+```
+
+Then put local credentials in `.env.local`:
+
+```bash
+AEGIS_ALPHA_MARKET_DATA_PROVIDER=jvquant
+JVQUANT_TOKEN=your-token
+JVQUANT_MARKET=ab
+AEGIS_ALPHA_REAL_TRADING_ENABLED=false
+```
+
+Do not commit `.env.local`.
+
 ## Install Or Verify Hermes
 
 Aegis Alpha includes a helper that checks for Hermes and can run the official Hermes installer when explicitly requested:
@@ -115,7 +140,7 @@ PYTHONPATH=src python scripts/smoke_check.py
 
 ## Security Boundary
 
-Do not commit real secrets, API keys, broker tokens, Level-2 credentials, or account identifiers. Use `.env.example` as a local template only.
+Do not commit real secrets, API keys, broker tokens, Level-2 credentials, or account identifiers. Use `.env.example` as a local template and keep real values in `.env.local`.
 
 Real trading tools are intentionally absent from this MVP. Future trading actions must be added behind explicit risk controls, audit logs, and human confirmation.
 
