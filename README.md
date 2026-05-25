@@ -43,6 +43,20 @@ Market sentiment gate
 
 ## Install Aegis Alpha
 
+For a full local setup, including Python environment, Aegis Alpha, jvQuant, Hermes, skill, MCP config, and integration check:
+
+```bash
+scripts/install_all.sh
+```
+
+Preview the full setup without changing anything:
+
+```bash
+scripts/install_all.sh --dry-run
+```
+
+Manual Python-only setup:
+
 ```bash
 python3.11 -m venv .venv
 source .venv/bin/activate
@@ -90,6 +104,12 @@ scripts/install_hermes.sh --run
 ```
 
 The helper defaults to dry-run mode. It does not modify Hermes, fork Hermes, or vendor Hermes code. See [docs/HERMES.md](docs/HERMES.md) for the integration details.
+
+To install only Hermes, the project skill, the MCP config, and run the integration check in one flow:
+
+```bash
+scripts/install_hermes_all.sh
+```
 
 ## Install The Hermes Skill
 

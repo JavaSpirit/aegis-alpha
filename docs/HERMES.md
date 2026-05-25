@@ -15,7 +15,23 @@ Its job is to:
 
 Hermes official documentation recommends the installer script from `NousResearch/hermes-agent`.
 
-Aegis Alpha wraps that installer in a small helper so the action is visible before execution:
+Aegis Alpha provides a project-level one-click installer:
+
+```bash
+scripts/install_all.sh
+```
+
+This installs the Python environment, Aegis Alpha, jvQuant dependency, Hermes, project skill, MCP config, and final integration check.
+
+For Hermes-only integration:
+
+```bash
+scripts/install_hermes_all.sh
+```
+
+This runs Hermes installation, project skill installation, MCP config installation, and the final integration check.
+
+Aegis Alpha also wraps the Hermes installer in a small helper so the action is visible before execution:
 
 ```bash
 scripts/install_hermes.sh
