@@ -51,17 +51,24 @@ Useful supporting tools:
 
 If these tools are unavailable, first ask Hermes to reload MCP with `/reload-mcp` or inspect the Hermes MCP configuration. Do not fabricate live data.
 
+## Data Availability And Freshness
+
+If Aegis Alpha MCP times out, returns an error, or provides empty data, explicitly state `Data source unavailable` and halt candidate analysis. Do not guess, interpolate, or backfill missing speed, orderbook, big-order, or theme metrics.
+
+Before grading during active trading hours, verify the timestamp of speed, big-order, and orderbook data. Active trading hours are 09:30-11:30 and 13:00-15:00 Asia/Shanghai. If any required realtime field is delayed by more than 3 minutes, cap the maximum grade at `B`, warn the user, and do not describe the candidate as high-confidence.
+
 ## Standard Workflow
 
 1. Check the market sentiment gate before analyzing individual candidates.
 2. If the gate action is `avoid`, say the environment is unsuitable for board-chasing and stop at a defensive market summary.
 3. If the gate action is `defensive`, only discuss why risk is elevated and list what would need to improve.
-4. If the gate action is `selective` or `active`, fetch second-board candidates.
-5. For each candidate, analyze only the structured signals returned by Aegis Alpha:
+4. If Aegis Alpha data is unavailable, stale beyond the freshness rule, or empty, follow the data availability rule before continuing.
+5. If the gate action is `selective` or `active`, fetch second-board candidates.
+6. For each candidate, analyze only the structured signals returned by Aegis Alpha:
    market gate, five-minute speed, big-order net inflow ratio, same-theme rising count, orderbook quality, historical touch-limit success rate, and historical gap-up statistics.
-6. Produce a watchlist report with grades `A`, `B`, `C`, or `REJECT`.
-7. Always include trigger conditions and avoid conditions.
-8. Always state data mode: mock, delayed, or live provider.
+7. Produce a watchlist report with grades `A`, `B`, `C`, or `REJECT`.
+8. Always include structured trigger conditions and avoid conditions.
+9. Always state data mode: mock, delayed, live provider, or unavailable.
 
 ## Candidate Interpretation Rules
 
@@ -71,6 +78,8 @@ Use these defaults unless the user's memory or the Aegis Alpha output says other
 - `B`: watch closely, but at least one important dimension is not ideal.
 - `C`: observation only; do not frame it as actionable.
 - `REJECT`: not in yesterday's valid limit-up pool, market gate is avoid, theme leader broke board, or data quality is insufficient.
+
+If speed, big-order, or orderbook timestamps are delayed by more than 3 minutes during active trading hours, maximum grade is `B` even if other signals look strong.
 
 For second-board analysis, prefer fewer candidates with better explanation over broad lists.
 
@@ -87,11 +96,19 @@ Use this structure for user-facing answers:
    观察:
    风险:
    触发条件:
+   - 价格: ...
+   - 量能/大单: ...
+   - 板块动作: ...
    禁止条件:
+   - 价格: ...
+   - 量能/盘口: ...
+   - 板块动作: ...
 
 数据状态:
 非投资建议:
 ```
+
+Examples of concrete avoid conditions include: high open below 3%, auction front-running, same-theme leader breaking the intraday VWAP, orderbook quality falling below threshold, big-order net inflow turning negative, or break-board rate expanding quickly.
 
 Do not write "buy", "must buy", "sell", "full position", or "guaranteed". Use "观察", "候选", "触发条件", "禁止条件", and "风险".
 

@@ -58,10 +58,13 @@ The Hermes MCP configuration example lives in [HERMES.md](HERMES.md).
 Hermes should:
 
 - Check the market sentiment gate before candidates.
+- Halt candidate analysis when Aegis Alpha returns timeout, error, or empty data; state `Data source unavailable`.
+- Check realtime data timestamps during 09:30-11:30 and 13:00-15:00 Asia/Shanghai.
+- Cap maximum grade at `B` when speed, big-order, or orderbook data is delayed by more than 3 minutes during active trading hours.
 - Stop or downgrade when the gate is `avoid` or `defensive`.
 - Focus on yesterday-limit-up stocks trying to advance to a second board.
 - Explain grades using structured Aegis Alpha data.
-- Include trigger conditions and avoid conditions.
+- Include trigger conditions and avoid conditions grouped by price, volume/big-order/orderbook, and sector/theme action.
 - Clearly state mock, delayed, or live data mode.
 
 Hermes should not:
@@ -70,6 +73,7 @@ Hermes should not:
 - Issue deterministic buy or sell instructions.
 - Create real orders.
 - Treat mock data as live data.
+- Guess or interpolate missing realtime metrics.
 - Analyze arbitrary symbols as valid second-board candidates without pool membership.
 
 ## References
