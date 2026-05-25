@@ -3,17 +3,18 @@
 # Store API keys in ~/.hermes/.env, not in this file.
 
 model:
-  provider: "deepseek"
-  default: "deepseek-chat"
+  provider: "openrouter"
+  default: "anthropic/claude-opus-4.7"
+  base_url: "https://openrouter.ai/api/v1"
+  api_mode: "chat_completions"
 
-# Optional fallback/contrast provider. Do not use OpenRouter to call DeepSeek
-# when the direct DeepSeek provider is available.
+# Fallback provider. Use DeepSeek direct, not DeepSeek through OpenRouter.
 fallback_providers:
-  - provider: "openrouter"
-    model: "anthropic/claude-sonnet-4"
+  - provider: "deepseek"
+    model: "deepseek-v4-pro"
 
-# Optional: use a reasoning model when you want slower, deeper review.
+# Optional: switch the main model to DeepSeek direct when you want lower cost.
+# fallback_providers can then point to OpenRouter for contrast.
 # model:
 #   provider: "deepseek"
-#   default: "deepseek-reasoner"
-
+#   default: "deepseek-v4-pro"

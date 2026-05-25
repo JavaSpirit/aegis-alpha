@@ -28,8 +28,9 @@ Options:
   -h, --help             Show this help.
 
 Notes:
-  - DeepSeek direct is the primary provider.
-  - OpenRouter is optional for contrast/fallback and should not be used to call DeepSeek.
+  - OpenRouter is the primary provider.
+  - DeepSeek direct is the fallback provider.
+  - Do not use OpenRouter to call DeepSeek when direct DeepSeek is available.
   - Existing files are backed up before mutation.
   - Real API keys are copied only from the local env file when present.
   - Key values are never printed.

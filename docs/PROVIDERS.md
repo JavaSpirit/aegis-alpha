@@ -6,8 +6,8 @@ Aegis Alpha uses Hermes as the AI runtime. Hermes needs at least one inference p
 
 Current policy:
 
-- Primary provider: DeepSeek direct.
-- Optional provider: OpenRouter for contrast or fallback.
+- Primary provider: OpenRouter.
+- Fallback provider: DeepSeek direct with `deepseek-v4-pro`.
 - Do not call DeepSeek through OpenRouter when the direct DeepSeek provider is available.
 
 ## Files
@@ -74,16 +74,18 @@ Recommended default:
 
 ```yaml
 model:
-  provider: "deepseek"
-  default: "deepseek-chat"
+  provider: "openrouter"
+  default: "anthropic/claude-opus-4.7"
+  base_url: "https://openrouter.ai/api/v1"
+  api_mode: "chat_completions"
 ```
 
-Optional fallback:
+Fallback:
 
 ```yaml
 fallback_providers:
-  - provider: "openrouter"
-    model: "anthropic/claude-sonnet-4"
+  - provider: "deepseek"
+    model: "deepseek-v4-pro"
 ```
 
 ## References
