@@ -91,6 +91,22 @@ scripts/install_hermes.sh --run
 
 The helper defaults to dry-run mode. It does not modify Hermes, fork Hermes, or vendor Hermes code. See [docs/HERMES.md](docs/HERMES.md) for the integration details.
 
+## Install The Hermes Skill
+
+Aegis Alpha includes a project skill for Hermes:
+
+```text
+.hermes/skills/second-board-radar/SKILL.md
+```
+
+Copy it into Hermes when you want Hermes to reason over the Aegis Alpha MCP tools with the project's second-board rules:
+
+```bash
+scripts/install_hermes_skill.sh
+```
+
+See [docs/AI_INTEGRATION.md](docs/AI_INTEGRATION.md) for the AI integration model.
+
 ## Run The MCP Server
 
 ```bash

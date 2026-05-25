@@ -83,6 +83,26 @@ mcp_aegis_alpha_get_market_snapshot
 mcp_aegis_alpha_explain_candidate
 ```
 
+## Install Project Skill
+
+Aegis Alpha includes a Hermes skill at:
+
+```text
+.hermes/skills/second-board-radar/SKILL.md
+```
+
+Copy it into Hermes:
+
+```bash
+scripts/install_hermes_skill.sh
+```
+
+Then ask Hermes to use it:
+
+```text
+Use the second-board-radar skill to review today's second-board candidates.
+```
+
 ## Safety Boundary
 
 The current MCP server is read-only and uses mock data. It does not expose:
