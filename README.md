@@ -55,6 +55,15 @@ Preview the full setup without changing anything:
 scripts/install_all.sh --dry-run
 ```
 
+Hermes provider policy:
+
+```text
+primary: DeepSeek direct
+optional: OpenRouter for non-DeepSeek contrast/fallback
+```
+
+Provider setup docs: [docs/PROVIDERS.md](docs/PROVIDERS.md).
+
 Manual Python-only setup:
 
 ```bash

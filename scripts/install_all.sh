@@ -11,6 +11,7 @@ INSTALL_VENV=true
 INSTALL_PROJECT=true
 INSTALL_JVQUANT=true
 INSTALL_HERMES=true
+INSTALL_PROVIDER=true
 INSTALL_SKILL=true
 INSTALL_CONFIG=true
 RUN_CHECK=true
@@ -35,6 +36,7 @@ Options:
   --skip-project      Do not install Aegis Alpha into .venv.
   --skip-jvquant      Do not install jvQuant market-data dependency.
   --skip-hermes       Do not install Hermes itself.
+  --skip-provider     Do not install Hermes provider config scaffold.
   --skip-skill        Do not install the second-board-radar Hermes skill.
   --skip-config       Do not install the Aegis Alpha MCP config.
   --skip-check        Do not run the final integration check.
@@ -77,6 +79,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-hermes)
       INSTALL_HERMES=false
+      shift
+      ;;
+    --skip-provider)
+      INSTALL_PROVIDER=false
       shift
       ;;
     --skip-skill)
@@ -177,6 +183,12 @@ else
   skip_step "Install or verify Hermes" "--skip-hermes"
 fi
 
+if [[ "$INSTALL_PROVIDER" == true ]]; then
+  run_step "Install Hermes provider config scaffold" "$SCRIPT_DIR/install_hermes_provider_config.sh"
+else
+  skip_step "Install Hermes provider config scaffold" "--skip-provider"
+fi
+
 if [[ "$INSTALL_SKILL" == true ]]; then
   run_step "Install second-board-radar Hermes skill" "$SCRIPT_DIR/install_hermes_skill.sh"
 else
@@ -203,4 +215,3 @@ fi
 
 echo
 echo "Done."
-

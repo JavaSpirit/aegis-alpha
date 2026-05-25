@@ -44,6 +44,9 @@ else
   echo "[warn] local env file missing: $WORKSPACE/.env.local"
 fi
 
+"$WORKSPACE/scripts/check_hermes_provider.sh" || true
+echo
+
 if [[ -x "$WORKSPACE/.venv/bin/python" ]]; then
   if PYTHONPATH="$WORKSPACE/src" "$WORKSPACE/.venv/bin/python" - <<'PY' >/dev/null 2>&1
 from aegis_alpha.mcp.server import mcp
@@ -61,4 +64,3 @@ fi
 echo
 echo "Next Hermes prompt:"
 echo "  Use the second-board-radar skill and Aegis Alpha MCP to review today's second-board candidates."
-

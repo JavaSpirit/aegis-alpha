@@ -1,0 +1,19 @@
+# Hermes provider example for Aegis Alpha.
+# Copy the relevant parts into ~/.hermes/config.yaml after installing Hermes.
+# Store API keys in ~/.hermes/.env, not in this file.
+
+model:
+  provider: "deepseek"
+  default: "deepseek-chat"
+
+# Optional fallback/contrast provider. Do not use OpenRouter to call DeepSeek
+# when the direct DeepSeek provider is available.
+fallback_providers:
+  - provider: "openrouter"
+    model: "anthropic/claude-sonnet-4"
+
+# Optional: use a reasoning model when you want slower, deeper review.
+# model:
+#   provider: "deepseek"
+#   default: "deepseek-reasoner"
+
