@@ -1,8 +1,6 @@
 ---
 name: second-board-radar
-description: Use Aegis Alpha MCP tools to analyze A-share second-board candidates with market sentiment gating, theme co-movement, Level-2 signals, and strict read-only safety boundaries.
-version: 0.1.0
-author: Aegis Alpha
+description: Use when Hermes is asked to analyze A-share second-board candidates, one-to-two board setups, board-chasing market sentiment, yesterday limit-up pools, theme co-movement, or Aegis Alpha MCP watchlist outputs. Guides Hermes to use Aegis Alpha read-only MCP tools with strict safety boundaries and no deterministic buy/sell instructions.
 license: Proprietary
 metadata:
   hermes:
@@ -13,22 +11,13 @@ metadata:
         description: Absolute path to the Aegis Alpha repository.
         default: "/Users/xietian/Documents/trading"
         prompt: Aegis Alpha workspace path
-required_environment_variables:
-  - name: AEGIS_ALPHA_MARKET_DATA_PROVIDER
-    prompt: Market data provider
-    help: Use mock for dry runs or jvquant for read-only market data.
-    required_for: Selecting the Aegis Alpha market-data adapter
-  - name: JVQUANT_TOKEN
-    prompt: jvQuant token
-    help: Store this in .env.local or Hermes env storage; never paste it into chat.
-    required_for: Read-only jvQuant market data
 ---
 
 # Second-Board Radar
 
-Use this skill when the user asks for A-share second-board analysis, market sentiment for board-chasing, yesterday-limit-up candidates, one-to-two board monitoring, or a review of whether a candidate deserves observation.
-
 This skill is for research, watchlist, and review workflows only. Do not issue deterministic buy or sell instructions. Do not call or invent trading execution tools. Do not ask the user for broker credentials.
+
+Market-data provider selection and secrets belong to the Aegis Alpha MCP server configuration, not to this skill. If live data is unavailable, report the unavailable state and continue only with mock or documented stale data.
 
 ## Operating Model
 
@@ -138,4 +127,3 @@ For Hermes cron jobs, prompts must be self-contained. A useful schedule is:
 - 15:10: review whether candidates touched limit-up, sealed, broke board, and produced expected follow-through.
 
 Cron outputs should be concise and should not claim real-time monitoring unless the MCP data source is live.
-
