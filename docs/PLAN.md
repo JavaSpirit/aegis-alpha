@@ -2,7 +2,7 @@
 
 ## Summary
 
-Aegis Alpha starts as a Hermes companion plus read-only MCP server. Its first job is to help install or verify Hermes, then help observe A-share markets, especially morning limit-up and break-board behavior, without touching real accounts or credentials.
+Aegis Alpha starts as a Hermes companion plus read-only MCP server. Its first product focus is a second-board radar: decide whether the market is suitable for board-chasing, then monitor yesterday limit-up stocks that may advance to a second board.
 
 The long-term direction is a layered trading assistant:
 
@@ -10,7 +10,7 @@ The long-term direction is a layered trading assistant:
 Hermes memory and skills
   -> Aegis Alpha MCP tools
   -> Market-data adapters
-  -> Signal and risk engines
+  -> Second-board signal and risk engines
   -> Paper trading
   -> Controlled real trading
 ```
@@ -29,36 +29,42 @@ Rules:
 
 ## Phase 1: Read-Only MCP
 
-Build a safe watchlist assistant with mock data first, then connect authorized market-data providers.
+Build a safe second-board watchlist assistant with mock data first, then connect authorized market-data providers.
 
 Initial tools:
 
 - `get_market_snapshot`
+- `get_market_sentiment_gate`
 - `get_limitup_pool`
 - `get_break_board_pool`
 - `get_stock_realtime_snapshot`
 - `get_stock_history_limitup_stats`
 - `get_theme_strength`
+- `get_second_board_candidates`
 - `explain_candidate`
+- `explain_second_board_candidate`
 
 The output must stay structured, timestamped, and explicit about data quality. `explain_candidate` must describe observations, risks, trigger conditions, and avoid conditions instead of issuing buy or sell instructions.
 
-## Phase 2: Morning Limit-Up Radar
+## Phase 2: Morning Second-Board Radar
 
 Add real-time adapters for providers such as jvQuant, StockApi, MyQuant, or miniQMT.
 
 Core indicators:
 
+- Market sentiment gate.
+- Yesterday limit-up pool.
+- Second-board candidate pool.
 - Limit-up pool and break-board pool.
 - Break-board rate.
-- Seal amount and seal amount ratio.
-- Reopen count.
+- 5-minute speed.
 - Big-order net inflow.
 - Order-book quality.
 - Theme strength.
-- Same-theme leader status.
+- Same-theme rising count and leader status.
 - Historical limit-up success rate.
 - Historical next-day premium.
+- Historical third-day premium after sealed second board.
 
 The first production-grade scoring output should use grades such as `A`, `B`, `C`, and `REJECT`.
 
@@ -76,6 +82,14 @@ Examples:
 - Rule changes extracted into Hermes skills.
 
 This phase turns Aegis Alpha from a static screener into a feedback-driven assistant.
+
+Second-board reviews should record:
+
+- Whether the candidate reached the limit-up price.
+- Whether the second board sealed.
+- Whether it broke board after sealing.
+- Next-day open and intraday high.
+- Third-day premium after a sealed second board.
 
 ## Phase 4: Medium And Long-Term Module
 

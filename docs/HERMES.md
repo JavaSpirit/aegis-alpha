@@ -57,12 +57,15 @@ mcp_servers:
     tools:
       include:
         - get_market_snapshot
+        - get_market_sentiment_gate
         - get_limitup_pool
         - get_break_board_pool
         - get_stock_realtime_snapshot
         - get_stock_history_limitup_stats
         - get_theme_strength
+        - get_second_board_candidates
         - explain_candidate
+        - explain_second_board_candidate
       prompts: false
       resources: false
 ```
@@ -103,4 +106,3 @@ When Hermes changes MCP behavior:
 - Update `scripts/install_hermes.sh` only if official install flags change.
 - Keep Aegis Alpha MCP tools provider-neutral.
 - Avoid depending on Hermes internals outside documented MCP config.
-

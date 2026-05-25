@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 
 CandidateGrade = Literal["A", "B", "C", "REJECT"]
+MarketAction = Literal["active", "selective", "defensive", "avoid"]
 
 
 class MarketSnapshot(BaseModel):
@@ -18,6 +19,20 @@ class MarketSnapshot(BaseModel):
     break_board_rate: float = Field(ge=0, le=1)
     leading_themes: list[str]
     notes: list[str]
+
+
+class MarketSentimentGate(BaseModel):
+    trading_day: str
+    timestamp: str
+    action: MarketAction
+    score: float = Field(ge=0, le=100)
+    limit_up_count: int
+    break_board_rate: float = Field(ge=0, le=1)
+    second_board_success_rate: float = Field(ge=0, le=1)
+    hot_theme_count: int
+    risk_flags: list[str]
+    positive_signals: list[str]
+    conclusion: str
 
 
 class LimitUpStock(BaseModel):
@@ -75,6 +90,23 @@ class ThemeStrength(BaseModel):
     notes: list[str]
 
 
+class SecondBoardCandidate(BaseModel):
+    symbol: str
+    name: str
+    theme: str
+    previous_limit_up_time: str
+    current_change_pct: float
+    five_min_speed_pct: float
+    big_order_net_inflow_ratio: float = Field(ge=-1, le=1)
+    same_theme_rising_count: int
+    orderbook_quality_score: float = Field(ge=0, le=100)
+    three_year_touch_limit_success_rate: float = Field(ge=0, le=1)
+    three_year_sealed_next_day_gap_up_rate: float = Field(ge=0, le=1)
+    estimated_seal_probability: float = Field(ge=0, le=1)
+    grade: CandidateGrade
+    notes: list[str]
+
+
 class CandidateExplanation(BaseModel):
     symbol: str
     grade: CandidateGrade
@@ -84,4 +116,3 @@ class CandidateExplanation(BaseModel):
     avoid_conditions: list[str]
     data_timestamp: str
     disclaimer: str
-

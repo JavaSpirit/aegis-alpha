@@ -8,7 +8,9 @@ from aegis_alpha.models import (
     CandidateExplanation,
     LimitUpHistoryStats,
     LimitUpStock,
+    MarketSentimentGate,
     MarketSnapshot,
+    SecondBoardCandidate,
     StockRealtimeSnapshot,
     ThemeStrength,
 )
@@ -38,6 +40,28 @@ class MockMarketDataAdapter:
                 "Mock data only; not connected to exchange Level-2 feeds.",
                 "Use this response shape to integrate jvQuant, StockApi, MyQuant, or miniQMT later.",
             ],
+        )
+
+    def get_market_sentiment_gate(self) -> MarketSentimentGate:
+        return MarketSentimentGate(
+            trading_day=datetime.now(SH_TZ).date().isoformat(),
+            timestamp=_now(),
+            action="selective",
+            score=68.0,
+            limit_up_count=48,
+            break_board_rate=0.26,
+            second_board_success_rate=0.43,
+            hot_theme_count=3,
+            risk_flags=[
+                "Break-board rate is not low enough for aggressive board chasing.",
+                "High-position stocks show mixed follow-through in mock data.",
+            ],
+            positive_signals=[
+                "Limit-up count is above the defensive threshold.",
+                "AI应用 and 机器人 themes both have same-window risers.",
+                "Second-board success rate is acceptable for selective monitoring.",
+            ],
+            conclusion="Mock gate allows selective second-board monitoring, not broad aggressive chasing.",
         )
 
     def get_limitup_pool(self) -> list[LimitUpStock]:
@@ -124,6 +148,100 @@ class MockMarketDataAdapter:
             ],
         )
 
+    def get_second_board_candidates(self) -> list[SecondBoardCandidate]:
+        return [
+            SecondBoardCandidate(
+                symbol="002230.SZ",
+                name="科大讯飞",
+                theme="AI应用",
+                previous_limit_up_time="10:18:24",
+                current_change_pct=8.72,
+                five_min_speed_pct=4.1,
+                big_order_net_inflow_ratio=0.18,
+                same_theme_rising_count=6,
+                orderbook_quality_score=78.0,
+                three_year_touch_limit_success_rate=0.64,
+                three_year_sealed_next_day_gap_up_rate=0.58,
+                estimated_seal_probability=0.67,
+                grade="B",
+                notes=[
+                    "Yesterday limit-up stock with same-theme momentum in mock data.",
+                    "Watch for sell-side depletion before any board-chasing decision.",
+                ],
+            ),
+            SecondBoardCandidate(
+                symbol="300024.SZ",
+                name="机器人",
+                theme="机器人",
+                previous_limit_up_time="09:47:09",
+                current_change_pct=6.85,
+                five_min_speed_pct=2.7,
+                big_order_net_inflow_ratio=0.07,
+                same_theme_rising_count=3,
+                orderbook_quality_score=59.0,
+                three_year_touch_limit_success_rate=0.51,
+                three_year_sealed_next_day_gap_up_rate=0.44,
+                estimated_seal_probability=0.46,
+                grade="C",
+                notes=[
+                    "Theme is active, but orderbook quality is below the preferred threshold.",
+                    "Mock candidate should remain in observation mode.",
+                ],
+            ),
+        ]
+
+    def explain_second_board_candidate(self, symbol: str) -> CandidateExplanation:
+        candidates = {candidate.symbol: candidate for candidate in self.get_second_board_candidates()}
+        candidate = candidates.get(symbol)
+
+        if candidate is None:
+            return CandidateExplanation(
+                symbol=symbol,
+                grade="REJECT",
+                observations=[
+                    "Symbol is not in the mock yesterday-limit-up candidate pool.",
+                ],
+                risks=[
+                    "Second-board model should only score stocks that had a valid previous-day limit-up event.",
+                ],
+                trigger_conditions=[
+                    "Add the symbol to the previous-day limit-up pool before scoring.",
+                ],
+                avoid_conditions=[
+                    "Avoid scoring arbitrary symbols as second-board candidates.",
+                ],
+                data_timestamp=_now(),
+                disclaimer="Research and watchlist output only. This is not investment advice or an order instruction.",
+            )
+
+        return CandidateExplanation(
+            symbol=symbol,
+            grade=candidate.grade,
+            observations=[
+                f"Five-minute speed is {candidate.five_min_speed_pct:.1f}%.",
+                f"Big-order net inflow ratio is {candidate.big_order_net_inflow_ratio:.2f}.",
+                f"Same-theme rising count is {candidate.same_theme_rising_count}.",
+                f"Estimated seal probability is {candidate.estimated_seal_probability:.0%} in mock data.",
+            ],
+            risks=[
+                "This is mock data, not live jvQuant Level-2 data.",
+                "Historical three-year statistics are placeholder values.",
+                "Real board-chasing requires queue position, sell pressure, and cancel rules.",
+            ],
+            trigger_conditions=[
+                "Market sentiment gate must be selective or active.",
+                "Same-theme risers should expand during the same observation window.",
+                "Sell-side limit-up ask orders should be consumed with sustained big-order inflow.",
+            ],
+            avoid_conditions=[
+                "Avoid if break-board rate rises sharply.",
+                "Avoid if same-theme leaders break board.",
+                "Avoid if orderbook quality falls below the configured threshold.",
+            ],
+            data_timestamp=_now(),
+            disclaimer="Research and watchlist output only. This is not investment advice or an order instruction.",
+        )
+
     def explain_candidate(self, symbol: str) -> CandidateExplanation:
         return CandidateExplanation(
             symbol=symbol,
@@ -149,4 +267,3 @@ class MockMarketDataAdapter:
             data_timestamp=_now(),
             disclaimer="Research and watchlist output only. This is not investment advice or an order instruction.",
         )
-

@@ -1,6 +1,6 @@
 # Aegis Alpha
 
-Aegis Alpha is a Hermes companion for A-share trading research and watchlist assistance. It helps install or verify Hermes, then exposes read-only MCP tools for market observation, limit-up monitoring, theme analysis, and candidate explanation.
+Aegis Alpha is a Hermes companion for A-share trading research and second-board watchlist assistance. It helps install or verify Hermes, then exposes read-only MCP tools for market sentiment gating, second-board candidate monitoring, theme analysis, and candidate explanation.
 
 The MVP is intentionally conservative:
 
@@ -9,6 +9,7 @@ The MVP is intentionally conservative:
 - No real Level-2 credentials.
 - No buy or sell instructions.
 - Mock market data only.
+- Second-board radar first; automated trading later.
 
 ## What It Is
 
@@ -22,6 +23,18 @@ Hermes Agent
 ```
 
 The first version only provides read-only tools. Future versions can add real data adapters, paper trading, and tightly controlled order proposals.
+
+The first product focus is a second-board radar:
+
+```text
+Market sentiment gate
+  -> yesterday limit-up pool
+  -> second-board candidates
+  -> 5-minute speed and big-order inflow
+  -> theme co-movement
+  -> historical limit-up and gap-up stats
+  -> watchlist grade and risk explanation
+```
 
 ## Requirements
 
@@ -66,12 +79,15 @@ Hermes can be configured to launch this command as a local MCP server. The serve
 The MVP exposes these read-only tools:
 
 - `get_market_snapshot`
+- `get_market_sentiment_gate`
 - `get_limitup_pool`
 - `get_break_board_pool`
 - `get_stock_realtime_snapshot`
 - `get_stock_history_limitup_stats`
 - `get_theme_strength`
+- `get_second_board_candidates`
 - `explain_candidate`
+- `explain_second_board_candidate`
 
 `explain_candidate(symbol)` returns structured watchlist output:
 
@@ -87,6 +103,8 @@ The MVP exposes these read-only tools:
 ```
 
 The output is for research and watchlist use only. It is not investment advice and not an order instruction.
+
+`explain_second_board_candidate(symbol)` focuses on second-board logic: market sentiment gate, 5-minute speed, big-order net inflow ratio, same-theme co-movement, orderbook quality, and three-year historical limit-up/gap-up placeholders.
 
 ## Development Checks
 

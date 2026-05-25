@@ -4,7 +4,7 @@
 
 Aegis Alpha separates reasoning from execution and integration from ownership.
 
-Hermes may observe, summarize, ask questions, and propose watchlist conditions. It should not directly hold broker credentials or place real orders. Aegis Alpha exposes a controlled MCP boundary and keeps risky capabilities behind explicit future modules.
+Hermes may observe, summarize, ask questions, and propose second-board watchlist conditions. It should not directly hold broker credentials or place real orders. Aegis Alpha exposes a controlled MCP boundary and keeps risky capabilities behind explicit future modules.
 
 Aegis Alpha does not fork or patch Hermes. It treats Hermes as an upstream runtime and integrates through documented MCP configuration.
 
@@ -41,12 +41,14 @@ Aegis Alpha must not:
 The MCP server exposes only read-only tools in the MVP:
 
 - Market snapshot.
+- Market sentiment gate.
 - Limit-up pool.
 - Break-board pool.
 - Realtime stock snapshot.
 - Historical limit-up stats.
 - Theme strength.
 - Candidate explanation.
+- Second-board candidates and explanation.
 
 Each tool returns structured JSON-compatible data. Every response that depends on market data must include a timestamp or a clear mock-data note.
 
@@ -68,6 +70,7 @@ Hermes skills should encode user preferences and review lessons, for example:
 - Avoid weak same-theme followers.
 - Penalize fast boards without theme confirmation.
 - Require order-book quality to remain stable during the observation window.
+- Prefer second-board candidates only when the market sentiment gate is selective or active.
 - Treat mock, delayed, and real-time data differently.
 
 Skills should change how Hermes interprets Aegis Alpha outputs; they should not bypass risk controls.
