@@ -30,6 +30,19 @@ Install scaffold:
 scripts/install_hermes_provider_config.sh
 ```
 
+By default this copies supported provider keys from project `.env.local` into `~/.hermes/.env` without printing values:
+
+```text
+DEEPSEEK_API_KEY
+OPENROUTER_API_KEY
+```
+
+Disable copying when needed:
+
+```bash
+scripts/install_hermes_provider_config.sh --no-sync-from-local-env
+```
+
 Check provider state:
 
 ```bash
@@ -77,4 +90,3 @@ fallback_providers:
 
 - Hermes AI Providers: https://hermes-agent.nousresearch.com/docs/integrations/providers
 - Hermes Fallback Providers: https://hermes-agent.nousresearch.com/docs/user-guide/features/fallback-providers/
-

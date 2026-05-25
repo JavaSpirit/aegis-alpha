@@ -64,6 +64,8 @@ optional: OpenRouter for non-DeepSeek contrast/fallback
 
 Provider setup docs: [docs/PROVIDERS.md](docs/PROVIDERS.md).
 
+`scripts/install_all.sh` and `scripts/install_hermes_provider_config.sh` can sync `DEEPSEEK_API_KEY` and `OPENROUTER_API_KEY` from project `.env.local` into `~/.hermes/.env` without printing key values.
+
 Manual Python-only setup:
 
 ```bash
