@@ -21,9 +21,10 @@ Usage:
 Options:
   --skip-hermes       Do not install Hermes itself.
   --skip-skill        Do not install the second-board-radar Hermes skill.
-  --skip-config       Do not install the Aegis Alpha MCP config.
+  --skip-config       Do not install the reproducible Hermes project config.
   --skip-check        Do not run the final integration check.
-  --replace-config    Replace ~/.hermes/config.yaml instead of appending.
+  --replace-config    Kept for compatibility. Project config installs with
+                      replacement after backing up existing config.
   --skip-setup        Pass --skip-setup to the official Hermes installer.
   -h, --help          Show this help.
 
@@ -111,16 +112,10 @@ else
 fi
 
 if [[ "$INSTALL_CONFIG" == true ]]; then
-  config_args=()
-  if [[ "$REPLACE_CONFIG" == true ]]; then
-    config_args+=(--replace)
-  else
-    config_args+=(--append)
-  fi
-  run_step "Install Aegis Alpha MCP config" "$SCRIPT_DIR/install_hermes_mcp_config.sh" "${config_args[@]}"
+  run_step "Install Hermes project config" "$SCRIPT_DIR/install_hermes_project_config.sh" --replace
 else
   echo
-  echo "==> Install Aegis Alpha MCP config"
+  echo "==> Install Hermes project config"
   echo "Skipped by --skip-config"
 fi
 
@@ -134,4 +129,3 @@ fi
 
 echo
 echo "Done."
-

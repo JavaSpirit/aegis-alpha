@@ -12,7 +12,21 @@ Current policy:
 
 ## Files
 
-Provider config example:
+Full reproducible Hermes config template:
+
+```text
+.hermes/config/config.example.yaml
+```
+
+Install or replace local Hermes config from the project template:
+
+```bash
+scripts/install_hermes_project_config.sh --replace
+```
+
+This is the recommended path. It includes provider policy, fallback provider, and the Aegis Alpha MCP server. It also resolves the MCP command path for the current checkout.
+
+Advanced provider-only config example:
 
 ```text
 .hermes/config/providers.deepseek-openrouter.example.yaml
@@ -24,7 +38,7 @@ Hermes env example:
 .hermes/env.example
 ```
 
-Install scaffold:
+Advanced provider-only installer:
 
 ```bash
 scripts/install_hermes_provider_config.sh

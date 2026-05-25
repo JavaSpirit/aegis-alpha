@@ -1,0 +1,73 @@
+# Aegis Alpha reproducible Hermes config template.
+# Copy to ~/.hermes/config.yaml through scripts/install_hermes_project_config.sh.
+# Do not put API keys in this file; use ~/.hermes/.env.
+
+model:
+  provider: "openrouter"
+  default: "anthropic/claude-opus-4.7"
+  base_url: "https://openrouter.ai/api/v1"
+  api_mode: "chat_completions"
+
+providers: {}
+
+fallback_providers:
+  - provider: "deepseek"
+    model: "deepseek-v4-pro"
+
+credential_pool_strategies: {}
+
+toolsets:
+  - hermes-cli
+
+agent:
+  max_turns: 90
+  gateway_timeout: 1800
+  restart_drain_timeout: 180
+  api_max_retries: 3
+  tool_use_enforcement: auto
+
+terminal:
+  backend: local
+  cwd: .
+  timeout: 180
+  persistent_shell: true
+
+compression:
+  enabled: true
+  threshold: 0.5
+  target_ratio: 0.2
+  protect_last_n: 20
+
+tool_output:
+  max_bytes: 50000
+  max_lines: 2000
+  max_line_length: 2000
+
+prompt_caching:
+  cache_ttl: 5m
+
+openrouter:
+  response_cache: true
+  response_cache_ttl: 300
+  min_coding_score: 0.65
+
+mcp_servers:
+  aegis_alpha:
+    command: "__PROJECT_ROOT__/.venv/bin/aegis-alpha-mcp"
+    args: []
+    enabled: true
+    supports_parallel_tool_calls: true
+    tools:
+      include:
+        - get_market_snapshot
+        - get_market_sentiment_gate
+        - get_limitup_pool
+        - get_break_board_pool
+        - get_stock_realtime_snapshot
+        - get_stock_history_limitup_stats
+        - get_theme_strength
+        - get_second_board_candidates
+        - explain_candidate
+        - explain_second_board_candidate
+      prompts: false
+      resources: false

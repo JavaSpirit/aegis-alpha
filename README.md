@@ -49,6 +49,14 @@ For a full local setup, including Python environment, Aegis Alpha, jvQuant, Herm
 scripts/install_all.sh
 ```
 
+The reproducible Hermes template is stored in:
+
+```text
+.hermes/config/config.example.yaml
+```
+
+It contains provider, fallback, and Aegis Alpha MCP settings. Real keys stay in `.env.local` and `~/.hermes/.env`.
+
 Preview the full setup without changing anything:
 
 ```bash
@@ -64,7 +72,7 @@ fallback: DeepSeek direct deepseek-v4-pro
 
 Provider setup docs: [docs/PROVIDERS.md](docs/PROVIDERS.md).
 
-`scripts/install_all.sh` and `scripts/install_hermes_provider_config.sh` can sync `DEEPSEEK_API_KEY` and `OPENROUTER_API_KEY` from project `.env.local` into `~/.hermes/.env` without printing key values.
+`scripts/install_all.sh` uses the project Hermes template and can sync `DEEPSEEK_API_KEY` and `OPENROUTER_API_KEY` from project `.env.local` into `~/.hermes/.env` without printing key values.
 
 Manual Python-only setup:
 

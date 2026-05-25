@@ -184,9 +184,10 @@ else
 fi
 
 if [[ "$INSTALL_PROVIDER" == true ]]; then
-  run_step "Install Hermes provider config scaffold" "$SCRIPT_DIR/install_hermes_provider_config.sh"
+  project_config_args=(--replace)
+  run_step "Install Hermes project config" "$SCRIPT_DIR/install_hermes_project_config.sh" "${project_config_args[@]}"
 else
-  skip_step "Install Hermes provider config scaffold" "--skip-provider"
+  skip_step "Install Hermes project config" "--skip-provider"
 fi
 
 if [[ "$INSTALL_SKILL" == true ]]; then
@@ -196,13 +197,19 @@ else
 fi
 
 if [[ "$INSTALL_CONFIG" == true ]]; then
-  config_args=()
-  if [[ "$REPLACE_CONFIG" == true ]]; then
-    config_args+=(--replace)
+  if [[ "$INSTALL_PROVIDER" == true ]]; then
+    echo
+    echo "==> Install Aegis Alpha MCP config"
+    echo "Skipped: included in project config"
   else
-    config_args+=(--append)
+    config_args=()
+    if [[ "$REPLACE_CONFIG" == true ]]; then
+      config_args+=(--replace)
+    else
+      config_args+=(--append)
+    fi
+    run_step "Install Aegis Alpha MCP config" "$SCRIPT_DIR/install_hermes_mcp_config.sh" "${config_args[@]}"
   fi
-  run_step "Install Aegis Alpha MCP config" "$SCRIPT_DIR/install_hermes_mcp_config.sh" "${config_args[@]}"
 else
   skip_step "Install Aegis Alpha MCP config" "--skip-config"
 fi

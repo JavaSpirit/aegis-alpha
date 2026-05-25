@@ -23,6 +23,18 @@ scripts/install_all.sh
 
 This installs the Python environment, Aegis Alpha, jvQuant dependency, Hermes, project skill, MCP config, and final integration check.
 
+The full reproducible Hermes config template lives in:
+
+```text
+.hermes/config/config.example.yaml
+```
+
+Install or replace local Hermes config from the project template:
+
+```bash
+scripts/install_hermes_project_config.sh --replace
+```
+
 For Hermes-only integration:
 
 ```bash
@@ -61,7 +73,15 @@ source .venv/bin/activate
 python -m pip install -e ".[dev]"
 ```
 
-Then install the bundled MCP config snippet:
+Then install the reproducible project Hermes config:
+
+```bash
+scripts/install_hermes_project_config.sh --replace
+```
+
+This includes the provider policy, DeepSeek fallback, and Aegis Alpha MCP server. The installer resolves the MCP command path from the current checkout, so the template can be reused on another computer.
+
+For advanced partial setup, install only the bundled MCP config snippet:
 
 ```bash
 scripts/install_hermes_mcp_config.sh

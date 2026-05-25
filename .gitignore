@@ -9,6 +9,7 @@ venv/
 dist/
 build/
 .DS_Store
+**/.DS_Store
 
 .env
 .env.*
@@ -17,4 +18,3 @@ build/
 data/raw/
 data/processed/
 logs/
-
