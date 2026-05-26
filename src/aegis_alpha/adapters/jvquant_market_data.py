@@ -180,7 +180,7 @@ class JvQuantMarketDataAdapter:
 
     def get_second_board_candidates(self):
         payload = self._query(
-            "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,价格,成交额,行业",
+            "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,5分钟涨幅,资金流向,主力资金,价格,成交额,行业",
             sort_key="涨跌幅",
         )
         rows = self._query_rows(payload)
@@ -193,7 +193,12 @@ class JvQuantMarketDataAdapter:
         for index, row in enumerate(rows[:max_candidates]):
             symbol = self._symbol_from_row(row)
             change_pct = _float_or_zero(self._field_value(row, "涨跌幅"))
+            five_min_speed_pct = _float_or_zero(self._field_value(row, "涨速", "区间涨跌幅"))
             turnover_cny = self._parse_cny_amount(self._field_value(row, "成交额"))
+            main_net_inflow_cny = self._parse_cny_amount(
+                self._field_value(row, "主力净额", "大单净额", "超大单净额")
+            )
+            big_order_net_inflow_ratio = self._ratio(main_net_inflow_cny, turnover_cny)
             theme = self._theme_from_row(row)
             orderbook_quality = 50.0
             orderbook_notes: list[str] = []
@@ -214,12 +219,28 @@ class JvQuantMarketDataAdapter:
                 except Exception as exc:
                     orderbook_notes.append(f"Orderbook unavailable for candidate scoring: {type(exc).__name__}.")
 
-            grade = self._candidate_grade(gate.action, change_pct, orderbook_quality, theme_counts[theme])
-            estimated = self._estimated_seal_probability(gate.action, change_pct, orderbook_quality, theme_counts[theme])
+            grade = self._candidate_grade(
+                gate.action,
+                change_pct,
+                five_min_speed_pct,
+                big_order_net_inflow_ratio,
+                orderbook_quality,
+                theme_counts[theme],
+            )
+            estimated = self._estimated_seal_probability(
+                gate.action,
+                change_pct,
+                five_min_speed_pct,
+                big_order_net_inflow_ratio,
+                orderbook_quality,
+                theme_counts[theme],
+            )
             grade_reason = self._candidate_grade_reason(
                 action=gate.action,
                 grade=grade,
                 change_pct=change_pct,
+                five_min_speed_pct=five_min_speed_pct,
+                big_order_net_inflow_ratio=big_order_net_inflow_ratio,
                 orderbook_quality=orderbook_quality,
                 theme_count=theme_counts[theme],
             )
@@ -233,8 +254,8 @@ class JvQuantMarketDataAdapter:
                     theme=theme,
                     previous_limit_up_time="unknown",
                     current_change_pct=change_pct,
-                    five_min_speed_pct=0.0,
-                    big_order_net_inflow_ratio=0.0,
+                    five_min_speed_pct=five_min_speed_pct,
+                    big_order_net_inflow_ratio=big_order_net_inflow_ratio,
                     same_theme_rising_count=theme_counts[theme],
                     orderbook_quality_score=orderbook_quality,
                     three_year_touch_limit_success_rate=0.0,
@@ -244,8 +265,10 @@ class JvQuantMarketDataAdapter:
                     grade_reason=grade_reason,
                     notes=[
                         "jvQuant live-provider candidate: yesterday limit-up and today gain above 5%.",
-                        "five_min_speed_pct, big_order_net_inflow_ratio, and historical rates are not derived yet.",
+                        "five_min_speed_pct and capital-flow ratio come from jvQuant semantic fields, not tick-by-tick trade classification.",
+                        "Historical limit-up rates are not derived yet.",
                         f"turnover_cny={turnover_cny:.0f}",
+                        f"main_net_inflow_cny={main_net_inflow_cny:.0f}",
                         *orderbook_notes,
                     ],
                 )
@@ -290,12 +313,14 @@ class JvQuantMarketDataAdapter:
             grade_reason=candidate.grade_reason,
             observations=[
                 f"Current change is {candidate.current_change_pct:.2f}%.",
+                f"Five-minute speed is {candidate.five_min_speed_pct:.2f}%.",
+                f"Capital-flow net inflow ratio is {candidate.big_order_net_inflow_ratio:.2f}.",
                 f"Theme is {candidate.theme}; same-theme candidate count is {candidate.same_theme_rising_count}.",
                 f"Orderbook quality score is {candidate.orderbook_quality_score:.2f}.",
                 f"Estimated seal probability is {candidate.estimated_seal_probability:.0%} from current coarse factors.",
             ],
             risks=[
-                "Candidate pool is live-provider jvQuant, but five-minute speed and big-order net inflow are not derived yet.",
+                "Candidate pool is live-provider jvQuant; speed and capital-flow fields are semantic-query values, not tick-by-tick order classification.",
                 "Historical three-year limit-up success and next-day premium are placeholders.",
                 "First seal time, seal amount, queue position, and cancellation rules are not implemented yet.",
             ],
@@ -491,6 +516,8 @@ class JvQuantMarketDataAdapter:
         text = str(value or "").strip().replace(",", "")
         if not text:
             return 0.0
+        negative = text.startswith("-")
+        text = text.removeprefix("-")
         multiplier = 1.0
         if text.endswith("亿"):
             multiplier = 100_000_000.0
@@ -498,7 +525,13 @@ class JvQuantMarketDataAdapter:
         elif text.endswith("万"):
             multiplier = 10_000.0
             text = text[:-1]
-        return _float_or_zero(text) * multiplier
+        amount = _float_or_zero(text) * multiplier
+        return -amount if negative else amount
+
+    def _ratio(self, numerator: float, denominator: float) -> float:
+        if denominator == 0:
+            return 0.0
+        return round(max(-1.0, min(1.0, numerator / denominator)), 4)
 
     def _leading_themes(self, stocks: list[LimitUpStock | BreakBoardStock]) -> list[str]:
         counter = Counter(stock.theme for stock in stocks if stock.theme and stock.theme != "unknown")
@@ -533,6 +566,8 @@ class JvQuantMarketDataAdapter:
         self,
         action: str,
         change_pct: float,
+        five_min_speed_pct: float,
+        big_order_net_inflow_ratio: float,
         orderbook_quality: float,
         theme_count: int,
     ):
@@ -541,10 +576,22 @@ class JvQuantMarketDataAdapter:
         if change_pct < 5:
             return "REJECT"
         if action == "defensive":
-            return "B" if change_pct >= 9.5 and orderbook_quality >= 55 and theme_count >= 2 else "C"
-        if change_pct >= 9.5 and orderbook_quality >= 65 and theme_count >= 2:
+            return (
+                "B"
+                if change_pct >= 9.5
+                and theme_count >= 2
+                and (orderbook_quality >= 55 or big_order_net_inflow_ratio >= 0.03)
+                else "C"
+            )
+        if (
+            change_pct >= 9.5
+            and five_min_speed_pct >= 1.5
+            and big_order_net_inflow_ratio >= 0.03
+            and orderbook_quality >= 60
+            and theme_count >= 2
+        ):
             return "A"
-        if change_pct >= 7 and orderbook_quality >= 50:
+        if change_pct >= 7 and (orderbook_quality >= 50 or big_order_net_inflow_ratio > 0):
             return "B"
         return "C"
 
@@ -553,6 +600,8 @@ class JvQuantMarketDataAdapter:
         action: str,
         grade: str,
         change_pct: float,
+        five_min_speed_pct: float,
+        big_order_net_inflow_ratio: float,
         orderbook_quality: float,
         theme_count: int,
     ) -> str:
@@ -565,22 +614,25 @@ class JvQuantMarketDataAdapter:
             if action == "defensive":
                 return (
                     f"评级为 C，主要因为市场闸门为 defensive，说明炸板率或市场风险偏高；"
-                    f"虽然个股当前涨幅为 {change_pct:.2f}%，但盘口质量评分为 {orderbook_quality:.1f}，"
-                    f"同题材候选数为 {theme_count}，还缺少五分钟涨速、大单净流入和历史封板数据确认。"
+                    f"虽然个股当前涨幅为 {change_pct:.2f}%，五分钟涨速为 {five_min_speed_pct:.2f}%，"
+                    f"资金净流入占比为 {big_order_net_inflow_ratio:.2%}，但盘口质量评分为 {orderbook_quality:.1f}，"
+                    f"同题材候选数为 {theme_count}，还缺少历史封板数据和排队位置确认。"
                 )
             return (
-                f"评级为 C，因为个股当前涨幅为 {change_pct:.2f}%，但盘口质量、题材联动或数据完整性不足，"
+                f"评级为 C，因为个股当前涨幅为 {change_pct:.2f}%，五分钟涨速为 {five_min_speed_pct:.2f}%，"
+                f"资金净流入占比为 {big_order_net_inflow_ratio:.2%}，但盘口质量、题材联动或数据完整性不足，"
                 "暂时只能作为观察对象。"
             )
         if grade == "B":
             return (
-                f"评级为 B，因为个股当前涨幅达到 {change_pct:.2f}%，盘口质量评分为 {orderbook_quality:.1f}，"
-                f"同题材候选数为 {theme_count}，具备观察价值；但仍缺少五分钟涨速、大单净流入、"
-                "封单质量和历史溢价数据，不能提高到 A。"
+                f"评级为 B，因为个股当前涨幅达到 {change_pct:.2f}%，五分钟涨速为 {five_min_speed_pct:.2f}%，"
+                f"资金净流入占比为 {big_order_net_inflow_ratio:.2%}，同题材候选数为 {theme_count}，具备观察价值；"
+                f"但盘口质量评分为 {orderbook_quality:.1f}，且缺少封单质量、排队位置和历史溢价数据，不能提高到 A。"
             )
         return (
-            f"评级为 A，因为市场闸门允许进攻，个股涨幅为 {change_pct:.2f}%，盘口质量评分为 "
-            f"{orderbook_quality:.1f}，且同题材候选数为 {theme_count}，多项条件同时较强；"
+            f"评级为 A，因为市场闸门允许进攻，个股涨幅为 {change_pct:.2f}%，五分钟涨速为 "
+            f"{five_min_speed_pct:.2f}%，资金净流入占比为 {big_order_net_inflow_ratio:.2%}，"
+            f"盘口质量评分为 {orderbook_quality:.1f}，且同题材候选数为 {theme_count}，多项条件同时较强；"
             "仍需在实盘时继续核验数据时效和封单稳定性。"
         )
 
@@ -588,11 +640,15 @@ class JvQuantMarketDataAdapter:
         self,
         action: str,
         change_pct: float,
+        five_min_speed_pct: float,
+        big_order_net_inflow_ratio: float,
         orderbook_quality: float,
         theme_count: int,
     ) -> float:
         probability = 0.25
         probability += min(0.30, max(0.0, change_pct - 5.0) * 0.05)
+        probability += min(0.10, max(0.0, five_min_speed_pct) * 0.025)
+        probability += min(0.15, max(0.0, big_order_net_inflow_ratio) * 1.5)
         probability += min(0.20, max(0.0, orderbook_quality - 50.0) / 100.0)
         probability += min(0.15, theme_count * 0.03)
         if action == "active":

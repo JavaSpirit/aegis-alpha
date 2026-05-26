@@ -6,20 +6,31 @@ from aegis_alpha.adapters.jvquant_market_data import JvQuantMarketDataAdapter, n
 class FakeJvQuantClient:
     def query(self, query: str, page: int, sort_type: int, sort_key: str) -> dict:
         if "昨日涨停" in query:
-            rows = [
-                ["001366", "播恩集团", "9.99", "饲料", "否", "涨停", "18.61", "2.66亿"],
-                ["002001", "新和成", "7.10", "合成生物", "否", "涨停", "32.10", "4.12亿"],
-            ]
+            if "资金" in query or "5分钟" in query:
+                fields = ["代码", "名称", "涨跌幅", "行业", "是否ST", "涨停", "区间涨跌幅", "主力净额", "最新价", "成交额"]
+                rows = [
+                    ["001366", "播恩集团", "9.99", "饲料", "否", "涨停", "2.10", "3000.00万", "18.61", "2.66亿"],
+                    ["002001", "新和成", "7.10", "合成生物", "否", "涨停", "0.80", "-500.00万", "32.10", "4.12亿"],
+                ]
+            else:
+                fields = ["代码", "名称", "涨跌幅", "行业", "是否ST", "涨停", "最新价", "成交额"]
+                rows = [
+                    ["001366", "播恩集团", "9.99", "饲料", "否", "涨停", "18.61", "2.66亿"],
+                    ["002001", "新和成", "7.10", "合成生物", "否", "涨停", "32.10", "4.12亿"],
+                ]
         elif "今日涨停" in query:
+            fields = ["代码", "名称", "涨跌幅", "行业", "是否ST", "涨停", "最新价", "成交额"]
             rows = [
                 ["001366", "播恩集团", "9.99", "饲料", "否", "涨停", "18.61", "2.66亿"],
                 ["002001", "新和成", "10.00", "合成生物", "否", "涨停", "32.10", "4.12亿"],
             ]
         elif "炸板" in query:
+            fields = ["代码", "名称", "涨跌幅", "行业", "是否ST", "炸板次数", "最新价", "成交额"]
             rows = [
                 ["603278", "大业股份", "6.00", "通用设备", "否", "1", "14.14", "8.37亿"],
             ]
         else:
+            fields = ["代码", "名称", "涨跌幅", "行业", "是否ST", "涨停", "最新价", "成交额"]
             rows = [["600839", "四川长虹", "-2.57", "黑色家电", "上交所主板", "否", "7.95", "6.47亿"]]
 
         return {
@@ -27,7 +38,7 @@ class FakeJvQuantClient:
             "message": "",
             "data": {
                 "count": len(rows),
-                "fields": ["代码", "名称", "涨跌幅", "行业", "是否ST", "涨停", "最新价", "成交额"],
+                "fields": fields,
                 "list": rows,
             },
         }
@@ -171,6 +182,8 @@ def test_jvquant_second_board_candidates_from_semantic_query() -> None:
     assert candidates[0].data_mode == "live_provider"
     assert candidates[0].provider == "jvQuant"
     assert candidates[0].current_change_pct == 9.99
+    assert candidates[0].five_min_speed_pct == 2.10
+    assert candidates[0].big_order_net_inflow_ratio > 0
     assert candidates[0].same_theme_rising_count >= 1
     assert candidates[0].grade in {"A", "B", "C", "REJECT"}
     assert candidates[0].grade_reason

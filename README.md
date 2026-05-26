@@ -130,7 +130,7 @@ When `AEGIS_ALPHA_MARKET_DATA_PROVIDER=jvquant`, Hermes can access jvQuant-backe
 - `get_stock_realtime_snapshot(symbol)`
 - `get_stock_orderbook_snapshot(symbol)`
 
-The second-board candidate pool is currently derived from jvQuant semantic queries for yesterday limit-up stocks with current strength. Five-minute speed, big-order net inflow, historical limit-up statistics, and normalized theme strength still use placeholders until dedicated scanners are implemented.
+The second-board candidate pool is currently derived from jvQuant semantic queries for yesterday limit-up stocks with current strength. Five-minute speed and capital-flow net inflow ratio come from jvQuant semantic fields. Historical limit-up statistics, first seal time, seal amount, queue position, and normalized theme strength still use placeholders until dedicated scanners are implemented.
 
 ## Install Or Verify Hermes
 
