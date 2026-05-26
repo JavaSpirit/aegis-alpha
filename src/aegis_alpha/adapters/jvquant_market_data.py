@@ -10,10 +10,12 @@ from zoneinfo import ZoneInfo
 from aegis_alpha.adapters.mock_market_data import MockMarketDataAdapter
 from aegis_alpha.models import (
     BreakBoardStock,
+    CandidateExplanation,
     LimitUpStock,
     MarketSentimentGate,
     MarketSnapshot,
     OrderbookQueueLevel,
+    SecondBoardCandidate,
     StockOrderbookSnapshot,
     StockRealtimeSnapshot,
 )
@@ -177,13 +179,126 @@ class JvQuantMarketDataAdapter:
         return self._fallback.get_theme_strength(symbol)
 
     def get_second_board_candidates(self):
-        return self._fallback.get_second_board_candidates()
+        payload = self._query(
+            "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,价格,成交额,行业",
+            sort_key="涨跌幅",
+        )
+        rows = self._query_rows(payload)
+        max_candidates = _int_or_zero(os.environ.get("AEGIS_ALPHA_SECOND_BOARD_MAX_CANDIDATES")) or 12
+        orderbook_limit = _int_or_zero(os.environ.get("AEGIS_ALPHA_SECOND_BOARD_ORDERBOOK_LIMIT")) or 5
+        theme_counts = Counter(self._theme_from_row(row) for row in rows)
+        gate = self.get_market_sentiment_gate()
+
+        candidates: list[SecondBoardCandidate] = []
+        for index, row in enumerate(rows[:max_candidates]):
+            symbol = self._symbol_from_row(row)
+            change_pct = _float_or_zero(self._field_value(row, "涨跌幅"))
+            turnover_cny = self._parse_cny_amount(self._field_value(row, "成交额"))
+            theme = self._theme_from_row(row)
+            orderbook_quality = 50.0
+            orderbook_notes: list[str] = []
+            if index < orderbook_limit:
+                try:
+                    orderbook = self.get_stock_orderbook_snapshot(symbol)
+                    bid_volume = sum(level.volume_count for level in orderbook.bid_levels)
+                    ask_volume = sum(level.volume_count for level in orderbook.ask_levels)
+                    total_volume = bid_volume + ask_volume
+                    if total_volume:
+                        orderbook_quality = round(100 * bid_volume / total_volume, 2)
+                    if orderbook.best_bid_price is None and orderbook.best_ask_price is None:
+                        orderbook_notes.append("jvQuant orderbook returned no queue rows for this candidate.")
+                    else:
+                        orderbook_notes.append(
+                            f"jvQuant orderbook best_bid={orderbook.best_bid_price}, best_ask={orderbook.best_ask_price}."
+                        )
+                except Exception as exc:
+                    orderbook_notes.append(f"Orderbook unavailable for candidate scoring: {type(exc).__name__}.")
+
+            grade = self._candidate_grade(gate.action, change_pct, orderbook_quality, theme_counts[theme])
+            estimated = self._estimated_seal_probability(gate.action, change_pct, orderbook_quality, theme_counts[theme])
+
+            candidates.append(
+                SecondBoardCandidate(
+                    symbol=symbol,
+                    name=self._name_from_row(row),
+                    data_mode="live_provider",
+                    provider="jvQuant",
+                    theme=theme,
+                    previous_limit_up_time="unknown",
+                    current_change_pct=change_pct,
+                    five_min_speed_pct=0.0,
+                    big_order_net_inflow_ratio=0.0,
+                    same_theme_rising_count=theme_counts[theme],
+                    orderbook_quality_score=orderbook_quality,
+                    three_year_touch_limit_success_rate=0.0,
+                    three_year_sealed_next_day_gap_up_rate=0.0,
+                    estimated_seal_probability=estimated,
+                    grade=grade,
+                    notes=[
+                        "jvQuant live-provider candidate: yesterday limit-up and today gain above 5%.",
+                        "five_min_speed_pct, big_order_net_inflow_ratio, and historical rates are not derived yet.",
+                        f"turnover_cny={turnover_cny:.0f}",
+                        *orderbook_notes,
+                    ],
+                )
+            )
+
+        return candidates
 
     def explain_candidate(self, symbol: str):
         return self._fallback.explain_candidate(symbol)
 
-    def explain_second_board_candidate(self, symbol: str):
-        return self._fallback.explain_second_board_candidate(symbol)
+    def explain_second_board_candidate(self, symbol: str) -> CandidateExplanation:
+        candidates = {candidate.symbol: candidate for candidate in self.get_second_board_candidates()}
+        normalized = normalize_symbol(symbol)
+        candidate = candidates.get(symbol) or candidates.get(normalized)
+        if candidate is None:
+            return CandidateExplanation(
+                symbol=symbol,
+                grade="REJECT",
+                observations=[
+                    "Symbol is not in the current jvQuant live-provider second-board candidate pool.",
+                ],
+                risks=[
+                    "The current candidate pool only covers yesterday limit-up stocks with today's gain above 5%.",
+                ],
+                trigger_conditions=[
+                    "Add the symbol to the valid previous-day limit-up and current strength pool before scoring.",
+                ],
+                avoid_conditions=[
+                    "Avoid treating arbitrary symbols as second-board candidates.",
+                ],
+                data_timestamp=_now(),
+                disclaimer="Research and watchlist output only. This is not investment advice or an order instruction.",
+            )
+
+        return CandidateExplanation(
+            symbol=candidate.symbol,
+            grade=candidate.grade,
+            observations=[
+                f"Current change is {candidate.current_change_pct:.2f}%.",
+                f"Theme is {candidate.theme}; same-theme candidate count is {candidate.same_theme_rising_count}.",
+                f"Orderbook quality score is {candidate.orderbook_quality_score:.2f}.",
+                f"Estimated seal probability is {candidate.estimated_seal_probability:.0%} from current coarse factors.",
+            ],
+            risks=[
+                "Candidate pool is live-provider jvQuant, but five-minute speed and big-order net inflow are not derived yet.",
+                "Historical three-year limit-up success and next-day premium are placeholders.",
+                "First seal time, seal amount, queue position, and cancellation rules are not implemented yet.",
+            ],
+            trigger_conditions=[
+                "Market sentiment gate should improve from defensive to selective or active for aggressive board-chasing.",
+                "Orderbook quality should remain strong during active trading hours.",
+                "Same-theme candidates should expand or the theme leader should remain sealed.",
+            ],
+            avoid_conditions=[
+                "Avoid if break-board rate remains high.",
+                "Avoid if orderbook quality deteriorates or best ask expands sharply.",
+                "Avoid if the candidate falls out of the yesterday-limit-up strength pool.",
+            ],
+            data_timestamp=_now(),
+            disclaimer="Research and watchlist output only. This is not investment advice or an order instruction.",
+        )
 
     def get_stock_realtime_snapshot(self, symbol: str) -> StockRealtimeSnapshot:
         code = normalize_symbol(symbol)
@@ -227,7 +342,18 @@ class JvQuantMarketDataAdapter:
         code = normalize_symbol(symbol)
         payload = self.client.level_queue(code)
         data = payload.get("data", {}) if isinstance(payload, dict) else {}
-        rows = data.get("list", []) if isinstance(data, dict) else []
+        if isinstance(data, dict):
+            rows = data.get("list", [])
+            name = str(data.get("name") or "unknown")
+            level_count = _int_or_zero(data.get("count") or len(rows))
+        elif isinstance(data, list):
+            rows = data
+            name = "unknown"
+            level_count = len(rows)
+        else:
+            rows = []
+            name = "unknown"
+            level_count = 0
 
         bid_levels: list[OrderbookQueueLevel] = []
         ask_levels: list[OrderbookQueueLevel] = []
@@ -245,11 +371,11 @@ class JvQuantMarketDataAdapter:
 
         return StockOrderbookSnapshot(
             symbol=symbol,
-            name=str(data.get("name") or "unknown"),
+            name=name,
             timestamp=_now(),
             data_mode="live_provider",
             provider="jvQuant",
-            level_count=_int_or_zero(data.get("count") or len(rows)),
+            level_count=level_count,
             best_bid_price=bid_levels[0].price if bid_levels else None,
             best_ask_price=ask_levels[0].price if ask_levels else None,
             bid_levels=bid_levels,
@@ -257,6 +383,7 @@ class JvQuantMarketDataAdapter:
             notes=[
                 "Read-only jvQuant level_queue summary.",
                 "Only top 10 bid and ask levels are returned to keep MCP output compact.",
+                "Empty orderbook levels mean the provider returned no queue rows for this symbol at request time.",
                 "Do not use this alone for automated trading; queue position and cancellation rules are not implemented.",
             ],
         )
@@ -347,6 +474,19 @@ class JvQuantMarketDataAdapter:
                 return value
         return None
 
+    def _parse_cny_amount(self, value: Any) -> float:
+        text = str(value or "").strip().replace(",", "")
+        if not text:
+            return 0.0
+        multiplier = 1.0
+        if text.endswith("亿"):
+            multiplier = 100_000_000.0
+            text = text[:-1]
+        elif text.endswith("万"):
+            multiplier = 10_000.0
+            text = text[:-1]
+        return _float_or_zero(text) * multiplier
+
     def _leading_themes(self, stocks: list[LimitUpStock | BreakBoardStock]) -> list[str]:
         counter = Counter(stock.theme for stock in stocks if stock.theme and stock.theme != "unknown")
         return [theme for theme, _count in counter.most_common(5)]
@@ -375,3 +515,41 @@ class JvQuantMarketDataAdapter:
         if score >= 75 and break_board_rate < 0.28:
             return "active"
         return "selective"
+
+    def _candidate_grade(
+        self,
+        action: str,
+        change_pct: float,
+        orderbook_quality: float,
+        theme_count: int,
+    ):
+        if action == "avoid":
+            return "REJECT"
+        if change_pct < 5:
+            return "REJECT"
+        if action == "defensive":
+            return "B" if change_pct >= 9.5 and orderbook_quality >= 55 and theme_count >= 2 else "C"
+        if change_pct >= 9.5 and orderbook_quality >= 65 and theme_count >= 2:
+            return "A"
+        if change_pct >= 7 and orderbook_quality >= 50:
+            return "B"
+        return "C"
+
+    def _estimated_seal_probability(
+        self,
+        action: str,
+        change_pct: float,
+        orderbook_quality: float,
+        theme_count: int,
+    ) -> float:
+        probability = 0.25
+        probability += min(0.30, max(0.0, change_pct - 5.0) * 0.05)
+        probability += min(0.20, max(0.0, orderbook_quality - 50.0) / 100.0)
+        probability += min(0.15, theme_count * 0.03)
+        if action == "active":
+            probability += 0.10
+        elif action == "defensive":
+            probability -= 0.12
+        elif action == "avoid":
+            probability -= 0.25
+        return round(max(0.0, min(0.95, probability)), 4)

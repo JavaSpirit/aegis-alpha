@@ -126,6 +126,8 @@ class ThemeStrength(BaseModel):
 class SecondBoardCandidate(BaseModel):
     symbol: str
     name: str
+    data_mode: str = "mock"
+    provider: str = "mock"
     theme: str
     previous_limit_up_time: str
     current_change_pct: float

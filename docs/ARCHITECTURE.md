@@ -59,6 +59,7 @@ Current jvQuant coverage:
 
 - Semantic-query market snapshot, limit-up pool, and break-board pool.
 - Coarse market sentiment gate derived from limit-up count, break-board rate, and theme breadth.
+- Semantic-query second-board candidate pool based on yesterday limit-up stocks with current strength.
 - Single-symbol K-line snapshot.
 - Single-symbol level queue / orderbook summary.
 

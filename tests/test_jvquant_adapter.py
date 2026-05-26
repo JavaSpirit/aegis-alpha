@@ -5,7 +5,12 @@ from aegis_alpha.adapters.jvquant_market_data import JvQuantMarketDataAdapter, n
 
 class FakeJvQuantClient:
     def query(self, query: str, page: int, sort_type: int, sort_key: str) -> dict:
-        if "今日涨停" in query:
+        if "昨日涨停" in query:
+            rows = [
+                ["001366", "播恩集团", "9.99", "饲料", "否", "涨停", "18.61", "2.66亿"],
+                ["002001", "新和成", "7.10", "合成生物", "否", "涨停", "32.10", "4.12亿"],
+            ]
+        elif "今日涨停" in query:
             rows = [
                 ["001366", "播恩集团", "9.99", "饲料", "否", "涨停", "18.61", "2.66亿"],
                 ["002001", "新和成", "10.00", "合成生物", "否", "涨停", "32.10", "4.12亿"],
@@ -152,3 +157,20 @@ def test_jvquant_market_gate_from_semantic_query() -> None:
     assert limitup_pool[0].data_mode == "live_provider"
     assert limitup_pool[0].status == "sealed"
     assert break_pool[0].current_change_pct == 6.0
+
+
+def test_jvquant_second_board_candidates_from_semantic_query() -> None:
+    adapter = JvQuantMarketDataAdapter(token="fake")
+    adapter._client = FakeJvQuantClient()
+
+    candidates = adapter.get_second_board_candidates()
+    explanation = adapter.explain_second_board_candidate(candidates[0].symbol)
+
+    assert candidates
+    assert candidates[0].symbol == "001366"
+    assert candidates[0].data_mode == "live_provider"
+    assert candidates[0].provider == "jvQuant"
+    assert candidates[0].current_change_pct == 9.99
+    assert candidates[0].same_theme_rising_count >= 1
+    assert candidates[0].grade in {"A", "B", "C", "REJECT"}
+    assert "not investment advice" in explanation.disclaimer.lower()

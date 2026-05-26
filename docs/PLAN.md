@@ -51,6 +51,8 @@ The output must stay structured, timestamped, and explicit about data quality. `
 
 Add real-time adapters for providers such as jvQuant, StockApi, MyQuant, or miniQMT.
 
+Current jvQuant-backed coverage includes market gate, limit-up pool, break-board pool, single-symbol snapshots, orderbook snapshots, and a coarse second-board candidate pool. The next gaps are five-minute speed, big-order net inflow, first seal time, seal amount, and historical follow-through statistics.
+
 Core indicators:
 
 - Market sentiment gate.
