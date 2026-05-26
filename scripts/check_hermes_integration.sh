@@ -48,14 +48,14 @@ fi
 echo
 
 if [[ -x "$WORKSPACE/.venv/bin/python" ]]; then
-  if PYTHONPATH="$WORKSPACE/src" "$WORKSPACE/.venv/bin/python" - <<'PY' >/dev/null 2>&1
+  if "$WORKSPACE/.venv/bin/python" - <<'PY' >/dev/null 2>&1
 from aegis_alpha.mcp.server import mcp
 assert mcp.name == "aegis-alpha"
 PY
   then
-    echo "[ok] Aegis Alpha MCP import check passed"
+    echo "[ok] Aegis Alpha MCP import check passed in installed environment"
   else
-    echo "[warn] Aegis Alpha MCP import check failed"
+    echo "[warn] Aegis Alpha MCP import check failed in installed environment"
   fi
 else
   echo "[warn] Python virtualenv missing: $WORKSPACE/.venv/bin/python"

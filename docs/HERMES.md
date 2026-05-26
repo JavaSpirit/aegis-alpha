@@ -70,7 +70,7 @@ Install this project first:
 ```bash
 python3.11 -m venv .venv
 source .venv/bin/activate
-python -m pip install -e ".[dev]"
+python -m pip install ".[dev]"
 ```
 
 Then install the reproducible project Hermes config:

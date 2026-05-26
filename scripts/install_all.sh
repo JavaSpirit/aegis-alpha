@@ -162,7 +162,7 @@ else
 fi
 
 if [[ "$INSTALL_PROJECT" == true ]]; then
-  run_step "Install Aegis Alpha package" "$VENV_PYTHON" -m pip install -e ".[dev]"
+  run_step "Install Aegis Alpha package" "$VENV_PYTHON" -m pip install ".[dev]"
 else
   skip_step "Install Aegis Alpha package" "--skip-project"
 fi

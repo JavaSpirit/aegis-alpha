@@ -79,13 +79,13 @@ Manual Python-only setup:
 ```bash
 python3.11 -m venv .venv
 source .venv/bin/activate
-python -m pip install -e ".[dev]"
+python -m pip install ".[dev]"
 ```
 
 If your package manager does not support optional extras yet, install the base package first:
 
 ```bash
-python -m pip install -e .
+python -m pip install .
 ```
 
 ## Install jvQuant Market Data Dependency
@@ -99,7 +99,7 @@ scripts/install_jvquant.sh
 Or install through the optional dependency group:
 
 ```bash
-python -m pip install -e ".[jvquant]"
+python -m pip install ".[jvquant]"
 ```
 
 Then put local credentials in `.env.local`:
@@ -112,6 +112,12 @@ AEGIS_ALPHA_REAL_TRADING_ENABLED=false
 ```
 
 Do not commit `.env.local`.
+
+Run a read-only jvQuant smoke test without printing secrets:
+
+```bash
+.venv/bin/python scripts/smoke_jvquant_readonly.py --symbol 600519
+```
 
 ## Install Or Verify Hermes
 
