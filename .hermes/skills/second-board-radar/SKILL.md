@@ -47,6 +47,7 @@ Useful supporting tools:
 - `get_market_snapshot`
 - `get_limitup_pool`
 - `get_break_board_pool`
+- `get_stock_orderbook_snapshot`
 - `get_stock_history_limitup_stats`
 
 If these tools are unavailable, first ask Hermes to reload MCP with `/reload-mcp` or inspect the Hermes MCP configuration. Do not fabricate live data.
@@ -68,7 +69,7 @@ Before grading during active trading hours, verify the timestamp of speed, big-o
    market gate, five-minute speed, big-order net inflow ratio, same-theme rising count, orderbook quality, historical touch-limit success rate, and historical gap-up statistics.
 7. Produce a watchlist report with grades `A`, `B`, `C`, or `REJECT`.
 8. Always include structured trigger conditions and avoid conditions.
-9. Always state data mode: mock, delayed, live provider, or unavailable.
+9. Always state both model identity and market-data identity. Keep `llm_provider` / `llm_model` separate from `market_data_mode` / `market_data_provider`.
 
 ## Candidate Interpretation Rules
 
@@ -105,6 +106,10 @@ Use this structure for user-facing answers:
    - 板块动作: ...
 
 数据状态:
+- llm_provider:
+- llm_model:
+- market_data_mode:
+- market_data_provider:
 非投资建议:
 ```
 

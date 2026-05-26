@@ -61,6 +61,8 @@ class StockRealtimeSnapshot(BaseModel):
     symbol: str
     name: str
     timestamp: str
+    data_mode: str = "mock"
+    provider: str = "mock"
     last_price: float
     change_pct: float
     turnover_cny: float
@@ -68,6 +70,29 @@ class StockRealtimeSnapshot(BaseModel):
     bid_quality_score: float = Field(ge=0, le=100)
     ask_pressure_score: float = Field(ge=0, le=100)
     orderbook_notes: list[str]
+
+
+class OrderbookQueueLevel(BaseModel):
+    side: Literal["bid", "ask", "unknown"]
+    level_label: str
+    price: float
+    volume_count: float
+    queue_count: int
+    queue_slice: str
+
+
+class StockOrderbookSnapshot(BaseModel):
+    symbol: str
+    name: str
+    timestamp: str
+    data_mode: str
+    provider: str
+    level_count: int
+    best_bid_price: float | None
+    best_ask_price: float | None
+    bid_levels: list[OrderbookQueueLevel]
+    ask_levels: list[OrderbookQueueLevel]
+    notes: list[str]
 
 
 class LimitUpHistoryStats(BaseModel):

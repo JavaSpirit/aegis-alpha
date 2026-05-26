@@ -13,6 +13,7 @@ def main() -> None:
         "limitup_pool": [item.model_dump() for item in adapter.get_limitup_pool()],
         "break_board_pool": [item.model_dump() for item in adapter.get_break_board_pool()],
         "stock_realtime_snapshot": adapter.get_stock_realtime_snapshot("600000.SH").model_dump(),
+        "stock_orderbook_snapshot": adapter.get_stock_orderbook_snapshot("600000.SH").model_dump(),
         "stock_history_limitup_stats": adapter.get_stock_history_limitup_stats("600000.SH").model_dump(),
         "theme_strength": adapter.get_theme_strength("600000.SH").model_dump(),
         "second_board_candidates": [

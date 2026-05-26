@@ -10,7 +10,9 @@ from aegis_alpha.models import (
     LimitUpStock,
     MarketSentimentGate,
     MarketSnapshot,
+    OrderbookQueueLevel,
     SecondBoardCandidate,
+    StockOrderbookSnapshot,
     StockRealtimeSnapshot,
     ThemeStrength,
 )
@@ -108,6 +110,8 @@ class MockMarketDataAdapter:
             symbol=symbol,
             name="示例股票",
             timestamp=_now(),
+            data_mode="mock",
+            provider="mock",
             last_price=12.34,
             change_pct=9.98,
             turnover_cny=714_000_000,
@@ -117,6 +121,58 @@ class MockMarketDataAdapter:
             orderbook_notes=[
                 "Bid queue is stable in mock data.",
                 "Ask pressure is moderate; verify with real Level-2 order queue before live use.",
+            ],
+        )
+
+    def get_stock_orderbook_snapshot(self, symbol: str) -> StockOrderbookSnapshot:
+        return StockOrderbookSnapshot(
+            symbol=symbol,
+            name="示例股票",
+            timestamp=_now(),
+            data_mode="mock",
+            provider="mock",
+            level_count=4,
+            best_bid_price=12.33,
+            best_ask_price=12.34,
+            bid_levels=[
+                OrderbookQueueLevel(
+                    side="bid",
+                    level_label="B1",
+                    price=12.33,
+                    volume_count=280_000,
+                    queue_count=42,
+                    queue_slice="1000,2000,5000",
+                ),
+                OrderbookQueueLevel(
+                    side="bid",
+                    level_label="B2",
+                    price=12.32,
+                    volume_count=190_000,
+                    queue_count=35,
+                    queue_slice="1000,1000,3000",
+                ),
+            ],
+            ask_levels=[
+                OrderbookQueueLevel(
+                    side="ask",
+                    level_label="S1",
+                    price=12.34,
+                    volume_count=110_000,
+                    queue_count=26,
+                    queue_slice="1000,1000,2000",
+                ),
+                OrderbookQueueLevel(
+                    side="ask",
+                    level_label="S2",
+                    price=12.35,
+                    volume_count=160_000,
+                    queue_count=31,
+                    queue_slice="1000,2000,2000",
+                ),
+            ],
+            notes=[
+                "Mock orderbook only; not live jvQuant Level-2 data.",
+                "Use AEGIS_ALPHA_MARKET_DATA_PROVIDER=jvquant for read-only provider snapshots.",
             ],
         )
 

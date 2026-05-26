@@ -119,6 +119,13 @@ Run a read-only jvQuant smoke test without printing secrets:
 .venv/bin/python scripts/smoke_jvquant_readonly.py --symbol 600519
 ```
 
+When `AEGIS_ALPHA_MARKET_DATA_PROVIDER=jvquant`, Hermes can access jvQuant-backed single-symbol data through Aegis Alpha MCP:
+
+- `get_stock_realtime_snapshot(symbol)`
+- `get_stock_orderbook_snapshot(symbol)`
+
+Market-wide radar tools still use mock data until provider-specific breadth, limit-up, and theme scanners are implemented.
+
 ## Install Or Verify Hermes
 
 Aegis Alpha includes a helper that checks for Hermes and can run the official Hermes installer when explicitly requested:
