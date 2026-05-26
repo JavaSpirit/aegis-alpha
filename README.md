@@ -130,7 +130,7 @@ When `AEGIS_ALPHA_MARKET_DATA_PROVIDER=jvquant`, Hermes can access jvQuant-backe
 - `get_stock_realtime_snapshot(symbol)`
 - `get_stock_orderbook_snapshot(symbol)`
 
-The second-board candidate pool is currently derived from jvQuant semantic queries for yesterday limit-up stocks with current strength. Five-minute speed and capital-flow net inflow ratio come from jvQuant semantic fields. Historical limit-up statistics, first seal time, seal amount, queue position, and normalized theme strength still use placeholders until dedicated scanners are implemented.
+The second-board candidate pool is currently derived from jvQuant semantic queries for yesterday limit-up stocks with current strength. Five-minute speed, capital-flow net inflow ratio, first limit-up time, seal amount, seal volume, and seal-to-turnover ratio come from jvQuant semantic fields when available. True own-order queue position still requires broker order/trade callbacks, so the current output only exposes a queue-position note from the read-only orderbook summary. Historical limit-up statistics and normalized theme strength still use placeholders until dedicated scanners are implemented.
 
 ## Install Or Verify Hermes
 
@@ -217,7 +217,7 @@ The MVP exposes these read-only tools:
 
 The output is for research and watchlist use only. It is not investment advice and not an order instruction.
 
-`explain_second_board_candidate(symbol)` focuses on second-board logic: market sentiment gate, 5-minute speed, big-order net inflow ratio, same-theme co-movement, orderbook quality, and three-year historical limit-up/gap-up placeholders.
+`explain_second_board_candidate(symbol)` focuses on second-board logic: market sentiment gate, 5-minute speed, big-order net inflow ratio, first limit-up time, seal amount, seal-to-turnover ratio, queue-position note, same-theme co-movement, orderbook quality, and three-year historical limit-up/gap-up placeholders.
 
 ## Development Checks
 

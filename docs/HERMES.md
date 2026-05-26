@@ -98,8 +98,9 @@ It contains:
 ```yaml
 mcp_servers:
   aegis_alpha:
-    command: "/Users/xietian/Documents/trading/.venv/bin/aegis-alpha-mcp"
-    args: []
+    command: "/Users/xietian/Documents/trading/.venv/bin/python"
+    args:
+      - "/Users/xietian/Documents/trading/scripts/run_mcp.py"
     enabled: true
     supports_parallel_tool_calls: true
     tools:

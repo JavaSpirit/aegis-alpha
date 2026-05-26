@@ -53,8 +53,9 @@ openrouter:
 
 mcp_servers:
   aegis_alpha:
-    command: "__PROJECT_ROOT__/.venv/bin/aegis-alpha-mcp"
-    args: []
+    command: "__PROJECT_ROOT__/.venv/bin/python"
+    args:
+      - "__PROJECT_ROOT__/scripts/run_mcp.py"
     enabled: true
     supports_parallel_tool_calls: true
     tools:

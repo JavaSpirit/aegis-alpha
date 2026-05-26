@@ -5,6 +5,7 @@ WORKSPACE="${WORKSPACE:-/Users/xietian/Documents/trading}"
 HERMES_CONFIG="${HERMES_CONFIG:-$HOME/.hermes/config.yaml}"
 HERMES_SKILL_DIR="${HERMES_SKILL_DIR:-$HOME/.hermes/skills/second-board-radar}"
 MCP_COMMAND="${MCP_COMMAND:-$WORKSPACE/.venv/bin/aegis-alpha-mcp}"
+MCP_RUNNER="${MCP_RUNNER:-$WORKSPACE/scripts/run_mcp.py}"
 
 echo "Aegis Alpha Hermes integration check"
 echo
@@ -33,9 +34,15 @@ else
 fi
 
 if [[ -x "$MCP_COMMAND" ]]; then
-  echo "[ok] MCP command executable: $MCP_COMMAND"
+  echo "[ok] legacy MCP command executable: $MCP_COMMAND"
 else
-  echo "[warn] MCP command not executable: $MCP_COMMAND"
+  echo "[warn] legacy MCP command not executable: $MCP_COMMAND"
+fi
+
+if [[ -x "$WORKSPACE/.venv/bin/python" && -f "$MCP_RUNNER" ]]; then
+  echo "[ok] source MCP runner: $WORKSPACE/.venv/bin/python $MCP_RUNNER"
+else
+  echo "[warn] source MCP runner unavailable: $WORKSPACE/.venv/bin/python $MCP_RUNNER"
 fi
 
 if [[ -f "$WORKSPACE/.env.local" ]]; then
@@ -48,14 +55,14 @@ fi
 echo
 
 if [[ -x "$WORKSPACE/.venv/bin/python" ]]; then
-  if "$WORKSPACE/.venv/bin/python" - <<'PY' >/dev/null 2>&1
+  if PYTHONPATH="$WORKSPACE/src" "$WORKSPACE/.venv/bin/python" - <<'PY' >/dev/null 2>&1
 from aegis_alpha.mcp.server import mcp
 assert mcp.name == "aegis-alpha"
 PY
   then
-    echo "[ok] Aegis Alpha MCP import check passed in installed environment"
+    echo "[ok] Aegis Alpha MCP import check passed from source tree"
   else
-    echo "[warn] Aegis Alpha MCP import check failed in installed environment"
+    echo "[warn] Aegis Alpha MCP import check failed from source tree"
   fi
 else
   echo "[warn] Python virtualenv missing: $WORKSPACE/.venv/bin/python"

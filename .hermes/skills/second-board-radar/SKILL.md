@@ -66,7 +66,7 @@ Before grading during active trading hours, verify the timestamp of speed, big-o
 4. If Aegis Alpha data is unavailable, stale beyond the freshness rule, or empty, follow the data availability rule before continuing.
 5. If the gate action is `selective` or `active`, fetch second-board candidates.
 6. For each candidate, analyze only the structured signals returned by Aegis Alpha:
-   market gate, five-minute speed, big-order net inflow ratio, same-theme rising count, orderbook quality, historical touch-limit success rate, and historical gap-up statistics.
+   market gate, five-minute speed, big-order net inflow ratio, first limit-up time, seal amount, seal-to-turnover ratio, queue position note, same-theme rising count, orderbook quality, historical touch-limit success rate, and historical gap-up statistics.
 7. Produce a watchlist report with grades `A`, `B`, `C`, or `REJECT`.
 8. Always include structured trigger conditions and avoid conditions.
 9. Always state both model identity and market-data identity. Keep `llm_provider` / `llm_model` separate from `market_data_mode` / `market_data_provider`.
@@ -96,6 +96,7 @@ Use this structure for user-facing answers:
 候选:
 1. 代码 名称 评级
    评级原因: 用一两句自然语言说明为什么是这个评级，必须点名主要加分项和主要扣分项。
+   封板数据: 首次封板时间 / 封单额 / 封成比 / 排队位置说明
    观察:
    风险:
    触发条件:

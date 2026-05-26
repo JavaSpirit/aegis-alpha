@@ -130,6 +130,11 @@ class SecondBoardCandidate(BaseModel):
     provider: str = "mock"
     theme: str
     previous_limit_up_time: str
+    first_limit_up_time: str = "unknown"
+    seal_amount_cny: float = 0.0
+    seal_volume_shares: float = 0.0
+    seal_to_turnover_ratio: float = 0.0
+    queue_position_note: str = ""
     current_change_pct: float
     five_min_speed_pct: float
     big_order_net_inflow_ratio: float = Field(ge=-1, le=1)

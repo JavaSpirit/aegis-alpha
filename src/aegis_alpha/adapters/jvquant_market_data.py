@@ -100,7 +100,7 @@ class JvQuantMarketDataAdapter:
             notes=[
                 "Read-only jvQuant semantic query snapshot.",
                 f"main_board_non_st_count={total_count}",
-                "Limit-up and break-board pools are provider semantic-query results; seal amount and first seal time are not available yet.",
+                "Limit-up pool includes jvQuant semantic-query first seal time and seal amount when available.",
             ],
         )
 
@@ -158,7 +158,7 @@ class JvQuantMarketDataAdapter:
 
     def get_limitup_pool(self) -> list[LimitUpStock]:
         payload = self._query(
-            "今日涨停,非ST,股票代码,股票简称,涨跌幅,价格,成交额,行业",
+            "今日涨停,非ST,股票代码,股票简称,涨跌幅,首次涨停时间,封单金额,封单量,涨停封成比,价格,成交额,行业",
             sort_key="涨跌幅",
         )
         rows = self._query_rows(payload)
@@ -183,7 +183,12 @@ class JvQuantMarketDataAdapter:
             "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,5分钟涨幅,资金流向,主力资金,价格,成交额,行业",
             sort_key="涨跌幅",
         )
+        seal_payload = self._query(
+            "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,首次涨停时间,封单量,封单金额,涨停封成比,价格,成交额,行业",
+            sort_key="涨跌幅",
+        )
         rows = self._query_rows(payload)
+        seal_rows = self._rows_by_symbol(self._query_rows(seal_payload))
         max_candidates = _int_or_zero(os.environ.get("AEGIS_ALPHA_SECOND_BOARD_MAX_CANDIDATES")) or 12
         orderbook_limit = _int_or_zero(os.environ.get("AEGIS_ALPHA_SECOND_BOARD_ORDERBOOK_LIMIT")) or 5
         theme_counts = Counter(self._theme_from_row(row) for row in rows)
@@ -192,6 +197,7 @@ class JvQuantMarketDataAdapter:
         candidates: list[SecondBoardCandidate] = []
         for index, row in enumerate(rows[:max_candidates]):
             symbol = self._symbol_from_row(row)
+            seal_row = seal_rows.get(symbol, {})
             change_pct = _float_or_zero(self._field_value(row, "涨跌幅"))
             five_min_speed_pct = _float_or_zero(self._field_value(row, "涨速", "区间涨跌幅"))
             turnover_cny = self._parse_cny_amount(self._field_value(row, "成交额"))
@@ -199,9 +205,18 @@ class JvQuantMarketDataAdapter:
                 self._field_value(row, "主力净额", "大单净额", "超大单净额")
             )
             big_order_net_inflow_ratio = self._ratio(main_net_inflow_cny, turnover_cny)
+            first_limit_up_time = self._time_or_unknown(
+                self._field_value(seal_row, "涨停首次封板时间", "首次涨停时间", "首次封板时间", "涨停时间")
+            )
+            seal_amount_cny = self._parse_cny_amount(self._field_value(seal_row, "涨停封单额", "封单金额", "封单额"))
+            seal_volume_shares = self._parse_share_amount(
+                self._field_value(seal_row, "涨停封单量", "封单量", "封单量(股)")
+            )
+            seal_to_turnover_ratio = _float_or_zero(self._field_value(seal_row, "涨停封成比", "封成比"))
             theme = self._theme_from_row(row)
             orderbook_quality = 50.0
             orderbook_notes: list[str] = []
+            queue_position_note = "Own-order queue position unavailable; no live order has been placed or tracked."
             if index < orderbook_limit:
                 try:
                     orderbook = self.get_stock_orderbook_snapshot(symbol)
@@ -211,12 +226,20 @@ class JvQuantMarketDataAdapter:
                     if total_volume:
                         orderbook_quality = round(100 * bid_volume / total_volume, 2)
                     if orderbook.best_bid_price is None and orderbook.best_ask_price is None:
+                        queue_position_note = (
+                            "Orderbook queue unavailable from provider; own-order queue position cannot be inferred."
+                        )
                         orderbook_notes.append("jvQuant orderbook returned no queue rows for this candidate.")
                     else:
+                        queue_position_note = self._queue_position_note(orderbook)
                         orderbook_notes.append(
                             f"jvQuant orderbook best_bid={orderbook.best_bid_price}, best_ask={orderbook.best_ask_price}."
                         )
                 except Exception as exc:
+                    queue_position_note = (
+                        "Orderbook queue unavailable because provider request failed; "
+                        "own-order queue position cannot be inferred."
+                    )
                     orderbook_notes.append(f"Orderbook unavailable for candidate scoring: {type(exc).__name__}.")
 
             grade = self._candidate_grade(
@@ -226,6 +249,9 @@ class JvQuantMarketDataAdapter:
                 big_order_net_inflow_ratio,
                 orderbook_quality,
                 theme_counts[theme],
+                first_limit_up_time,
+                seal_amount_cny,
+                seal_to_turnover_ratio,
             )
             estimated = self._estimated_seal_probability(
                 gate.action,
@@ -234,6 +260,9 @@ class JvQuantMarketDataAdapter:
                 big_order_net_inflow_ratio,
                 orderbook_quality,
                 theme_counts[theme],
+                first_limit_up_time,
+                seal_amount_cny,
+                seal_to_turnover_ratio,
             )
             grade_reason = self._candidate_grade_reason(
                 action=gate.action,
@@ -243,6 +272,10 @@ class JvQuantMarketDataAdapter:
                 big_order_net_inflow_ratio=big_order_net_inflow_ratio,
                 orderbook_quality=orderbook_quality,
                 theme_count=theme_counts[theme],
+                first_limit_up_time=first_limit_up_time,
+                seal_amount_cny=seal_amount_cny,
+                seal_to_turnover_ratio=seal_to_turnover_ratio,
+                queue_position_note=queue_position_note,
             )
 
             candidates.append(
@@ -253,6 +286,11 @@ class JvQuantMarketDataAdapter:
                     provider="jvQuant",
                     theme=theme,
                     previous_limit_up_time="unknown",
+                    first_limit_up_time=first_limit_up_time,
+                    seal_amount_cny=seal_amount_cny,
+                    seal_volume_shares=seal_volume_shares,
+                    seal_to_turnover_ratio=seal_to_turnover_ratio,
+                    queue_position_note=queue_position_note,
                     current_change_pct=change_pct,
                     five_min_speed_pct=five_min_speed_pct,
                     big_order_net_inflow_ratio=big_order_net_inflow_ratio,
@@ -267,6 +305,11 @@ class JvQuantMarketDataAdapter:
                         "jvQuant live-provider candidate: yesterday limit-up and today gain above 5%.",
                         "five_min_speed_pct and capital-flow ratio come from jvQuant semantic fields, not tick-by-tick trade classification.",
                         "Historical limit-up rates are not derived yet.",
+                        f"first_limit_up_time={first_limit_up_time}",
+                        f"seal_amount_cny={seal_amount_cny:.0f}",
+                        f"seal_volume_shares={seal_volume_shares:.0f}",
+                        f"seal_to_turnover_ratio={seal_to_turnover_ratio:.2f}",
+                        f"queue_position_note={queue_position_note}",
                         f"turnover_cny={turnover_cny:.0f}",
                         f"main_net_inflow_cny={main_net_inflow_cny:.0f}",
                         *orderbook_notes,
@@ -315,6 +358,10 @@ class JvQuantMarketDataAdapter:
                 f"Current change is {candidate.current_change_pct:.2f}%.",
                 f"Five-minute speed is {candidate.five_min_speed_pct:.2f}%.",
                 f"Capital-flow net inflow ratio is {candidate.big_order_net_inflow_ratio:.2f}.",
+                f"First limit-up time is {candidate.first_limit_up_time}.",
+                f"Seal amount is {candidate.seal_amount_cny:.0f} CNY; seal volume is {candidate.seal_volume_shares:.0f} shares.",
+                f"Seal-to-turnover ratio is {candidate.seal_to_turnover_ratio:.2f}.",
+                f"Queue position note: {candidate.queue_position_note}",
                 f"Theme is {candidate.theme}; same-theme candidate count is {candidate.same_theme_rising_count}.",
                 f"Orderbook quality score is {candidate.orderbook_quality_score:.2f}.",
                 f"Estimated seal probability is {candidate.estimated_seal_probability:.0%} from current coarse factors.",
@@ -322,15 +369,17 @@ class JvQuantMarketDataAdapter:
             risks=[
                 "Candidate pool is live-provider jvQuant; speed and capital-flow fields are semantic-query values, not tick-by-tick order classification.",
                 "Historical three-year limit-up success and next-day premium are placeholders.",
-                "First seal time, seal amount, queue position, and cancellation rules are not implemented yet.",
+                "True own-order queue position and cancellation rules require broker order/trade callbacks and are not implemented.",
             ],
             trigger_conditions=[
                 "Market sentiment gate should improve from defensive to selective or active for aggressive board-chasing.",
+                "First seal time should be early and seal amount should remain strong versus turnover.",
                 "Orderbook quality should remain strong during active trading hours.",
                 "Same-theme candidates should expand or the theme leader should remain sealed.",
             ],
             avoid_conditions=[
                 "Avoid if break-board rate remains high.",
+                "Avoid if seal amount decays quickly or first seal time is late without same-theme support.",
                 "Avoid if orderbook quality deteriorates or best ask expands sharply.",
                 "Avoid if the candidate falls out of the yesterday-limit-up strength pool.",
             ],
@@ -462,21 +511,31 @@ class JvQuantMarketDataAdapter:
             )
         return mapped_rows
 
+    def _rows_by_symbol(self, rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+        return {symbol: row for row in rows if (symbol := self._symbol_from_row(row))}
+
     def _query_count(self, payload: dict[str, Any]) -> int:
         data = payload.get("data", {}) if isinstance(payload, dict) else {}
         return _int_or_zero(data.get("count")) if isinstance(data, dict) else 0
 
     def _limitup_from_row(self, row: dict[str, Any]) -> LimitUpStock:
+        turnover_cny = self._parse_cny_amount(self._field_value(row, "成交额"))
+        seal_amount_cny = self._parse_cny_amount(self._field_value(row, "涨停封单额", "封单金额", "封单额"))
+        seal_to_turnover_ratio = _float_or_zero(self._field_value(row, "涨停封成比", "封成比"))
+        if seal_to_turnover_ratio == 0:
+            seal_to_turnover_ratio = self._ratio(seal_amount_cny, turnover_cny)
         return LimitUpStock(
             symbol=self._symbol_from_row(row),
             name=self._name_from_row(row),
             data_mode="live_provider",
             provider="jvQuant",
             theme=self._theme_from_row(row),
-            first_limit_up_time="unknown",
-            seal_amount_cny=0.0,
+            first_limit_up_time=self._time_or_unknown(
+                self._field_value(row, "涨停首次封板时间", "首次涨停时间", "首次封板时间", "涨停时间")
+            ),
+            seal_amount_cny=seal_amount_cny,
             free_float_market_cap_cny=0.0,
-            seal_amount_ratio=0.0,
+            seal_amount_ratio=seal_to_turnover_ratio,
             reopen_count=0,
             status="sealed",
         )
@@ -528,6 +587,33 @@ class JvQuantMarketDataAdapter:
         amount = _float_or_zero(text) * multiplier
         return -amount if negative else amount
 
+    def _parse_share_amount(self, value: Any) -> float:
+        text = str(value or "").strip().replace(",", "")
+        text = text.replace("股", "")
+        return self._parse_cny_amount(text)
+
+    def _time_or_unknown(self, value: Any) -> str:
+        text = str(value or "").strip()
+        if not text or text in {"0", "None", "nan", "NaN"}:
+            return "unknown"
+        return text
+
+    def _queue_position_note(self, orderbook: StockOrderbookSnapshot) -> str:
+        if not orderbook.bid_levels and not orderbook.ask_levels:
+            return "Orderbook queue unavailable from provider; own-order queue position cannot be inferred."
+        best_bid = orderbook.bid_levels[0] if orderbook.bid_levels else None
+        best_ask = orderbook.ask_levels[0] if orderbook.ask_levels else None
+        parts = ["Own-order queue position unavailable until Aegis Alpha tracks a submitted order."]
+        if best_bid is not None:
+            parts.append(
+                f"best_bid_queue price={best_bid.price}, volume={best_bid.volume_count:.0f}, queue_count={best_bid.queue_count}."
+            )
+        if best_ask is not None:
+            parts.append(
+                f"best_ask_queue price={best_ask.price}, volume={best_ask.volume_count:.0f}, queue_count={best_ask.queue_count}."
+            )
+        return " ".join(parts)
+
     def _ratio(self, numerator: float, denominator: float) -> float:
         if denominator == 0:
             return 0.0
@@ -570,17 +656,21 @@ class JvQuantMarketDataAdapter:
         big_order_net_inflow_ratio: float,
         orderbook_quality: float,
         theme_count: int,
+        first_limit_up_time: str,
+        seal_amount_cny: float,
+        seal_to_turnover_ratio: float,
     ):
         if action == "avoid":
             return "REJECT"
         if change_pct < 5:
             return "REJECT"
+        seal_quality = self._seal_quality_score(first_limit_up_time, seal_amount_cny, seal_to_turnover_ratio)
         if action == "defensive":
             return (
                 "B"
                 if change_pct >= 9.5
                 and theme_count >= 2
-                and (orderbook_quality >= 55 or big_order_net_inflow_ratio >= 0.03)
+                and (orderbook_quality >= 55 or big_order_net_inflow_ratio >= 0.03 or seal_quality >= 60)
                 else "C"
             )
         if (
@@ -589,9 +679,10 @@ class JvQuantMarketDataAdapter:
             and big_order_net_inflow_ratio >= 0.03
             and orderbook_quality >= 60
             and theme_count >= 2
+            and seal_quality >= 55
         ):
             return "A"
-        if change_pct >= 7 and (orderbook_quality >= 50 or big_order_net_inflow_ratio > 0):
+        if change_pct >= 7 and (orderbook_quality >= 50 or big_order_net_inflow_ratio > 0 or seal_quality >= 45):
             return "B"
         return "C"
 
@@ -604,7 +695,15 @@ class JvQuantMarketDataAdapter:
         big_order_net_inflow_ratio: float,
         orderbook_quality: float,
         theme_count: int,
+        first_limit_up_time: str,
+        seal_amount_cny: float,
+        seal_to_turnover_ratio: float,
+        queue_position_note: str,
     ) -> str:
+        seal_text = (
+            f"首次封板时间为 {first_limit_up_time}，封单额约 {seal_amount_cny / 100_000_000:.2f} 亿元，"
+            f"封成比为 {seal_to_turnover_ratio:.2f}"
+        )
         if grade == "REJECT":
             return (
                 "评级为 REJECT，因为当前市场闸门或个股强度不满足二板候选的最低观察条件，"
@@ -616,23 +715,24 @@ class JvQuantMarketDataAdapter:
                     f"评级为 C，主要因为市场闸门为 defensive，说明炸板率或市场风险偏高；"
                     f"虽然个股当前涨幅为 {change_pct:.2f}%，五分钟涨速为 {five_min_speed_pct:.2f}%，"
                     f"资金净流入占比为 {big_order_net_inflow_ratio:.2%}，但盘口质量评分为 {orderbook_quality:.1f}，"
-                    f"同题材候选数为 {theme_count}，还缺少历史封板数据和排队位置确认。"
+                    f"同题材候选数为 {theme_count}；{seal_text}。{queue_position_note}"
                 )
             return (
                 f"评级为 C，因为个股当前涨幅为 {change_pct:.2f}%，五分钟涨速为 {five_min_speed_pct:.2f}%，"
                 f"资金净流入占比为 {big_order_net_inflow_ratio:.2%}，但盘口质量、题材联动或数据完整性不足，"
-                "暂时只能作为观察对象。"
+                f"暂时只能作为观察对象；{seal_text}。"
             )
         if grade == "B":
             return (
                 f"评级为 B，因为个股当前涨幅达到 {change_pct:.2f}%，五分钟涨速为 {five_min_speed_pct:.2f}%，"
                 f"资金净流入占比为 {big_order_net_inflow_ratio:.2%}，同题材候选数为 {theme_count}，具备观察价值；"
-                f"但盘口质量评分为 {orderbook_quality:.1f}，且缺少封单质量、排队位置和历史溢价数据，不能提高到 A。"
+                f"盘口质量评分为 {orderbook_quality:.1f}，{seal_text}；但真实委托排队位置和历史溢价数据仍未接入，"
+                "不能提高到 A。"
             )
         return (
             f"评级为 A，因为市场闸门允许进攻，个股涨幅为 {change_pct:.2f}%，五分钟涨速为 "
             f"{five_min_speed_pct:.2f}%，资金净流入占比为 {big_order_net_inflow_ratio:.2%}，"
-            f"盘口质量评分为 {orderbook_quality:.1f}，且同题材候选数为 {theme_count}，多项条件同时较强；"
+            f"盘口质量评分为 {orderbook_quality:.1f}，同题材候选数为 {theme_count}，且{seal_text}；"
             "仍需在实盘时继续核验数据时效和封单稳定性。"
         )
 
@@ -644,6 +744,9 @@ class JvQuantMarketDataAdapter:
         big_order_net_inflow_ratio: float,
         orderbook_quality: float,
         theme_count: int,
+        first_limit_up_time: str,
+        seal_amount_cny: float,
+        seal_to_turnover_ratio: float,
     ) -> float:
         probability = 0.25
         probability += min(0.30, max(0.0, change_pct - 5.0) * 0.05)
@@ -651,6 +754,7 @@ class JvQuantMarketDataAdapter:
         probability += min(0.15, max(0.0, big_order_net_inflow_ratio) * 1.5)
         probability += min(0.20, max(0.0, orderbook_quality - 50.0) / 100.0)
         probability += min(0.15, theme_count * 0.03)
+        probability += min(0.12, self._seal_quality_score(first_limit_up_time, seal_amount_cny, seal_to_turnover_ratio) / 1000.0)
         if action == "active":
             probability += 0.10
         elif action == "defensive":
@@ -658,3 +762,26 @@ class JvQuantMarketDataAdapter:
         elif action == "avoid":
             probability -= 0.25
         return round(max(0.0, min(0.95, probability)), 4)
+
+    def _seal_quality_score(self, first_limit_up_time: str, seal_amount_cny: float, seal_to_turnover_ratio: float) -> float:
+        score = 0.0
+        if first_limit_up_time != "unknown":
+            if first_limit_up_time <= "09:45:00":
+                score += 35.0
+            elif first_limit_up_time <= "10:30:00":
+                score += 22.0
+            elif first_limit_up_time <= "14:30:00":
+                score += 10.0
+        if seal_amount_cny >= 300_000_000:
+            score += 30.0
+        elif seal_amount_cny >= 100_000_000:
+            score += 20.0
+        elif seal_amount_cny >= 30_000_000:
+            score += 10.0
+        if seal_to_turnover_ratio >= 5:
+            score += 25.0
+        elif seal_to_turnover_ratio >= 2:
+            score += 16.0
+        elif seal_to_turnover_ratio >= 1:
+            score += 8.0
+        return round(min(100.0, score), 2)

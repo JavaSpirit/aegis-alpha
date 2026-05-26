@@ -61,8 +61,9 @@ Current jvQuant coverage:
 - Coarse market sentiment gate derived from limit-up count, break-board rate, and theme breadth.
 - Semantic-query second-board candidate pool based on yesterday limit-up stocks with current strength.
 - Semantic-query five-minute speed and capital-flow net inflow ratio for second-board candidates.
+- Semantic-query first limit-up time, seal amount, seal volume, and seal-to-turnover ratio.
 - Single-symbol K-line snapshot.
-- Single-symbol level queue / orderbook summary.
+- Single-symbol level queue / orderbook summary. True own-order queue position remains unavailable until broker order/trade callbacks are introduced.
 
 Future adapters or jvQuant extensions may include:
 
