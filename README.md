@@ -119,12 +119,16 @@ Run a read-only jvQuant smoke test without printing secrets:
 .venv/bin/python scripts/smoke_jvquant_readonly.py --symbol 600519
 ```
 
-When `AEGIS_ALPHA_MARKET_DATA_PROVIDER=jvquant`, Hermes can access jvQuant-backed single-symbol data through Aegis Alpha MCP:
+When `AEGIS_ALPHA_MARKET_DATA_PROVIDER=jvquant`, Hermes can access jvQuant-backed market and single-symbol data through Aegis Alpha MCP:
 
+- `get_market_snapshot`
+- `get_market_sentiment_gate`
+- `get_limitup_pool`
+- `get_break_board_pool`
 - `get_stock_realtime_snapshot(symbol)`
 - `get_stock_orderbook_snapshot(symbol)`
 
-Market-wide radar tools still use mock data until provider-specific breadth, limit-up, and theme scanners are implemented.
+Second-board candidate scoring, historical limit-up statistics, and normalized theme strength still use mock or placeholder logic until dedicated scanners are implemented.
 
 ## Install Or Verify Hermes
 

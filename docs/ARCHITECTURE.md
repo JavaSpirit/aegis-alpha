@@ -18,7 +18,7 @@ Hermes Agent
   -> Signal models and explanation contracts
 ```
 
-The MVP uses `MockMarketDataAdapter`. Real providers should be added behind the same adapter boundary so the MCP tool contracts remain stable.
+The MVP keeps `MockMarketDataAdapter` for contract tests and provides a read-only `JvQuantMarketDataAdapter` for live-provider snapshots. Real providers stay behind the same adapter boundary so the MCP tool contracts remain stable.
 
 ## Hermes Companion Boundary
 
@@ -45,6 +45,7 @@ The MCP server exposes only read-only tools in the MVP:
 - Limit-up pool.
 - Break-board pool.
 - Realtime stock snapshot.
+- Orderbook snapshot.
 - Historical limit-up stats.
 - Theme strength.
 - Candidate explanation.
@@ -54,9 +55,15 @@ Each tool returns structured JSON-compatible data. Every response that depends o
 
 ## Data Adapter Direction
 
-Future adapters may include:
+Current jvQuant coverage:
 
-- jvQuant for Level-1, Level-2, order queue, and depth data.
+- Semantic-query market snapshot, limit-up pool, and break-board pool.
+- Coarse market sentiment gate derived from limit-up count, break-board rate, and theme breadth.
+- Single-symbol K-line snapshot.
+- Single-symbol level queue / orderbook summary.
+
+Future adapters or jvQuant extensions may include:
+
 - StockApi for limit-up pools, break-board pools, capital flow, and early-session signals.
 - MyQuant for broker-environment Level-2 data.
 - miniQMT or QMT for local terminal data and future trading integration.

@@ -4,6 +4,29 @@ from aegis_alpha.adapters.jvquant_market_data import JvQuantMarketDataAdapter, n
 
 
 class FakeJvQuantClient:
+    def query(self, query: str, page: int, sort_type: int, sort_key: str) -> dict:
+        if "今日涨停" in query:
+            rows = [
+                ["001366", "播恩集团", "9.99", "饲料", "否", "涨停", "18.61", "2.66亿"],
+                ["002001", "新和成", "10.00", "合成生物", "否", "涨停", "32.10", "4.12亿"],
+            ]
+        elif "炸板" in query:
+            rows = [
+                ["603278", "大业股份", "6.00", "通用设备", "否", "1", "14.14", "8.37亿"],
+            ]
+        else:
+            rows = [["600839", "四川长虹", "-2.57", "黑色家电", "上交所主板", "否", "7.95", "6.47亿"]]
+
+        return {
+            "code": 0,
+            "message": "",
+            "data": {
+                "count": len(rows),
+                "fields": ["代码", "名称", "涨跌幅", "行业", "是否ST", "涨停", "最新价", "成交额"],
+                "list": rows,
+            },
+        }
+
     def kline(self, code: str, cate: str, fq: str, type: str, limit: int) -> dict:
         return {
             "code": code,
@@ -107,3 +130,25 @@ def test_jvquant_orderbook_snapshot_from_fake_client() -> None:
     assert snapshot.best_ask_price == 1306.0
     assert len(snapshot.bid_levels) == 2
     assert len(snapshot.ask_levels) == 2
+
+
+def test_jvquant_market_gate_from_semantic_query() -> None:
+    adapter = JvQuantMarketDataAdapter(token="fake")
+    adapter._client = FakeJvQuantClient()
+
+    snapshot = adapter.get_market_snapshot()
+    gate = adapter.get_market_sentiment_gate()
+    limitup_pool = adapter.get_limitup_pool()
+    break_pool = adapter.get_break_board_pool()
+
+    assert snapshot.data_mode == "live_provider"
+    assert snapshot.provider == "jvQuant"
+    assert snapshot.limit_up_count == 2
+    assert snapshot.break_board_count == 1
+    assert snapshot.break_board_rate == 0.3333
+    assert snapshot.leading_themes
+    assert gate.data_mode == "live_provider"
+    assert gate.action in {"active", "selective", "defensive", "avoid"}
+    assert limitup_pool[0].data_mode == "live_provider"
+    assert limitup_pool[0].status == "sealed"
+    assert break_pool[0].current_change_pct == 6.0

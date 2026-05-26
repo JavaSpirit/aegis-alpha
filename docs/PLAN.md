@@ -38,6 +38,7 @@ Initial tools:
 - `get_limitup_pool`
 - `get_break_board_pool`
 - `get_stock_realtime_snapshot`
+- `get_stock_orderbook_snapshot`
 - `get_stock_history_limitup_stats`
 - `get_theme_strength`
 - `get_second_board_candidates`

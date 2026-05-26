@@ -105,6 +105,22 @@ def main() -> int:
             "symbol": args.symbol,
             "secrets_printed": False,
             "calls": {
+                "limitup_query": summarize_payload(
+                    client.query(
+                        "今日涨停,非ST,股票代码,股票简称,涨跌幅,价格,成交额,行业",
+                        1,
+                        1,
+                        "涨跌幅",
+                    )
+                ),
+                "break_board_query": summarize_payload(
+                    client.query(
+                        "炸板,非ST,股票代码,股票简称,涨跌幅,价格,成交额,行业",
+                        1,
+                        1,
+                        "涨跌幅",
+                    )
+                ),
                 "kline_day_2": summarize_payload(
                     client.kline(args.symbol, "stock", "前复权", "day", 2)
                 ),

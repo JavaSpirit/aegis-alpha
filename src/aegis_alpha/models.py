@@ -13,6 +13,8 @@ class MarketSnapshot(BaseModel):
     market: str
     trading_day: str
     timestamp: str
+    data_mode: str = "mock"
+    provider: str = "mock"
     sentiment: str
     limit_up_count: int
     break_board_count: int
@@ -24,6 +26,8 @@ class MarketSnapshot(BaseModel):
 class MarketSentimentGate(BaseModel):
     trading_day: str
     timestamp: str
+    data_mode: str = "mock"
+    provider: str = "mock"
     action: MarketAction
     score: float = Field(ge=0, le=100)
     limit_up_count: int
@@ -38,6 +42,8 @@ class MarketSentimentGate(BaseModel):
 class LimitUpStock(BaseModel):
     symbol: str
     name: str
+    data_mode: str = "mock"
+    provider: str = "mock"
     theme: str
     first_limit_up_time: str
     seal_amount_cny: float
@@ -50,6 +56,8 @@ class LimitUpStock(BaseModel):
 class BreakBoardStock(BaseModel):
     symbol: str
     name: str
+    data_mode: str = "mock"
+    provider: str = "mock"
     theme: str
     first_break_time: str
     max_seal_amount_cny: float
