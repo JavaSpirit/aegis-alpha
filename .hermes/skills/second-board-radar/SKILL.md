@@ -70,6 +70,7 @@ Before grading during active trading hours, verify the timestamp of speed, big-o
 7. Produce a watchlist report with grades `A`, `B`, `C`, or `REJECT`.
 8. Always include structured trigger conditions and avoid conditions.
 9. Always state both model identity and market-data identity. Keep `llm_provider` / `llm_model` separate from `market_data_mode` / `market_data_provider`.
+10. After every candidate grade, explain the reason in natural Chinese. Prefer the MCP `grade_reason` field when present; if it is absent, synthesize one from the returned metrics without inventing missing data.
 
 ## Candidate Interpretation Rules
 
@@ -94,6 +95,7 @@ Use this structure for user-facing answers:
 
 候选:
 1. 代码 名称 评级
+   评级原因: 用一两句自然语言说明为什么是这个评级，必须点名主要加分项和主要扣分项。
    观察:
    风险:
    触发条件:

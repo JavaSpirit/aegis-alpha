@@ -220,6 +220,10 @@ class MockMarketDataAdapter:
                 three_year_sealed_next_day_gap_up_rate=0.58,
                 estimated_seal_probability=0.67,
                 grade="B",
+                grade_reason=(
+                    "评级为 B，因为同题材联动和盘口质量较好，但仍是 mock 数据，"
+                    "且没有真实 Level-2 大单净流入与封单排队验证。"
+                ),
                 notes=[
                     "Yesterday limit-up stock with same-theme momentum in mock data.",
                     "Watch for sell-side depletion before any board-chasing decision.",
@@ -239,6 +243,10 @@ class MockMarketDataAdapter:
                 three_year_sealed_next_day_gap_up_rate=0.44,
                 estimated_seal_probability=0.46,
                 grade="C",
+                grade_reason=(
+                    "评级为 C，因为题材虽活跃，但盘口质量低于偏好阈值，"
+                    "模拟封板概率也不足以进入重点观察。"
+                ),
                 notes=[
                     "Theme is active, but orderbook quality is below the preferred threshold.",
                     "Mock candidate should remain in observation mode.",
@@ -254,6 +262,7 @@ class MockMarketDataAdapter:
             return CandidateExplanation(
                 symbol=symbol,
                 grade="REJECT",
+                grade_reason="评级为 REJECT，因为该股票不在昨日有效涨停候选池中，不能按二板模型评分。",
                 observations=[
                     "Symbol is not in the mock yesterday-limit-up candidate pool.",
                 ],
@@ -273,6 +282,7 @@ class MockMarketDataAdapter:
         return CandidateExplanation(
             symbol=symbol,
             grade=candidate.grade,
+            grade_reason=candidate.grade_reason,
             observations=[
                 f"Five-minute speed is {candidate.five_min_speed_pct:.1f}%.",
                 f"Big-order net inflow ratio is {candidate.big_order_net_inflow_ratio:.2f}.",
@@ -302,6 +312,10 @@ class MockMarketDataAdapter:
         return CandidateExplanation(
             symbol=symbol,
             grade="B",
+            grade_reason=(
+                "评级为 B，因为 mock 数据显示题材强度、资金方向和买盘质量都偏正面，"
+                "但真实行情与历史统计尚未接入。"
+            ),
             observations=[
                 "Theme strength is high in mock data.",
                 "Big-order net inflow is positive.",

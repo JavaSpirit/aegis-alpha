@@ -139,12 +139,14 @@ class SecondBoardCandidate(BaseModel):
     three_year_sealed_next_day_gap_up_rate: float = Field(ge=0, le=1)
     estimated_seal_probability: float = Field(ge=0, le=1)
     grade: CandidateGrade
+    grade_reason: str = ""
     notes: list[str]
 
 
 class CandidateExplanation(BaseModel):
     symbol: str
     grade: CandidateGrade
+    grade_reason: str = ""
     observations: list[str]
     risks: list[str]
     trigger_conditions: list[str]

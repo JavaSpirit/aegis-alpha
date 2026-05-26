@@ -216,6 +216,13 @@ class JvQuantMarketDataAdapter:
 
             grade = self._candidate_grade(gate.action, change_pct, orderbook_quality, theme_counts[theme])
             estimated = self._estimated_seal_probability(gate.action, change_pct, orderbook_quality, theme_counts[theme])
+            grade_reason = self._candidate_grade_reason(
+                action=gate.action,
+                grade=grade,
+                change_pct=change_pct,
+                orderbook_quality=orderbook_quality,
+                theme_count=theme_counts[theme],
+            )
 
             candidates.append(
                 SecondBoardCandidate(
@@ -234,6 +241,7 @@ class JvQuantMarketDataAdapter:
                     three_year_sealed_next_day_gap_up_rate=0.0,
                     estimated_seal_probability=estimated,
                     grade=grade,
+                    grade_reason=grade_reason,
                     notes=[
                         "jvQuant live-provider candidate: yesterday limit-up and today gain above 5%.",
                         "five_min_speed_pct, big_order_net_inflow_ratio, and historical rates are not derived yet.",
@@ -256,6 +264,10 @@ class JvQuantMarketDataAdapter:
             return CandidateExplanation(
                 symbol=symbol,
                 grade="REJECT",
+                grade_reason=(
+                    "评级为 REJECT，因为该股票不在当前 jvQuant 二板候选池中；"
+                    "当前候选池只覆盖昨日涨停且今日涨幅大于 5% 的非 ST 股票。"
+                ),
                 observations=[
                     "Symbol is not in the current jvQuant live-provider second-board candidate pool.",
                 ],
@@ -275,6 +287,7 @@ class JvQuantMarketDataAdapter:
         return CandidateExplanation(
             symbol=candidate.symbol,
             grade=candidate.grade,
+            grade_reason=candidate.grade_reason,
             observations=[
                 f"Current change is {candidate.current_change_pct:.2f}%.",
                 f"Theme is {candidate.theme}; same-theme candidate count is {candidate.same_theme_rising_count}.",
@@ -534,6 +547,42 @@ class JvQuantMarketDataAdapter:
         if change_pct >= 7 and orderbook_quality >= 50:
             return "B"
         return "C"
+
+    def _candidate_grade_reason(
+        self,
+        action: str,
+        grade: str,
+        change_pct: float,
+        orderbook_quality: float,
+        theme_count: int,
+    ) -> str:
+        if grade == "REJECT":
+            return (
+                "评级为 REJECT，因为当前市场闸门或个股强度不满足二板候选的最低观察条件，"
+                "不应按打板候选处理。"
+            )
+        if grade == "C":
+            if action == "defensive":
+                return (
+                    f"评级为 C，主要因为市场闸门为 defensive，说明炸板率或市场风险偏高；"
+                    f"虽然个股当前涨幅为 {change_pct:.2f}%，但盘口质量评分为 {orderbook_quality:.1f}，"
+                    f"同题材候选数为 {theme_count}，还缺少五分钟涨速、大单净流入和历史封板数据确认。"
+                )
+            return (
+                f"评级为 C，因为个股当前涨幅为 {change_pct:.2f}%，但盘口质量、题材联动或数据完整性不足，"
+                "暂时只能作为观察对象。"
+            )
+        if grade == "B":
+            return (
+                f"评级为 B，因为个股当前涨幅达到 {change_pct:.2f}%，盘口质量评分为 {orderbook_quality:.1f}，"
+                f"同题材候选数为 {theme_count}，具备观察价值；但仍缺少五分钟涨速、大单净流入、"
+                "封单质量和历史溢价数据，不能提高到 A。"
+            )
+        return (
+            f"评级为 A，因为市场闸门允许进攻，个股涨幅为 {change_pct:.2f}%，盘口质量评分为 "
+            f"{orderbook_quality:.1f}，且同题材候选数为 {theme_count}，多项条件同时较强；"
+            "仍需在实盘时继续核验数据时效和封单稳定性。"
+        )
 
     def _estimated_seal_probability(
         self,

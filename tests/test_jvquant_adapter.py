@@ -173,4 +173,6 @@ def test_jvquant_second_board_candidates_from_semantic_query() -> None:
     assert candidates[0].current_change_pct == 9.99
     assert candidates[0].same_theme_rising_count >= 1
     assert candidates[0].grade in {"A", "B", "C", "REJECT"}
+    assert candidates[0].grade_reason
+    assert explanation.grade_reason
     assert "not investment advice" in explanation.disclaimer.lower()

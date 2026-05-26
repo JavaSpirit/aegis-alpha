@@ -5,6 +5,7 @@ def test_explain_candidate_contract() -> None:
     explanation = MockMarketDataAdapter().explain_candidate("600000.SH").model_dump()
 
     assert explanation["grade"] in {"A", "B", "C", "REJECT"}
+    assert explanation["grade_reason"]
     assert explanation["observations"]
     assert explanation["risks"]
     assert explanation["trigger_conditions"]
@@ -31,6 +32,7 @@ def test_second_board_explanation_contract() -> None:
     explanation = MockMarketDataAdapter().explain_second_board_candidate("002230.SZ").model_dump()
 
     assert explanation["grade"] in {"A", "B", "C", "REJECT"}
+    assert explanation["grade_reason"]
     assert explanation["observations"]
     assert explanation["trigger_conditions"]
     assert explanation["avoid_conditions"]
