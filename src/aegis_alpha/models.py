@@ -137,6 +137,8 @@ class SecondBoardCandidate(BaseModel):
     queue_position_note: str = ""
     current_change_pct: float
     five_min_speed_pct: float
+    five_min_speed_window: str = "unknown"
+    five_min_speed_timestamp: str = ""
     big_order_net_inflow_ratio: float = Field(ge=-1, le=1)
     same_theme_rising_count: int
     orderbook_quality_score: float = Field(ge=0, le=100)

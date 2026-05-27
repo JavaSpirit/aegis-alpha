@@ -130,7 +130,7 @@ When `AEGIS_ALPHA_MARKET_DATA_PROVIDER=jvquant`, Hermes can access jvQuant-backe
 - `get_stock_realtime_snapshot(symbol)`
 - `get_stock_orderbook_snapshot(symbol)`
 
-The second-board candidate pool is currently derived from jvQuant semantic queries for yesterday limit-up stocks with current strength. Five-minute speed, capital-flow net inflow ratio, first limit-up time, seal amount, seal volume, and seal-to-turnover ratio come from jvQuant semantic fields when available. True own-order queue position still requires broker order/trade callbacks, so the current output only exposes a queue-position note from the read-only orderbook summary. Historical limit-up statistics and normalized theme strength still use placeholders until dedicated scanners are implemented.
+The second-board candidate pool is currently derived from jvQuant semantic queries for yesterday limit-up stocks with current strength. Five-minute speed, capital-flow net inflow ratio, first limit-up time, seal amount, seal volume, and seal-to-turnover ratio come from jvQuant semantic fields when available. Five-minute speed is labeled as `provider_latest_rolling_5m` because jvQuant does not expose the exact start/end time for that semantic field; Aegis Alpha records the local query timestamp in `five_min_speed_timestamp`. True own-order queue position still requires broker order/trade callbacks, so the current output only exposes a queue-position note from the read-only orderbook summary. Historical limit-up statistics and normalized theme strength still use placeholders until dedicated scanners are implemented.
 
 ## Install Or Verify Hermes
 

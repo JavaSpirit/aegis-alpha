@@ -189,6 +189,8 @@ class JvQuantMarketDataAdapter:
         )
         rows = self._query_rows(payload)
         seal_rows = self._rows_by_symbol(self._query_rows(seal_payload))
+        speed_timestamp = _now()
+        speed_window = "provider_latest_rolling_5m"
         max_candidates = _int_or_zero(os.environ.get("AEGIS_ALPHA_SECOND_BOARD_MAX_CANDIDATES")) or 12
         orderbook_limit = _int_or_zero(os.environ.get("AEGIS_ALPHA_SECOND_BOARD_ORDERBOOK_LIMIT")) or 5
         theme_counts = Counter(self._theme_from_row(row) for row in rows)
@@ -293,6 +295,8 @@ class JvQuantMarketDataAdapter:
                     queue_position_note=queue_position_note,
                     current_change_pct=change_pct,
                     five_min_speed_pct=five_min_speed_pct,
+                    five_min_speed_window=speed_window,
+                    five_min_speed_timestamp=speed_timestamp,
                     big_order_net_inflow_ratio=big_order_net_inflow_ratio,
                     same_theme_rising_count=theme_counts[theme],
                     orderbook_quality_score=orderbook_quality,
@@ -303,8 +307,11 @@ class JvQuantMarketDataAdapter:
                     grade_reason=grade_reason,
                     notes=[
                         "jvQuant live-provider candidate: yesterday limit-up and today gain above 5%.",
-                        "five_min_speed_pct and capital-flow ratio come from jvQuant semantic fields, not tick-by-tick trade classification.",
+                        "five_min_speed_pct comes from a jvQuant semantic latest rolling 5-minute field; exact start/end are not provided by the provider.",
+                        "capital-flow ratio comes from jvQuant semantic fields, not tick-by-tick trade classification.",
                         "Historical limit-up rates are not derived yet.",
+                        f"five_min_speed_window={speed_window}",
+                        f"five_min_speed_timestamp={speed_timestamp}",
                         f"first_limit_up_time={first_limit_up_time}",
                         f"seal_amount_cny={seal_amount_cny:.0f}",
                         f"seal_volume_shares={seal_volume_shares:.0f}",
@@ -357,6 +364,7 @@ class JvQuantMarketDataAdapter:
             observations=[
                 f"Current change is {candidate.current_change_pct:.2f}%.",
                 f"Five-minute speed is {candidate.five_min_speed_pct:.2f}%.",
+                f"Five-minute speed window is {candidate.five_min_speed_window}; timestamp is {candidate.five_min_speed_timestamp}.",
                 f"Capital-flow net inflow ratio is {candidate.big_order_net_inflow_ratio:.2f}.",
                 f"First limit-up time is {candidate.first_limit_up_time}.",
                 f"Seal amount is {candidate.seal_amount_cny:.0f} CNY; seal volume is {candidate.seal_volume_shares:.0f} shares.",

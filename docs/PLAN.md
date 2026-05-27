@@ -51,7 +51,7 @@ The output must stay structured, timestamped, and explicit about data quality. `
 
 Add real-time adapters for providers such as jvQuant, StockApi, MyQuant, or miniQMT.
 
-Current jvQuant-backed coverage includes market gate, limit-up pool, break-board pool, single-symbol snapshots, orderbook snapshots, a coarse second-board candidate pool, semantic-query five-minute speed, semantic-query capital-flow net inflow ratio, first limit-up time, seal amount, seal volume, and seal-to-turnover ratio. True own-order queue position still requires broker order/trade callbacks, so Aegis Alpha currently exposes a read-only queue-position note instead of a real order position. The next gaps are tick-level big-order classification and historical follow-through statistics.
+Current jvQuant-backed coverage includes market gate, limit-up pool, break-board pool, single-symbol snapshots, orderbook snapshots, a coarse second-board candidate pool, semantic-query five-minute speed with a local query timestamp, semantic-query capital-flow net inflow ratio, first limit-up time, seal amount, seal volume, and seal-to-turnover ratio. The five-minute speed window is labeled as provider latest rolling 5m until exact minute-bar or tick windows are implemented. True own-order queue position still requires broker order/trade callbacks, so Aegis Alpha currently exposes a read-only queue-position note instead of a real order position. The next gaps are tick-level big-order classification and historical follow-through statistics.
 
 Core indicators:
 

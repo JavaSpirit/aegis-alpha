@@ -217,6 +217,8 @@ def test_jvquant_second_board_candidates_from_semantic_query() -> None:
     assert candidates[0].provider == "jvQuant"
     assert candidates[0].current_change_pct == 9.99
     assert candidates[0].five_min_speed_pct == 2.10
+    assert candidates[0].five_min_speed_window == "provider_latest_rolling_5m"
+    assert candidates[0].five_min_speed_timestamp
     assert candidates[0].big_order_net_inflow_ratio > 0
     assert candidates[0].first_limit_up_time == "09:42:18"
     assert candidates[0].seal_amount_cny == 128_000_000
@@ -227,4 +229,5 @@ def test_jvquant_second_board_candidates_from_semantic_query() -> None:
     assert candidates[0].grade in {"A", "B", "C", "REJECT"}
     assert candidates[0].grade_reason
     assert explanation.grade_reason
+    assert any("Five-minute speed window" in observation for observation in explanation.observations)
     assert "not investment advice" in explanation.disclaimer.lower()
