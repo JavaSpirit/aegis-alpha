@@ -47,6 +47,7 @@ The skill expects Aegis Alpha MCP to expose:
 
 - `get_market_sentiment_gate`
 - `get_second_board_candidates`
+- `get_second_board_candidate_data_quality`
 - `explain_second_board_candidate`
 - `get_stock_realtime_snapshot`
 - `get_theme_strength`

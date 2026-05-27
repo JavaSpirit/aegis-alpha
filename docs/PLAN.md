@@ -53,7 +53,7 @@ Add real-time adapters for providers such as jvQuant, StockApi, MyQuant, or mini
 
 Current jvQuant-backed coverage includes market gate, limit-up pool, break-board pool, single-symbol snapshots, orderbook snapshots, a coarse second-board candidate pool, semantic-query five-minute speed with parsed provider windows when available, semantic-query capital-flow net inflow ratio, first limit-up time, seal amount, seal volume, and seal-to-turnover ratio. Exact minute-bar or tick recalculation is still pending. True own-order queue position still requires broker order/trade callbacks, so Aegis Alpha currently exposes a read-only queue-position note instead of a real order position. The next gaps are tick-level big-order classification and historical follow-through statistics.
 
-The candidate contract now includes `data_quality` metadata per core signal. Keep expanding this layer before making strategy decisions stricter: every signal should declare its provider source, raw field name, timestamp, confidence, grading usability, and limitations.
+The candidate contract now includes `data_quality` metadata per core signal. Keep expanding this layer before making strategy decisions stricter: every signal should declare its provider source, raw field name, timestamp, confidence, grading usability, limitations, and evidence. Evidence authority must distinguish official docs, observed API probes, and internal inference.
 
 Core indicators:
 

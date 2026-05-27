@@ -79,6 +79,33 @@ def get_second_board_candidates() -> list[dict]:
 
 
 @mcp.tool
+def get_second_board_candidate_data_quality(symbol: str) -> dict:
+    """Return compact data-quality evidence for one second-board candidate."""
+
+    def _quality(adapter: Any) -> dict:
+        normalized = symbol.strip().upper().split(".", 1)[0]
+        for candidate in adapter.get_second_board_candidates():
+            if candidate.symbol == symbol or candidate.symbol == normalized:
+                return {
+                    "symbol": candidate.symbol,
+                    "name": candidate.name,
+                    "data_mode": candidate.data_mode,
+                    "provider": candidate.provider,
+                    "data_quality": {
+                        key: value.model_dump()
+                        for key, value in candidate.data_quality.items()
+                    },
+                }
+        return {
+            "symbol": symbol,
+            "data_mode": "unavailable",
+            "error": "Candidate not found in current second-board pool.",
+        }
+
+    return _call_tool(_quality)
+
+
+@mcp.tool
 def explain_candidate(symbol: str) -> dict:
     """Explain a watchlist candidate without issuing buy or sell instructions."""
     return _call_tool(lambda adapter: adapter.explain_candidate(symbol).model_dump())

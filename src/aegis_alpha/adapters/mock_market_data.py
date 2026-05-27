@@ -12,6 +12,7 @@ from aegis_alpha.models import (
     MarketSnapshot,
     OrderbookQueueLevel,
     SecondBoardCandidate,
+    SignalEvidence,
     SignalMetadata,
     StockOrderbookSnapshot,
     StockRealtimeSnapshot,
@@ -273,6 +274,14 @@ class MockMarketDataAdapter:
 
     def _mock_second_board_data_quality(self) -> dict[str, SignalMetadata]:
         timestamp = "2026-05-26T10:15:00+08:00"
+        mock_evidence = [
+            SignalEvidence(
+                authority="internal_inference",
+                source="aegis_alpha.mock",
+                detail="Mock value used for contract tests and demos only.",
+                observed_at=timestamp,
+            )
+        ]
         return {
             "five_min_speed": SignalMetadata(
                 source="mock",
@@ -281,6 +290,7 @@ class MockMarketDataAdapter:
                 confidence="placeholder",
                 usable_for_grading=False,
                 limitations=["Mock-only value for contract tests."],
+                evidence=mock_evidence,
             ),
             "capital_flow": SignalMetadata(
                 source="mock",
@@ -289,6 +299,7 @@ class MockMarketDataAdapter:
                 confidence="placeholder",
                 usable_for_grading=False,
                 limitations=["Mock-only value, not Level-2 trade classification."],
+                evidence=mock_evidence,
             ),
             "seal_metrics": SignalMetadata(
                 source="mock",
@@ -297,6 +308,7 @@ class MockMarketDataAdapter:
                 confidence="placeholder",
                 usable_for_grading=False,
                 limitations=["Mock-only seal data."],
+                evidence=mock_evidence,
             ),
             "orderbook_queue": SignalMetadata(
                 source="mock",
@@ -305,6 +317,7 @@ class MockMarketDataAdapter:
                 confidence="placeholder",
                 usable_for_grading=False,
                 limitations=["Mock-only queue summary; not own-order queue position."],
+                evidence=mock_evidence,
             ),
             "history_stats": SignalMetadata(
                 source="mock",
@@ -313,6 +326,7 @@ class MockMarketDataAdapter:
                 confidence="placeholder",
                 usable_for_grading=False,
                 limitations=["Mock-only historical rates."],
+                evidence=mock_evidence,
             ),
         }
 

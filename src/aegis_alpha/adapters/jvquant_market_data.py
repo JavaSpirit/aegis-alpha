@@ -17,6 +17,7 @@ from aegis_alpha.models import (
     MarketSnapshot,
     OrderbookQueueLevel,
     SecondBoardCandidate,
+    SignalEvidence,
     SignalMetadata,
     StockOrderbookSnapshot,
     StockRealtimeSnapshot,
@@ -680,6 +681,18 @@ class JvQuantMarketDataAdapter:
         has_orderbook_rows: bool,
         orderbook_timestamp: str,
     ) -> dict[str, SignalMetadata]:
+        semantic_query_doc = SignalEvidence(
+            authority="official_doc",
+            source="https://jvquant.com/wiki/",
+            detail="jvQuant documentation lists semantic analysis database and comprehensive data query capabilities.",
+            observed_at=query_timestamp,
+        )
+        level_queue_doc = SignalEvidence(
+            authority="official_doc",
+            source="https://jvquant.com/wiki/",
+            detail="jvQuant documentation lists沪深Level2千档盘口队列 / level queue capabilities.",
+            observed_at=query_timestamp,
+        )
         return {
             "five_min_speed": SignalMetadata(
                 source="jvquant.semantic_query",
@@ -696,6 +709,25 @@ class JvQuantMarketDataAdapter:
                     ),
                     "Not independently recalculated from minute bars or ticks yet.",
                 ],
+                evidence=[
+                    semantic_query_doc,
+                    SignalEvidence(
+                        authority="observed_probe",
+                        source="docs/JVQUANT_FIELD_MAP.md",
+                        detail=(
+                            f"Observed jvQuant speed field returned a parseable window: {speed_window}."
+                            if has_exact_speed_window
+                            else "Observed jvQuant speed field returned without a parseable window."
+                        ),
+                        observed_at=speed_timestamp,
+                    ),
+                    SignalEvidence(
+                        authority="internal_inference",
+                        source="aegis_alpha.adapter",
+                        detail="Confidence is high only when a provider window is parsed; otherwise medium.",
+                        observed_at=query_timestamp,
+                    ),
+                ],
             ),
             "capital_flow": SignalMetadata(
                 source="jvquant.semantic_query",
@@ -706,6 +738,21 @@ class JvQuantMarketDataAdapter:
                 limitations=[
                     "Provider semantic aggregation, not Aegis Alpha tick-by-tick big-order classification.",
                     "Zero may mean neutral flow or provider field unavailable for the candidate.",
+                ],
+                evidence=[
+                    semantic_query_doc,
+                    SignalEvidence(
+                        authority="observed_probe",
+                        source="docs/JVQUANT_FIELD_MAP.md",
+                        detail="Observed jvQuant semantic query returns 主力净额 fields for current candidates.",
+                        observed_at=query_timestamp,
+                    ),
+                    SignalEvidence(
+                        authority="internal_inference",
+                        source="aegis_alpha.adapter",
+                        detail="Ratio is computed by Aegis Alpha as capital-flow amount divided by turnover.",
+                        observed_at=query_timestamp,
+                    ),
                 ],
             ),
             "seal_metrics": SignalMetadata(
@@ -718,6 +765,21 @@ class JvQuantMarketDataAdapter:
                     "Provider semantic snapshot; Aegis Alpha does not yet verify whether this is current, max, or close seal amount.",
                     "Missing values should not be interpolated.",
                 ],
+                evidence=[
+                    semantic_query_doc,
+                    SignalEvidence(
+                        authority="observed_probe",
+                        source="docs/JVQUANT_FIELD_MAP.md",
+                        detail="Observed jvQuant semantic query returns first seal time, seal amount, seal volume, and seal-to-turnover fields.",
+                        observed_at=query_timestamp,
+                    ),
+                    SignalEvidence(
+                        authority="internal_inference",
+                        source="aegis_alpha.adapter",
+                        detail="Seal metrics are medium confidence until current/max/close seal semantics are confirmed from official docs or tick replay.",
+                        observed_at=query_timestamp,
+                    ),
+                ],
             ),
             "orderbook_queue": SignalMetadata(
                 source="jvquant.level_queue",
@@ -729,6 +791,25 @@ class JvQuantMarketDataAdapter:
                     "Read-only orderbook summary, not own-order queue position.",
                     "True queue position requires broker order and trade callbacks.",
                 ],
+                evidence=[
+                    level_queue_doc,
+                    SignalEvidence(
+                        authority="observed_probe",
+                        source="jvquant.level_queue",
+                        detail=(
+                            "Observed level_queue rows for this candidate."
+                            if has_orderbook_rows
+                            else "Provider returned no level_queue rows for this candidate at request time."
+                        ),
+                        observed_at=orderbook_timestamp,
+                    ),
+                    SignalEvidence(
+                        authority="internal_inference",
+                        source="aegis_alpha.adapter",
+                        detail="Own-order queue position cannot be inferred without broker order/trade callbacks.",
+                        observed_at=query_timestamp,
+                    ),
+                ],
             ),
             "history_stats": SignalMetadata(
                 source="aegis_alpha.placeholder",
@@ -739,6 +820,14 @@ class JvQuantMarketDataAdapter:
                 limitations=[
                     "Historical second-board sample library is not implemented yet.",
                     "Do not use zero placeholder rates as real historical probabilities.",
+                ],
+                evidence=[
+                    SignalEvidence(
+                        authority="internal_inference",
+                        source="aegis_alpha.placeholder",
+                        detail="Historical fields are present in the contract but not yet backed by a sample database.",
+                        observed_at=query_timestamp,
+                    ),
                 ],
             ),
         }

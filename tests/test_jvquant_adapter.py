@@ -233,6 +233,15 @@ def test_jvquant_second_board_candidates_from_semantic_query() -> None:
     assert candidates[0].big_order_net_inflow_ratio > 0
     assert candidates[0].data_quality["five_min_speed"].source == "jvquant.semantic_query"
     assert candidates[0].data_quality["five_min_speed"].confidence == "high"
+    assert {item.authority for item in candidates[0].data_quality["five_min_speed"].evidence} == {
+        "official_doc",
+        "observed_probe",
+        "internal_inference",
+    }
+    assert any(
+        item.authority == "internal_inference"
+        for item in candidates[0].data_quality["seal_metrics"].evidence
+    )
     assert candidates[0].data_quality["history_stats"].usable_for_grading is False
     assert candidates[0].first_limit_up_time == "09:42:18"
     assert candidates[0].seal_amount_cny == 128_000_000

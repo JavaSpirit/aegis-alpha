@@ -38,6 +38,7 @@ Core tools:
 
 - `get_market_sentiment_gate`
 - `get_second_board_candidates`
+- `get_second_board_candidate_data_quality`
 - `explain_second_board_candidate`
 - `get_stock_realtime_snapshot`
 - `get_theme_strength`
@@ -71,6 +72,7 @@ Before grading during active trading hours, verify the timestamp of speed, big-o
 8. Always include structured trigger conditions and avoid conditions.
 9. Always state both model identity and market-data identity. Keep `llm_provider` / `llm_model` separate from `market_data_mode` / `market_data_provider`.
 10. After every candidate grade, explain the reason in natural Chinese. Prefer the MCP `grade_reason` field when present; if it is absent, synthesize one from the returned metrics without inventing missing data.
+11. If evidence details are needed, prefer `get_second_board_candidate_data_quality(symbol)` over fetching the full candidate pool again, to avoid tool-output truncation.
 
 ## Candidate Interpretation Rules
 
@@ -97,6 +99,7 @@ Use this structure for user-facing answers:
 1. 代码 名称 评级
    评级原因: 用一两句自然语言说明为什么是这个评级，必须点名主要加分项和主要扣分项。
    涨速数据: five_min_speed_pct / five_min_speed_window / five_min_speed_timestamp / data_quality.five_min_speed
+   证据层级: official_doc / observed_probe / internal_inference 中实际出现的 authority
    封板数据: 首次封板时间 / 封单额 / 封成比 / 排队位置说明
    观察:
    风险:

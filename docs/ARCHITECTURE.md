@@ -64,7 +64,7 @@ Current jvQuant coverage:
 - Semantic-query first limit-up time, seal amount, seal volume, and seal-to-turnover ratio.
 - Single-symbol K-line snapshot.
 - Single-symbol level queue / orderbook summary. True own-order queue position remains unavailable until broker order/trade callbacks are introduced.
-- Per-signal `data_quality` metadata for second-board candidates, including source, source field, timestamp, confidence, grading usability, and limitations.
+- Per-signal `data_quality` metadata for second-board candidates, including source, source field, timestamp, confidence, grading usability, limitations, and evidence. Evidence authority separates `official_doc`, `observed_probe`, and `internal_inference`.
 
 Future adapters or jvQuant extensions may include:
 

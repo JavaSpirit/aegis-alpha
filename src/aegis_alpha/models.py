@@ -8,6 +8,14 @@ from pydantic import BaseModel, Field
 CandidateGrade = Literal["A", "B", "C", "REJECT"]
 MarketAction = Literal["active", "selective", "defensive", "avoid"]
 SignalConfidence = Literal["high", "medium", "low", "placeholder", "unavailable"]
+SignalAuthority = Literal["official_doc", "observed_probe", "internal_inference"]
+
+
+class SignalEvidence(BaseModel):
+    authority: SignalAuthority
+    source: str
+    detail: str
+    observed_at: str = ""
 
 
 class SignalMetadata(BaseModel):
@@ -17,6 +25,7 @@ class SignalMetadata(BaseModel):
     confidence: SignalConfidence
     usable_for_grading: bool
     limitations: list[str] = Field(default_factory=list)
+    evidence: list[SignalEvidence] = Field(default_factory=list)
 
 
 class MarketSnapshot(BaseModel):
