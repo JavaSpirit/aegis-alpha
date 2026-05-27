@@ -12,6 +12,7 @@ from aegis_alpha.models import (
     MarketSnapshot,
     OrderbookQueueLevel,
     SecondBoardCandidate,
+    SignalMetadata,
     StockOrderbookSnapshot,
     StockRealtimeSnapshot,
     ThemeStrength,
@@ -231,6 +232,7 @@ class MockMarketDataAdapter:
                     "评级为 B，因为同题材联动和盘口质量较好，但仍是 mock 数据，"
                     "且没有真实 Level-2 大单净流入与封单排队验证。"
                 ),
+                data_quality=self._mock_second_board_data_quality(),
                 notes=[
                     "Yesterday limit-up stock with same-theme momentum in mock data.",
                     "Watch for sell-side depletion before any board-chasing decision.",
@@ -261,12 +263,58 @@ class MockMarketDataAdapter:
                     "评级为 C，因为题材虽活跃，但盘口质量低于偏好阈值，"
                     "模拟封板概率也不足以进入重点观察。"
                 ),
+                data_quality=self._mock_second_board_data_quality(),
                 notes=[
                     "Theme is active, but orderbook quality is below the preferred threshold.",
                     "Mock candidate should remain in observation mode.",
                 ],
             ),
         ]
+
+    def _mock_second_board_data_quality(self) -> dict[str, SignalMetadata]:
+        timestamp = "2026-05-26T10:15:00+08:00"
+        return {
+            "five_min_speed": SignalMetadata(
+                source="mock",
+                source_field="five_min_speed_pct",
+                timestamp=timestamp,
+                confidence="placeholder",
+                usable_for_grading=False,
+                limitations=["Mock-only value for contract tests."],
+            ),
+            "capital_flow": SignalMetadata(
+                source="mock",
+                source_field="big_order_net_inflow_ratio",
+                timestamp=timestamp,
+                confidence="placeholder",
+                usable_for_grading=False,
+                limitations=["Mock-only value, not Level-2 trade classification."],
+            ),
+            "seal_metrics": SignalMetadata(
+                source="mock",
+                source_field="first_limit_up_time/seal_amount_cny/seal_volume_shares/seal_to_turnover_ratio",
+                timestamp=timestamp,
+                confidence="placeholder",
+                usable_for_grading=False,
+                limitations=["Mock-only seal data."],
+            ),
+            "orderbook_queue": SignalMetadata(
+                source="mock",
+                source_field="queue_position_note/orderbook_quality_score",
+                timestamp=timestamp,
+                confidence="placeholder",
+                usable_for_grading=False,
+                limitations=["Mock-only queue summary; not own-order queue position."],
+            ),
+            "history_stats": SignalMetadata(
+                source="mock",
+                source_field="three_year_touch_limit_success_rate/three_year_sealed_next_day_gap_up_rate",
+                timestamp=timestamp,
+                confidence="placeholder",
+                usable_for_grading=False,
+                limitations=["Mock-only historical rates."],
+            ),
+        }
 
     def explain_second_board_candidate(self, symbol: str) -> CandidateExplanation:
         candidates = {candidate.symbol: candidate for candidate in self.get_second_board_candidates()}

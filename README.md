@@ -130,7 +130,15 @@ When `AEGIS_ALPHA_MARKET_DATA_PROVIDER=jvquant`, Hermes can access jvQuant-backe
 - `get_stock_realtime_snapshot(symbol)`
 - `get_stock_orderbook_snapshot(symbol)`
 
-The second-board candidate pool is currently derived from jvQuant semantic queries for yesterday limit-up stocks with current strength. Five-minute speed, capital-flow net inflow ratio, first limit-up time, seal amount, seal volume, and seal-to-turnover ratio come from jvQuant semantic fields when available. Five-minute speed is labeled as `provider_latest_rolling_5m` because jvQuant does not expose the exact start/end time for that semantic field; Aegis Alpha records the local query timestamp in `five_min_speed_timestamp`. True own-order queue position still requires broker order/trade callbacks, so the current output only exposes a queue-position note from the read-only orderbook summary. Historical limit-up statistics and normalized theme strength still use placeholders until dedicated scanners are implemented.
+The second-board candidate pool is currently derived from jvQuant semantic queries for yesterday limit-up stocks with current strength. Five-minute speed, capital-flow net inflow ratio, first limit-up time, seal amount, seal volume, and seal-to-turnover ratio come from jvQuant semantic fields when available. When jvQuant returns a time range in the speed field name, Aegis Alpha exposes it as `provider_exact_window:...` and uses the window end as `five_min_speed_timestamp`; otherwise it falls back to `provider_latest_rolling_5m` with the local query timestamp. True own-order queue position still requires broker order/trade callbacks, so the current output only exposes a queue-position note from the read-only orderbook summary. Historical limit-up statistics and normalized theme strength still use placeholders until dedicated scanners are implemented.
+
+Each second-board candidate also includes `data_quality`, a per-signal metadata map covering source, source field, timestamp, confidence, grading usability, and limitations. Current jvQuant field probes are documented in [docs/JVQUANT_FIELD_MAP.md](docs/JVQUANT_FIELD_MAP.md).
+
+Refresh the jvQuant field probe after provider changes:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/probe_jvquant_fields.py --sample-limit 2 --format markdown --output docs/JVQUANT_FIELD_MAP.md
+```
 
 ## Install Or Verify Hermes
 

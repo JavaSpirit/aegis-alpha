@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from collections import Counter
 from datetime import datetime
 from typing import Any
@@ -16,6 +17,7 @@ from aegis_alpha.models import (
     MarketSnapshot,
     OrderbookQueueLevel,
     SecondBoardCandidate,
+    SignalMetadata,
     StockOrderbookSnapshot,
     StockRealtimeSnapshot,
 )
@@ -189,8 +191,7 @@ class JvQuantMarketDataAdapter:
         )
         rows = self._query_rows(payload)
         seal_rows = self._rows_by_symbol(self._query_rows(seal_payload))
-        speed_timestamp = _now()
-        speed_window = "provider_latest_rolling_5m"
+        query_timestamp = _now()
         max_candidates = _int_or_zero(os.environ.get("AEGIS_ALPHA_SECOND_BOARD_MAX_CANDIDATES")) or 12
         orderbook_limit = _int_or_zero(os.environ.get("AEGIS_ALPHA_SECOND_BOARD_ORDERBOOK_LIMIT")) or 5
         theme_counts = Counter(self._theme_from_row(row) for row in rows)
@@ -201,7 +202,12 @@ class JvQuantMarketDataAdapter:
             symbol = self._symbol_from_row(row)
             seal_row = seal_rows.get(symbol, {})
             change_pct = _float_or_zero(self._field_value(row, "涨跌幅"))
-            five_min_speed_pct = _float_or_zero(self._field_value(row, "涨速", "区间涨跌幅"))
+            speed_field, speed_value = self._field_entry(row, "涨速", "区间涨跌幅")
+            five_min_speed_pct = _float_or_zero(speed_value)
+            speed_window, speed_timestamp, has_exact_speed_window = self._speed_window_from_field(
+                speed_field,
+                query_timestamp,
+            )
             turnover_cny = self._parse_cny_amount(self._field_value(row, "成交额"))
             main_net_inflow_cny = self._parse_cny_amount(
                 self._field_value(row, "主力净额", "大单净额", "超大单净额")
@@ -218,13 +224,17 @@ class JvQuantMarketDataAdapter:
             theme = self._theme_from_row(row)
             orderbook_quality = 50.0
             orderbook_notes: list[str] = []
+            orderbook_timestamp = query_timestamp
+            orderbook_has_rows = False
             queue_position_note = "Own-order queue position unavailable; no live order has been placed or tracked."
             if index < orderbook_limit:
                 try:
                     orderbook = self.get_stock_orderbook_snapshot(symbol)
+                    orderbook_timestamp = orderbook.timestamp
                     bid_volume = sum(level.volume_count for level in orderbook.bid_levels)
                     ask_volume = sum(level.volume_count for level in orderbook.ask_levels)
                     total_volume = bid_volume + ask_volume
+                    orderbook_has_rows = bool(total_volume)
                     if total_volume:
                         orderbook_quality = round(100 * bid_volume / total_volume, 2)
                     if orderbook.best_bid_price is None and orderbook.best_ask_price is None:
@@ -279,6 +289,16 @@ class JvQuantMarketDataAdapter:
                 seal_to_turnover_ratio=seal_to_turnover_ratio,
                 queue_position_note=queue_position_note,
             )
+            data_quality = self._second_board_data_quality(
+                speed_timestamp=speed_timestamp,
+                speed_window=speed_window,
+                has_exact_speed_window=has_exact_speed_window,
+                query_timestamp=query_timestamp,
+                has_capital_flow=main_net_inflow_cny != 0,
+                has_seal_data=first_limit_up_time != "unknown" or seal_amount_cny > 0 or seal_volume_shares > 0,
+                has_orderbook_rows=orderbook_has_rows,
+                orderbook_timestamp=orderbook_timestamp,
+            )
 
             candidates.append(
                 SecondBoardCandidate(
@@ -305,9 +325,10 @@ class JvQuantMarketDataAdapter:
                     estimated_seal_probability=estimated,
                     grade=grade,
                     grade_reason=grade_reason,
+                    data_quality=data_quality,
                     notes=[
                         "jvQuant live-provider candidate: yesterday limit-up and today gain above 5%.",
-                        "five_min_speed_pct comes from a jvQuant semantic latest rolling 5-minute field; exact start/end are not provided by the provider.",
+                        "five_min_speed_pct comes from a jvQuant semantic interval field; use five_min_speed_window for its time meaning.",
                         "capital-flow ratio comes from jvQuant semantic fields, not tick-by-tick trade classification.",
                         "Historical limit-up rates are not derived yet.",
                         f"five_min_speed_window={speed_window}",
@@ -370,6 +391,7 @@ class JvQuantMarketDataAdapter:
                 f"Seal amount is {candidate.seal_amount_cny:.0f} CNY; seal volume is {candidate.seal_volume_shares:.0f} shares.",
                 f"Seal-to-turnover ratio is {candidate.seal_to_turnover_ratio:.2f}.",
                 f"Queue position note: {candidate.queue_position_note}",
+                f"Data quality keys: {', '.join(candidate.data_quality.keys())}.",
                 f"Theme is {candidate.theme}; same-theme candidate count is {candidate.same_theme_rising_count}.",
                 f"Orderbook quality score is {candidate.orderbook_quality_score:.2f}.",
                 f"Estimated seal probability is {candidate.estimated_seal_probability:.0%} from current coarse factors.",
@@ -571,13 +593,17 @@ class JvQuantMarketDataAdapter:
         return str(self._field_value(row, "行业", "行业分类", "所属行业") or "unknown").strip() or "unknown"
 
     def _field_value(self, row: dict[str, Any], *prefixes: str) -> Any:
+        _key, value = self._field_entry(row, *prefixes)
+        return value
+
+    def _field_entry(self, row: dict[str, Any], *prefixes: str) -> tuple[str, Any]:
         for prefix in prefixes:
             if prefix in row:
-                return row[prefix]
+                return prefix, row[prefix]
         for key, value in row.items():
             if any(key.startswith(prefix) for prefix in prefixes):
-                return value
-        return None
+                return key, value
+        return "", None
 
     def _parse_cny_amount(self, value: Any) -> float:
         text = str(value or "").strip().replace(",", "")
@@ -606,6 +632,26 @@ class JvQuantMarketDataAdapter:
             return "unknown"
         return text
 
+    def _speed_window_from_field(self, field_name: str, query_timestamp: str) -> tuple[str, str, bool]:
+        match = re.search(
+            r"@(?P<start>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})-(?P<end>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})",
+            field_name,
+        )
+        if not match:
+            return "provider_latest_rolling_5m", query_timestamp, False
+
+        start = match.group("start")
+        end = match.group("end")
+        timestamp = self._iso_from_provider_datetime(end) or query_timestamp
+        return f"provider_exact_window:{start}-{end}", timestamp, True
+
+    def _iso_from_provider_datetime(self, value: str) -> str:
+        try:
+            parsed = datetime.strptime(value, "%Y-%m-%d %H:%M:%S").replace(tzinfo=SH_TZ)
+        except ValueError:
+            return ""
+        return parsed.isoformat(timespec="seconds")
+
     def _queue_position_note(self, orderbook: StockOrderbookSnapshot) -> str:
         if not orderbook.bid_levels and not orderbook.ask_levels:
             return "Orderbook queue unavailable from provider; own-order queue position cannot be inferred."
@@ -621,6 +667,81 @@ class JvQuantMarketDataAdapter:
                 f"best_ask_queue price={best_ask.price}, volume={best_ask.volume_count:.0f}, queue_count={best_ask.queue_count}."
             )
         return " ".join(parts)
+
+    def _second_board_data_quality(
+        self,
+        *,
+        speed_timestamp: str,
+        speed_window: str,
+        has_exact_speed_window: bool,
+        query_timestamp: str,
+        has_capital_flow: bool,
+        has_seal_data: bool,
+        has_orderbook_rows: bool,
+        orderbook_timestamp: str,
+    ) -> dict[str, SignalMetadata]:
+        return {
+            "five_min_speed": SignalMetadata(
+                source="jvquant.semantic_query",
+                source_field="5分钟涨幅/区间涨跌幅",
+                timestamp=speed_timestamp,
+                confidence="high" if has_exact_speed_window else "medium",
+                usable_for_grading=True,
+                limitations=[
+                    f"window={speed_window}",
+                    (
+                        "Exact provider interval parsed from returned field name."
+                        if has_exact_speed_window
+                        else "Provider did not expose exact five-minute window start/end in the field name."
+                    ),
+                    "Not independently recalculated from minute bars or ticks yet.",
+                ],
+            ),
+            "capital_flow": SignalMetadata(
+                source="jvquant.semantic_query",
+                source_field="主力净额/大单净额/超大单净额 divided by 成交额",
+                timestamp=query_timestamp,
+                confidence="medium" if has_capital_flow else "low",
+                usable_for_grading=True,
+                limitations=[
+                    "Provider semantic aggregation, not Aegis Alpha tick-by-tick big-order classification.",
+                    "Zero may mean neutral flow or provider field unavailable for the candidate.",
+                ],
+            ),
+            "seal_metrics": SignalMetadata(
+                source="jvquant.semantic_query",
+                source_field="涨停首次封板时间/涨停封单额/涨停封单量/涨停封成比",
+                timestamp=query_timestamp,
+                confidence="medium" if has_seal_data else "unavailable",
+                usable_for_grading=has_seal_data,
+                limitations=[
+                    "Provider semantic snapshot; Aegis Alpha does not yet verify whether this is current, max, or close seal amount.",
+                    "Missing values should not be interpolated.",
+                ],
+            ),
+            "orderbook_queue": SignalMetadata(
+                source="jvquant.level_queue",
+                source_field="bid/ask queue summary",
+                timestamp=orderbook_timestamp,
+                confidence="medium" if has_orderbook_rows else "unavailable",
+                usable_for_grading=has_orderbook_rows,
+                limitations=[
+                    "Read-only orderbook summary, not own-order queue position.",
+                    "True queue position requires broker order and trade callbacks.",
+                ],
+            ),
+            "history_stats": SignalMetadata(
+                source="aegis_alpha.placeholder",
+                source_field="three_year_touch_limit_success_rate/three_year_sealed_next_day_gap_up_rate",
+                timestamp=query_timestamp,
+                confidence="placeholder",
+                usable_for_grading=False,
+                limitations=[
+                    "Historical second-board sample library is not implemented yet.",
+                    "Do not use zero placeholder rates as real historical probabilities.",
+                ],
+            ),
+        }
 
     def _ratio(self, numerator: float, denominator: float) -> float:
         if denominator == 0:

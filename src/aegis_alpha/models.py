@@ -7,6 +7,16 @@ from pydantic import BaseModel, Field
 
 CandidateGrade = Literal["A", "B", "C", "REJECT"]
 MarketAction = Literal["active", "selective", "defensive", "avoid"]
+SignalConfidence = Literal["high", "medium", "low", "placeholder", "unavailable"]
+
+
+class SignalMetadata(BaseModel):
+    source: str
+    source_field: str
+    timestamp: str
+    confidence: SignalConfidence
+    usable_for_grading: bool
+    limitations: list[str] = Field(default_factory=list)
 
 
 class MarketSnapshot(BaseModel):
@@ -147,6 +157,7 @@ class SecondBoardCandidate(BaseModel):
     estimated_seal_probability: float = Field(ge=0, le=1)
     grade: CandidateGrade
     grade_reason: str = ""
+    data_quality: dict[str, SignalMetadata] = Field(default_factory=dict)
     notes: list[str]
 
 
