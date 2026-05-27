@@ -6,7 +6,43 @@ from aegis_alpha.adapters.jvquant_market_data import JvQuantMarketDataAdapter, n
 class FakeJvQuantClient:
     def query(self, query: str, page: int, sort_type: int, sort_key: str) -> dict:
         if "昨日涨停" in query:
-            if "封单" in query or "首次涨停" in query:
+            if "竞价" in query:
+                fields = ["代码", "名称", "行业", "是否ST", "涨停", "集合竞价涨跌幅", "集合竞价成交额", "集合竞价换手率", "开盘价", "最新价", "成交额"]
+                rows = [
+                    ["001366", "播恩集团", "饲料", "否", "涨停", "3.20", "9200.00万", "1.80", "17.90", "18.61", "2.66亿"],
+                    ["002001", "新和成", "合成生物", "否", "涨停", "1.10", "3100.00万", "0.70", "31.50", "32.10", "4.12亿"],
+                ]
+            elif "概念" in query or "题材" in query:
+                fields = ["代码", "名称", "涨跌幅", "成交额", "是否ST", "涨停", "概念", "个股题材", "行业", "最新价"]
+                rows = [
+                    ["001366", "播恩集团", "9.99", "2.66亿", "否", "涨停", "饲料、乡村振兴", "农业涨价", "饲料", "18.61"],
+                    ["002001", "新和成", "7.10", "4.12亿", "否", "涨停", "合成生物、维生素", "医药上游", "合成生物", "32.10"],
+                ]
+            elif "炸板次数" in query or "回封次数" in query or "最后封板" in query:
+                fields = ["代码", "名称", "涨跌幅", "行业", "是否ST", "涨停", "涨停最终封板时间", "炸板次数(次)", "涨停回封次数(次)", "最新价", "成交额"]
+                rows = [
+                    ["001366", "播恩集团", "9.99", "饲料", "否", "涨停", "09:42:18", "0", "0", "18.61", "2.66亿"],
+                    ["002001", "新和成", "7.10", "合成生物", "否", "涨停", "10:42:08", "1", "1", "32.10", "4.12亿"],
+                ]
+            elif "1分钟涨幅" in query:
+                fields = ["代码", "名称", "涨跌幅", "行业", "是否ST", "涨停", "区间涨跌幅(1分钟)@2026-05-26 09:39:00-2026-05-26 09:40:00", "最新价", "成交额"]
+                rows = [
+                    ["001366", "播恩集团", "9.99", "饲料", "否", "涨停", "0.90", "18.61", "2.66亿"],
+                    ["002001", "新和成", "7.10", "合成生物", "否", "涨停", "-0.20", "32.10", "4.12亿"],
+                ]
+            elif "3分钟涨幅" in query:
+                fields = ["代码", "名称", "涨跌幅", "行业", "是否ST", "涨停", "区间涨跌幅(1分钟)@2026-05-26 09:37:00-2026-05-26 09:40:00", "最新价", "成交额"]
+                rows = [
+                    ["001366", "播恩集团", "9.99", "饲料", "否", "涨停", "2.30", "18.61", "2.66亿"],
+                    ["002001", "新和成", "7.10", "合成生物", "否", "涨停", "0.80", "32.10", "4.12亿"],
+                ]
+            elif "10分钟涨幅" in query:
+                fields = ["代码", "名称", "涨跌幅", "行业", "是否ST", "涨停", "区间涨跌幅(1分钟)@2026-05-26 09:30:00-2026-05-26 09:40:00", "最新价", "成交额"]
+                rows = [
+                    ["001366", "播恩集团", "9.99", "饲料", "否", "涨停", "5.20", "18.61", "2.66亿"],
+                    ["002001", "新和成", "7.10", "合成生物", "否", "涨停", "2.90", "32.10", "4.12亿"],
+                ]
+            elif "封单" in query or "首次涨停" in query:
                 fields = [
                     "代码",
                     "名称",
@@ -227,12 +263,28 @@ def test_jvquant_second_board_candidates_from_semantic_query() -> None:
     assert candidates[0].data_mode == "live_provider"
     assert candidates[0].provider == "jvQuant"
     assert candidates[0].current_change_pct == 9.99
+    assert candidates[0].auction_change_pct == 3.20
+    assert candidates[0].auction_turnover_cny == 92_000_000
+    assert candidates[0].auction_turnover_rate == 1.80
     assert candidates[0].five_min_speed_pct == 2.10
     assert candidates[0].five_min_speed_window == "provider_exact_window:2026-05-26 09:35:00-2026-05-26 09:40:00"
     assert candidates[0].five_min_speed_timestamp == "2026-05-26T09:40:00+08:00"
+    assert candidates[0].one_min_speed_pct == 0.90
+    assert candidates[0].three_min_speed_pct == 2.30
+    assert candidates[0].ten_min_speed_pct == 5.20
     assert candidates[0].big_order_net_inflow_ratio > 0
+    assert candidates[0].concept_tags == ["饲料", "乡村振兴"]
+    assert candidates[0].topic_tags == ["农业涨价"]
+    assert candidates[0].break_board_count == 0
+    assert candidates[0].reseal_count == 0
+    assert candidates[0].final_seal_time == "09:42:18"
+    assert candidates[0].max_seal_amount_cny == 128_000_000
     assert candidates[0].data_quality["five_min_speed"].source == "jvquant.semantic_query"
     assert candidates[0].data_quality["five_min_speed"].confidence == "high"
+    assert candidates[0].data_quality["auction_metrics"].usable_for_grading is True
+    assert candidates[0].data_quality["theme_tags"].usable_for_grading is True
+    assert candidates[0].data_quality["break_reseal_metrics"].usable_for_grading is True
+    assert candidates[0].data_quality["multi_speed"].usable_for_grading is True
     assert {item.authority for item in candidates[0].data_quality["five_min_speed"].evidence} == {
         "official_doc",
         "observed_probe",

@@ -155,10 +155,29 @@ class SecondBoardCandidate(BaseModel):
     seal_to_turnover_ratio: float = 0.0
     queue_position_note: str = ""
     current_change_pct: float
+    auction_change_pct: float = 0.0
+    auction_turnover_cny: float = 0.0
+    auction_turnover_rate: float = 0.0
     five_min_speed_pct: float
     five_min_speed_window: str = "unknown"
     five_min_speed_timestamp: str = ""
+    one_min_speed_pct: float = 0.0
+    one_min_speed_window: str = "unknown"
+    one_min_speed_timestamp: str = ""
+    three_min_speed_pct: float = 0.0
+    three_min_speed_window: str = "unknown"
+    three_min_speed_timestamp: str = ""
+    ten_min_speed_pct: float = 0.0
+    ten_min_speed_window: str = "unknown"
+    ten_min_speed_timestamp: str = ""
     big_order_net_inflow_ratio: float = Field(ge=-1, le=1)
+    concept_tags: list[str] = Field(default_factory=list)
+    topic_tags: list[str] = Field(default_factory=list)
+    break_board_count: int = 0
+    reseal_count: int = 0
+    final_seal_time: str = "unknown"
+    max_seal_amount_cny: float = 0.0
+    max_seal_volume_shares: float = 0.0
     same_theme_rising_count: int
     orderbook_quality_score: float = Field(ge=0, le=100)
     three_year_touch_limit_success_rate: float = Field(ge=0, le=1)

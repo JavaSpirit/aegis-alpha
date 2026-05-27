@@ -79,6 +79,59 @@ def get_second_board_candidates() -> list[dict]:
 
 
 @mcp.tool
+def get_second_board_candidates_compact(limit: int = 12) -> list[dict]:
+    """Return compact second-board candidates without verbose evidence."""
+
+    def _compact(adapter: Any) -> list[dict]:
+        safe_limit = max(1, min(int(limit or 12), 50))
+        items = []
+        for candidate in adapter.get_second_board_candidates()[:safe_limit]:
+            items.append(
+                {
+                    "symbol": candidate.symbol,
+                    "name": candidate.name,
+                    "data_mode": candidate.data_mode,
+                    "provider": candidate.provider,
+                    "theme": candidate.theme,
+                    "current_change_pct": candidate.current_change_pct,
+                    "auction_change_pct": candidate.auction_change_pct,
+                    "auction_turnover_cny": candidate.auction_turnover_cny,
+                    "auction_turnover_rate": candidate.auction_turnover_rate,
+                    "one_min_speed_pct": candidate.one_min_speed_pct,
+                    "three_min_speed_pct": candidate.three_min_speed_pct,
+                    "five_min_speed_pct": candidate.five_min_speed_pct,
+                    "five_min_speed_window": candidate.five_min_speed_window,
+                    "ten_min_speed_pct": candidate.ten_min_speed_pct,
+                    "big_order_net_inflow_ratio": candidate.big_order_net_inflow_ratio,
+                    "first_limit_up_time": candidate.first_limit_up_time,
+                    "final_seal_time": candidate.final_seal_time,
+                    "seal_amount_cny": candidate.seal_amount_cny,
+                    "max_seal_amount_cny": candidate.max_seal_amount_cny,
+                    "seal_to_turnover_ratio": candidate.seal_to_turnover_ratio,
+                    "break_board_count": candidate.break_board_count,
+                    "reseal_count": candidate.reseal_count,
+                    "concept_tags": candidate.concept_tags[:8],
+                    "topic_tags": candidate.topic_tags[:8],
+                    "same_theme_rising_count": candidate.same_theme_rising_count,
+                    "orderbook_quality_score": candidate.orderbook_quality_score,
+                    "estimated_seal_probability": candidate.estimated_seal_probability,
+                    "grade": candidate.grade,
+                    "grade_reason": candidate.grade_reason,
+                    "data_quality_summary": {
+                        key: {
+                            "confidence": value.confidence,
+                            "usable_for_grading": value.usable_for_grading,
+                        }
+                        for key, value in candidate.data_quality.items()
+                    },
+                }
+            )
+        return items
+
+    return _call_tool(_compact)
+
+
+@mcp.tool
 def get_second_board_candidate_data_quality(symbol: str) -> dict:
     """Return compact data-quality evidence for one second-board candidate."""
 

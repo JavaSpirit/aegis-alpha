@@ -60,6 +60,7 @@ Current jvQuant coverage:
 - Semantic-query market snapshot, limit-up pool, and break-board pool.
 - Coarse market sentiment gate derived from limit-up count, break-board rate, and theme breadth.
 - Semantic-query second-board candidate pool based on yesterday limit-up stocks with current strength.
+- Semantic-query auction metrics, concept/topic tags, break/reseal counts, final seal time, and max seal metrics for second-board candidates.
 - Semantic-query five-minute speed and capital-flow net inflow ratio for second-board candidates. If jvQuant exposes a range in the returned field name, the adapter marks it as `provider_exact_window:...`; otherwise it falls back to `provider_latest_rolling_5m`.
 - Semantic-query first limit-up time, seal amount, seal volume, and seal-to-turnover ratio.
 - Single-symbol K-line snapshot.

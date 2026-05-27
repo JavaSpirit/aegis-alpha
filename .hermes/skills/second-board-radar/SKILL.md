@@ -37,6 +37,7 @@ Prefer Aegis Alpha MCP tools. Hermes may expose them with a server prefix such a
 Core tools:
 
 - `get_market_sentiment_gate`
+- `get_second_board_candidates_compact`
 - `get_second_board_candidates`
 - `get_second_board_candidate_data_quality`
 - `explain_second_board_candidate`
@@ -65,14 +66,14 @@ Before grading during active trading hours, verify the timestamp of speed, big-o
 2. If the gate action is `avoid`, say the environment is unsuitable for board-chasing and stop at a defensive market summary.
 3. If the gate action is `defensive`, only discuss why risk is elevated and list what would need to improve.
 4. If Aegis Alpha data is unavailable, stale beyond the freshness rule, or empty, follow the data availability rule before continuing.
-5. If the gate action is `selective` or `active`, fetch second-board candidates.
+5. If the gate action is `selective` or `active`, fetch second-board candidates with `get_second_board_candidates_compact` first.
 6. For each candidate, analyze only the structured signals returned by Aegis Alpha:
-   market gate, five-minute speed, five-minute speed window and timestamp, big-order net inflow ratio, first limit-up time, seal amount, seal-to-turnover ratio, queue position note, same-theme rising count, orderbook quality, historical touch-limit success rate, and historical gap-up statistics.
+   market gate, auction metrics, 1/3/5/10-minute speed structure, big-order net inflow ratio, concept/topic tags, first/final limit-up time, seal amount, max seal amount, seal-to-turnover ratio, break/reseal count, queue position note, same-theme rising count, orderbook quality, historical touch-limit success rate, and historical gap-up statistics.
 7. Produce a watchlist report with grades `A`, `B`, `C`, or `REJECT`.
 8. Always include structured trigger conditions and avoid conditions.
 9. Always state both model identity and market-data identity. Keep `llm_provider` / `llm_model` separate from `market_data_mode` / `market_data_provider`.
 10. After every candidate grade, explain the reason in natural Chinese. Prefer the MCP `grade_reason` field when present; if it is absent, synthesize one from the returned metrics without inventing missing data.
-11. If evidence details are needed, prefer `get_second_board_candidate_data_quality(symbol)` over fetching the full candidate pool again, to avoid tool-output truncation.
+11. Use the full `get_second_board_candidates` only when the compact output is insufficient. If evidence details are needed, prefer `get_second_board_candidate_data_quality(symbol)` over fetching the full candidate pool again, to avoid tool-output truncation.
 
 ## Candidate Interpretation Rules
 
@@ -98,9 +99,11 @@ Use this structure for user-facing answers:
 候选:
 1. 代码 名称 评级
    评级原因: 用一两句自然语言说明为什么是这个评级，必须点名主要加分项和主要扣分项。
+   竞价数据: auction_change_pct / auction_turnover_cny / auction_turnover_rate
    涨速数据: five_min_speed_pct / five_min_speed_window / five_min_speed_timestamp / data_quality.five_min_speed
+   题材数据: concept_tags / topic_tags
    证据层级: official_doc / observed_probe / internal_inference 中实际出现的 authority
-   封板数据: 首次封板时间 / 封单额 / 封成比 / 排队位置说明
+   封板数据: 首次封板时间 / 最终封板时间 / 封单额 / 最大封单额 / 炸板次数 / 回封次数 / 封成比 / 排队位置说明
    观察:
    风险:
    触发条件:

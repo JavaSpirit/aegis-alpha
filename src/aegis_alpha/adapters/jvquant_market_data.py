@@ -190,8 +190,43 @@ class JvQuantMarketDataAdapter:
             "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,首次涨停时间,封单量,封单金额,涨停封成比,价格,成交额,行业",
             sort_key="涨跌幅",
         )
+        speed_1m_payload = self._query(
+            "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,1分钟涨幅,价格,成交额,行业",
+            sort_key="涨跌幅",
+        )
+        speed_3m_payload = self._query(
+            "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,3分钟涨幅,价格,成交额,行业",
+            sort_key="涨跌幅",
+        )
+        speed_10m_payload = self._query(
+            "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,10分钟涨幅,价格,成交额,行业",
+            sort_key="涨跌幅",
+        )
+        auction_payload = self._query(
+            "昨日涨停,非ST,股票代码,股票简称,竞价涨幅,竞价成交额,竞价换手率,开盘价,价格,成交额,行业",
+            sort_key="竞价涨幅",
+        )
+        theme_payload = self._query(
+            "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,所属概念,概念,题材,行业,价格,成交额",
+            sort_key="涨跌幅",
+        )
+        break_reseal_payload = self._query(
+            "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,炸板次数,首次炸板时间,回封次数,最后封板时间,价格,成交额,行业",
+            sort_key="涨跌幅",
+        )
+        max_seal_payload = self._query(
+            "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,最大封单金额,最大封单量,价格,成交额,行业",
+            sort_key="涨跌幅",
+        )
         rows = self._query_rows(payload)
         seal_rows = self._rows_by_symbol(self._query_rows(seal_payload))
+        speed_1m_rows = self._rows_by_symbol(self._query_rows(speed_1m_payload))
+        speed_3m_rows = self._rows_by_symbol(self._query_rows(speed_3m_payload))
+        speed_10m_rows = self._rows_by_symbol(self._query_rows(speed_10m_payload))
+        auction_rows = self._rows_by_symbol(self._query_rows(auction_payload))
+        theme_rows = self._rows_by_symbol(self._query_rows(theme_payload))
+        break_reseal_rows = self._rows_by_symbol(self._query_rows(break_reseal_payload))
+        max_seal_rows = self._rows_by_symbol(self._query_rows(max_seal_payload))
         query_timestamp = _now()
         max_candidates = _int_or_zero(os.environ.get("AEGIS_ALPHA_SECOND_BOARD_MAX_CANDIDATES")) or 12
         orderbook_limit = _int_or_zero(os.environ.get("AEGIS_ALPHA_SECOND_BOARD_ORDERBOOK_LIMIT")) or 5
@@ -202,12 +237,33 @@ class JvQuantMarketDataAdapter:
         for index, row in enumerate(rows[:max_candidates]):
             symbol = self._symbol_from_row(row)
             seal_row = seal_rows.get(symbol, {})
-            change_pct = _float_or_zero(self._field_value(row, "涨跌幅"))
+            speed_1m_row = speed_1m_rows.get(symbol, {})
+            speed_3m_row = speed_3m_rows.get(symbol, {})
+            speed_10m_row = speed_10m_rows.get(symbol, {})
+            auction_row = auction_rows.get(symbol, {})
+            theme_row = theme_rows.get(symbol, {})
+            break_reseal_row = break_reseal_rows.get(symbol, {})
+            max_seal_row = max_seal_rows.get(symbol, {})
+            change_pct = _float_or_zero(
+                self._first_field_value(
+                    [row, seal_row, break_reseal_row, theme_row, max_seal_row],
+                    "涨跌幅",
+                )
+            )
             speed_field, speed_value = self._field_entry(row, "涨速", "区间涨跌幅")
             five_min_speed_pct = _float_or_zero(speed_value)
             speed_window, speed_timestamp, has_exact_speed_window = self._speed_window_from_field(
                 speed_field,
                 query_timestamp,
+            )
+            one_min_speed_pct, one_min_speed_window, one_min_speed_timestamp, has_exact_1m_window = (
+                self._speed_from_row(speed_1m_row, query_timestamp)
+            )
+            three_min_speed_pct, three_min_speed_window, three_min_speed_timestamp, has_exact_3m_window = (
+                self._speed_from_row(speed_3m_row, query_timestamp)
+            )
+            ten_min_speed_pct, ten_min_speed_window, ten_min_speed_timestamp, has_exact_10m_window = (
+                self._speed_from_row(speed_10m_row, query_timestamp)
             )
             turnover_cny = self._parse_cny_amount(self._field_value(row, "成交额"))
             main_net_inflow_cny = self._parse_cny_amount(
@@ -222,6 +278,26 @@ class JvQuantMarketDataAdapter:
                 self._field_value(seal_row, "涨停封单量", "封单量", "封单量(股)")
             )
             seal_to_turnover_ratio = _float_or_zero(self._field_value(seal_row, "涨停封成比", "封成比"))
+            change_pct_inferred = False
+            if change_pct == 0 and (first_limit_up_time != "unknown" or seal_amount_cny > 0):
+                change_pct = 10.0
+                change_pct_inferred = True
+            auction_change_pct = _float_or_zero(self._field_value(auction_row, "集合竞价涨跌幅", "竞价涨幅"))
+            auction_turnover_cny = self._parse_cny_amount(self._field_value(auction_row, "集合竞价成交额", "竞价成交额"))
+            auction_turnover_rate = _float_or_zero(self._field_value(auction_row, "集合竞价换手率", "竞价换手率"))
+            concept_tags = self._tags_from_row(theme_row, "概念", "所属概念")
+            topic_tags = self._tags_from_row(theme_row, "个股题材", "题材")
+            break_board_count = _int_or_zero(self._field_value(break_reseal_row, "炸板次数", "炸板次数(次)"))
+            reseal_count = _int_or_zero(self._field_value(break_reseal_row, "涨停回封次数", "回封次数"))
+            final_seal_time = self._time_or_unknown(
+                self._field_value(break_reseal_row, "涨停最终封板时间", "最后封板时间", "最终封板时间")
+            )
+            max_seal_amount_cny = self._parse_cny_amount(
+                self._field_value(max_seal_row, "最大封单金额", "涨停封单额", "封单金额")
+            )
+            max_seal_volume_shares = self._parse_share_amount(
+                self._field_value(max_seal_row, "最大封单量", "涨停封单量", "封单量")
+            )
             theme = self._theme_from_row(row)
             orderbook_quality = 50.0
             orderbook_notes: list[str] = []
@@ -294,8 +370,13 @@ class JvQuantMarketDataAdapter:
                 speed_timestamp=speed_timestamp,
                 speed_window=speed_window,
                 has_exact_speed_window=has_exact_speed_window,
+                has_exact_multi_speed_windows=has_exact_1m_window or has_exact_3m_window or has_exact_10m_window,
                 query_timestamp=query_timestamp,
                 has_capital_flow=main_net_inflow_cny != 0,
+                has_auction_data=bool(auction_row),
+                has_theme_tags=bool(concept_tags or topic_tags),
+                has_break_reseal_data=bool(break_reseal_row),
+                has_max_seal_data=max_seal_amount_cny > 0 or max_seal_volume_shares > 0,
                 has_seal_data=first_limit_up_time != "unknown" or seal_amount_cny > 0 or seal_volume_shares > 0,
                 has_orderbook_rows=orderbook_has_rows,
                 orderbook_timestamp=orderbook_timestamp,
@@ -315,10 +396,29 @@ class JvQuantMarketDataAdapter:
                     seal_to_turnover_ratio=seal_to_turnover_ratio,
                     queue_position_note=queue_position_note,
                     current_change_pct=change_pct,
+                    auction_change_pct=auction_change_pct,
+                    auction_turnover_cny=auction_turnover_cny,
+                    auction_turnover_rate=auction_turnover_rate,
                     five_min_speed_pct=five_min_speed_pct,
                     five_min_speed_window=speed_window,
                     five_min_speed_timestamp=speed_timestamp,
+                    one_min_speed_pct=one_min_speed_pct,
+                    one_min_speed_window=one_min_speed_window,
+                    one_min_speed_timestamp=one_min_speed_timestamp,
+                    three_min_speed_pct=three_min_speed_pct,
+                    three_min_speed_window=three_min_speed_window,
+                    three_min_speed_timestamp=three_min_speed_timestamp,
+                    ten_min_speed_pct=ten_min_speed_pct,
+                    ten_min_speed_window=ten_min_speed_window,
+                    ten_min_speed_timestamp=ten_min_speed_timestamp,
                     big_order_net_inflow_ratio=big_order_net_inflow_ratio,
+                    concept_tags=concept_tags,
+                    topic_tags=topic_tags,
+                    break_board_count=break_board_count,
+                    reseal_count=reseal_count,
+                    final_seal_time=final_seal_time,
+                    max_seal_amount_cny=max_seal_amount_cny,
+                    max_seal_volume_shares=max_seal_volume_shares,
                     same_theme_rising_count=theme_counts[theme],
                     orderbook_quality_score=orderbook_quality,
                     three_year_touch_limit_success_rate=0.0,
@@ -329,11 +429,28 @@ class JvQuantMarketDataAdapter:
                     data_quality=data_quality,
                     notes=[
                         "jvQuant live-provider candidate: yesterday limit-up and today gain above 5%.",
+                        (
+                            "current_change_pct was inferred as 10.0 because jvQuant omitted the raw change field while seal metrics were present."
+                            if change_pct_inferred
+                            else "current_change_pct comes from a jvQuant semantic field."
+                        ),
                         "five_min_speed_pct comes from a jvQuant semantic interval field; use five_min_speed_window for its time meaning.",
                         "capital-flow ratio comes from jvQuant semantic fields, not tick-by-tick trade classification.",
                         "Historical limit-up rates are not derived yet.",
                         f"five_min_speed_window={speed_window}",
                         f"five_min_speed_timestamp={speed_timestamp}",
+                        f"one_min_speed_pct={one_min_speed_pct:.2f}",
+                        f"three_min_speed_pct={three_min_speed_pct:.2f}",
+                        f"ten_min_speed_pct={ten_min_speed_pct:.2f}",
+                        f"auction_change_pct={auction_change_pct:.2f}",
+                        f"auction_turnover_cny={auction_turnover_cny:.0f}",
+                        f"auction_turnover_rate={auction_turnover_rate:.2f}",
+                        f"concept_tags={','.join(concept_tags[:5])}",
+                        f"topic_tags={','.join(topic_tags[:5])}",
+                        f"break_board_count={break_board_count}",
+                        f"reseal_count={reseal_count}",
+                        f"final_seal_time={final_seal_time}",
+                        f"max_seal_amount_cny={max_seal_amount_cny:.0f}",
                         f"first_limit_up_time={first_limit_up_time}",
                         f"seal_amount_cny={seal_amount_cny:.0f}",
                         f"seal_volume_shares={seal_volume_shares:.0f}",
@@ -385,13 +502,19 @@ class JvQuantMarketDataAdapter:
             grade_reason=candidate.grade_reason,
             observations=[
                 f"Current change is {candidate.current_change_pct:.2f}%.",
+                f"Auction change is {candidate.auction_change_pct:.2f}%; auction turnover is {candidate.auction_turnover_cny:.0f} CNY.",
                 f"Five-minute speed is {candidate.five_min_speed_pct:.2f}%.",
                 f"Five-minute speed window is {candidate.five_min_speed_window}; timestamp is {candidate.five_min_speed_timestamp}.",
+                f"Multi-speed structure is 1m={candidate.one_min_speed_pct:.2f}%, 3m={candidate.three_min_speed_pct:.2f}%, 10m={candidate.ten_min_speed_pct:.2f}%.",
                 f"Capital-flow net inflow ratio is {candidate.big_order_net_inflow_ratio:.2f}.",
                 f"First limit-up time is {candidate.first_limit_up_time}.",
+                f"Final seal time is {candidate.final_seal_time}; break-board count is {candidate.break_board_count}; reseal count is {candidate.reseal_count}.",
+                f"Max seal amount is {candidate.max_seal_amount_cny:.0f} CNY; max seal volume is {candidate.max_seal_volume_shares:.0f} shares.",
                 f"Seal amount is {candidate.seal_amount_cny:.0f} CNY; seal volume is {candidate.seal_volume_shares:.0f} shares.",
                 f"Seal-to-turnover ratio is {candidate.seal_to_turnover_ratio:.2f}.",
                 f"Queue position note: {candidate.queue_position_note}",
+                f"Concept tags: {', '.join(candidate.concept_tags[:6]) or 'unknown'}.",
+                f"Topic tags: {', '.join(candidate.topic_tags[:6]) or 'unknown'}.",
                 f"Data quality keys: {', '.join(candidate.data_quality.keys())}.",
                 f"Theme is {candidate.theme}; same-theme candidate count is {candidate.same_theme_rising_count}.",
                 f"Orderbook quality score is {candidate.orderbook_quality_score:.2f}.",
@@ -399,6 +522,7 @@ class JvQuantMarketDataAdapter:
             ],
             risks=[
                 "Candidate pool is live-provider jvQuant; speed and capital-flow fields are semantic-query values, not tick-by-tick order classification.",
+                "Auction, concept, topic, break/reseal, and max-seal fields are observed semantic-query values, not official field-level definitions.",
                 "Historical three-year limit-up success and next-day premium are placeholders.",
                 "True own-order queue position and cancellation rules require broker order/trade callbacks and are not implemented.",
             ],
@@ -606,6 +730,13 @@ class JvQuantMarketDataAdapter:
                 return key, value
         return "", None
 
+    def _first_field_value(self, rows: list[dict[str, Any]], *prefixes: str) -> Any:
+        for row in rows:
+            value = self._field_value(row, *prefixes)
+            if value not in (None, ""):
+                return value
+        return None
+
     def _parse_cny_amount(self, value: Any) -> float:
         text = str(value or "").strip().replace(",", "")
         if not text:
@@ -646,6 +777,11 @@ class JvQuantMarketDataAdapter:
         timestamp = self._iso_from_provider_datetime(end) or query_timestamp
         return f"provider_exact_window:{start}-{end}", timestamp, True
 
+    def _speed_from_row(self, row: dict[str, Any], query_timestamp: str) -> tuple[float, str, str, bool]:
+        field, value = self._field_entry(row, "涨速", "区间涨跌幅")
+        window, timestamp, has_exact_window = self._speed_window_from_field(field, query_timestamp)
+        return _float_or_zero(value), window, timestamp, has_exact_window
+
     def _iso_from_provider_datetime(self, value: str) -> str:
         try:
             parsed = datetime.strptime(value, "%Y-%m-%d %H:%M:%S").replace(tzinfo=SH_TZ)
@@ -669,14 +805,44 @@ class JvQuantMarketDataAdapter:
             )
         return " ".join(parts)
 
+    def _tags_from_row(self, row: dict[str, Any], *prefixes: str) -> list[str]:
+        values: list[str] = []
+        for prefix in prefixes:
+            value = self._field_value(row, prefix)
+            if value is None:
+                continue
+            if isinstance(value, list):
+                values.extend(str(item).strip() for item in value)
+            else:
+                text = str(value).strip()
+                bracket_tags = re.findall(r"【([^】]+)】", text)
+                if bracket_tags:
+                    values.extend(part.strip() for part in bracket_tags)
+                else:
+                    text = re.sub(r"[\[\]\"'【】]", "", text)
+                    values.extend(part.strip() for part in re.split(r"[,，;；、|/]+", text))
+        seen: set[str] = set()
+        tags: list[str] = []
+        for value in values:
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            tags.append(value)
+        return tags[:20]
+
     def _second_board_data_quality(
         self,
         *,
         speed_timestamp: str,
         speed_window: str,
         has_exact_speed_window: bool,
+        has_exact_multi_speed_windows: bool,
         query_timestamp: str,
         has_capital_flow: bool,
+        has_auction_data: bool,
+        has_theme_tags: bool,
+        has_break_reseal_data: bool,
+        has_max_seal_data: bool,
         has_seal_data: bool,
         has_orderbook_rows: bool,
         orderbook_timestamp: str,
@@ -755,6 +921,78 @@ class JvQuantMarketDataAdapter:
                     ),
                 ],
             ),
+            "multi_speed": SignalMetadata(
+                source="jvquant.semantic_query",
+                source_field="1分钟涨幅/3分钟涨幅/10分钟涨幅",
+                timestamp=query_timestamp,
+                confidence="high" if has_exact_multi_speed_windows else "medium",
+                usable_for_grading=True,
+                limitations=[
+                    "Observed semantic-query interval fields; not independently recalculated from minute bars or ticks.",
+                    "Aegis Alpha treats this as speed-structure context rather than a standalone decision signal.",
+                ],
+                evidence=[
+                    semantic_query_doc,
+                    SignalEvidence(
+                        authority="observed_probe",
+                        source="docs/JVQUANT_CAPABILITY_MATRIX.md",
+                        detail="Observed jvQuant semantic queries return 1m, 3m, and 10m interval speed fields.",
+                        observed_at=query_timestamp,
+                    ),
+                    SignalEvidence(
+                        authority="internal_inference",
+                        source="aegis_alpha.adapter",
+                        detail="Multi-speed structure is used to judge whether the latest pull is accelerating or fading.",
+                        observed_at=query_timestamp,
+                    ),
+                ],
+            ),
+            "auction_metrics": SignalMetadata(
+                source="jvquant.semantic_query",
+                source_field="集合竞价涨跌幅/集合竞价成交额/集合竞价换手率",
+                timestamp=query_timestamp,
+                confidence="medium" if has_auction_data else "unavailable",
+                usable_for_grading=has_auction_data,
+                limitations=[
+                    "Observed semantic-query fields, not official field-level definitions.",
+                    "Auction quality still needs calibration by market cap and float turnover.",
+                ],
+                evidence=[
+                    semantic_query_doc,
+                    SignalEvidence(
+                        authority="observed_probe",
+                        source="docs/JVQUANT_CAPABILITY_MATRIX.md",
+                        detail="Observed jvQuant semantic query returns auction change, auction turnover, and auction turnover-rate fields.",
+                        observed_at=query_timestamp,
+                    ),
+                ],
+            ),
+            "theme_tags": SignalMetadata(
+                source="jvquant.semantic_query",
+                source_field="概念/个股题材",
+                timestamp=query_timestamp,
+                confidence="medium" if has_theme_tags else "unavailable",
+                usable_for_grading=has_theme_tags,
+                limitations=[
+                    "Observed concept/topic tags may not be normalized to Aegis Alpha's future theme taxonomy.",
+                    "Same-theme strength still requires group-level aggregation.",
+                ],
+                evidence=[
+                    semantic_query_doc,
+                    SignalEvidence(
+                        authority="observed_probe",
+                        source="docs/JVQUANT_CAPABILITY_MATRIX.md",
+                        detail="Observed jvQuant semantic query returns concept and topic fields.",
+                        observed_at=query_timestamp,
+                    ),
+                    SignalEvidence(
+                        authority="internal_inference",
+                        source="aegis_alpha.adapter",
+                        detail="Concept and topic tags are context signals until a normalized theme-strength model exists.",
+                        observed_at=query_timestamp,
+                    ),
+                ],
+            ),
             "seal_metrics": SignalMetadata(
                 source="jvquant.semantic_query",
                 source_field="涨停首次封板时间/涨停封单额/涨停封单量/涨停封成比",
@@ -777,6 +1015,58 @@ class JvQuantMarketDataAdapter:
                         authority="internal_inference",
                         source="aegis_alpha.adapter",
                         detail="Seal metrics are medium confidence until current/max/close seal semantics are confirmed from official docs or tick replay.",
+                        observed_at=query_timestamp,
+                    ),
+                ],
+            ),
+            "max_seal_metrics": SignalMetadata(
+                source="jvquant.semantic_query",
+                source_field="最大封单金额/最大封单量",
+                timestamp=query_timestamp,
+                confidence="medium" if has_max_seal_data else "unavailable",
+                usable_for_grading=has_max_seal_data,
+                limitations=[
+                    "Observed semantic-query fields; official exact max-seal semantics are not yet confirmed.",
+                    "Do not confuse max seal amount with current own-order queue position.",
+                ],
+                evidence=[
+                    semantic_query_doc,
+                    SignalEvidence(
+                        authority="observed_probe",
+                        source="docs/JVQUANT_CAPABILITY_MATRIX.md",
+                        detail="Observed jvQuant semantic query maps max-seal wording to seal amount and seal volume fields.",
+                        observed_at=query_timestamp,
+                    ),
+                    SignalEvidence(
+                        authority="internal_inference",
+                        source="aegis_alpha.adapter",
+                        detail="Max-seal metrics are medium confidence until official or replay evidence confirms the exact window.",
+                        observed_at=query_timestamp,
+                    ),
+                ],
+            ),
+            "break_reseal_metrics": SignalMetadata(
+                source="jvquant.semantic_query",
+                source_field="炸板次数/涨停回封次数/涨停最终封板时间",
+                timestamp=query_timestamp,
+                confidence="medium" if has_break_reseal_data else "unavailable",
+                usable_for_grading=has_break_reseal_data,
+                limitations=[
+                    "Observed semantic-query fields; not yet cross-checked with tick or replay data.",
+                    "Break/reseal counts should reduce confidence when nonzero until strategy calibration exists.",
+                ],
+                evidence=[
+                    semantic_query_doc,
+                    SignalEvidence(
+                        authority="observed_probe",
+                        source="docs/JVQUANT_CAPABILITY_MATRIX.md",
+                        detail="Observed jvQuant semantic query returns break-board count, reseal count, and final seal time fields.",
+                        observed_at=query_timestamp,
+                    ),
+                    SignalEvidence(
+                        authority="internal_inference",
+                        source="aegis_alpha.adapter",
+                        detail="Break and reseal metrics are used as risk context, not deterministic rejection rules yet.",
                         observed_at=query_timestamp,
                     ),
                 ],
