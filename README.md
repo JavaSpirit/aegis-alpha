@@ -133,7 +133,7 @@ When `AEGIS_ALPHA_MARKET_DATA_PROVIDER=jvquant`, Hermes can access jvQuant-backe
 
 The second-board candidate pool is currently derived from jvQuant semantic queries for yesterday limit-up stocks with current strength. Five-minute speed, capital-flow net inflow ratio, first limit-up time, seal amount, seal volume, and seal-to-turnover ratio come from jvQuant semantic fields when available. When jvQuant returns a time range in the speed field name, Aegis Alpha exposes it as `provider_exact_window:...` and uses the window end as `five_min_speed_timestamp`; otherwise it falls back to `provider_latest_rolling_5m` with the local query timestamp. True own-order queue position still requires broker order/trade callbacks, so the current output only exposes a queue-position note from the read-only orderbook summary. Historical limit-up statistics and normalized theme strength still use placeholders until dedicated scanners are implemented.
 
-Each second-board candidate also includes `data_quality`, a per-signal metadata map covering source, source field, timestamp, confidence, grading usability, limitations, and evidence. Evidence entries use `authority` to separate `official_doc`, `observed_probe`, and `internal_inference`. Current jvQuant field probes are documented in [docs/JVQUANT_FIELD_MAP.md](docs/JVQUANT_FIELD_MAP.md).
+Each second-board candidate also includes `data_quality`, a per-signal metadata map covering source, source field, timestamp, confidence, grading usability, limitations, and evidence. Evidence entries use `authority` to separate `official_doc`, `observed_probe`, and `internal_inference`. Current jvQuant official capability notes are documented in [docs/JVQUANT_OFFICIAL_INDEX.md](docs/JVQUANT_OFFICIAL_INDEX.md), and observed semantic-query probes are documented in [docs/JVQUANT_FIELD_MAP.md](docs/JVQUANT_FIELD_MAP.md) and [docs/JVQUANT_CAPABILITY_MATRIX.md](docs/JVQUANT_CAPABILITY_MATRIX.md).
 
 Use `get_second_board_candidate_data_quality(symbol)` when an agent only needs evidence details for one candidate; it avoids pulling the full candidate pool and reduces output truncation.
 
@@ -141,6 +141,7 @@ Refresh the jvQuant field probe after provider changes:
 
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/probe_jvquant_fields.py --sample-limit 2 --format markdown --output docs/JVQUANT_FIELD_MAP.md
+PYTHONPATH=src .venv/bin/python scripts/probe_jvquant_fields.py --sample-limit 1 --format matrix --output docs/JVQUANT_CAPABILITY_MATRIX.md
 ```
 
 ## Install Or Verify Hermes

@@ -66,6 +66,12 @@ Current jvQuant coverage:
 - Single-symbol level queue / orderbook summary. True own-order queue position remains unavailable until broker order/trade callbacks are introduced.
 - Per-signal `data_quality` metadata for second-board candidates, including source, source field, timestamp, confidence, grading usability, limitations, and evidence. Evidence authority separates `official_doc`, `observed_probe`, and `internal_inference`.
 
+Documentation and discovery are split deliberately:
+
+- [JVQUANT_OFFICIAL_INDEX.md](JVQUANT_OFFICIAL_INDEX.md) records official documentation evidence.
+- [JVQUANT_FIELD_MAP.md](JVQUANT_FIELD_MAP.md) records observed semantic-query fields and samples.
+- [JVQUANT_CAPABILITY_MATRIX.md](JVQUANT_CAPABILITY_MATRIX.md) summarizes configured probes into a capability matrix.
+
 Future adapters or jvQuant extensions may include:
 
 - StockApi for limit-up pools, break-board pools, capital flow, and early-session signals.

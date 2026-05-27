@@ -55,6 +55,11 @@ Current jvQuant-backed coverage includes market gate, limit-up pool, break-board
 
 The candidate contract now includes `data_quality` metadata per core signal. Keep expanding this layer before making strategy decisions stricter: every signal should declare its provider source, raw field name, timestamp, confidence, grading usability, limitations, and evidence. Evidence authority must distinguish official docs, observed API probes, and internal inference.
 
+Capability discovery now has two tracks:
+
+- Official documentation index: [JVQUANT_OFFICIAL_INDEX.md](JVQUANT_OFFICIAL_INDEX.md)
+- Observed semantic-query capability matrix: [JVQUANT_CAPABILITY_MATRIX.md](JVQUANT_CAPABILITY_MATRIX.md)
+
 Core indicators:
 
 - Market sentiment gate.

@@ -1,0 +1,82 @@
+{
+  "probes": [
+    {
+      "name": "second_board_speed_capital",
+      "capability": "second_board_speed_and_capital_flow",
+      "query": "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,5分钟涨幅,资金流向,主力资金,价格,成交额,行业",
+      "sort_key": "涨跌幅"
+    },
+    {
+      "name": "second_board_speed_1m",
+      "capability": "second_board_short_interval_speed",
+      "query": "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,1分钟涨幅,价格,成交额,行业",
+      "sort_key": "涨跌幅"
+    },
+    {
+      "name": "second_board_speed_3m",
+      "capability": "second_board_short_interval_speed",
+      "query": "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,3分钟涨幅,价格,成交额,行业",
+      "sort_key": "涨跌幅"
+    },
+    {
+      "name": "second_board_speed_10m",
+      "capability": "second_board_short_interval_speed",
+      "query": "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,10分钟涨幅,价格,成交额,行业",
+      "sort_key": "涨跌幅"
+    },
+    {
+      "name": "second_board_seal_metrics",
+      "capability": "second_board_seal_metrics",
+      "query": "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,首次涨停时间,封单量,封单金额,涨停封成比,价格,成交额,行业",
+      "sort_key": "涨跌幅"
+    },
+    {
+      "name": "second_board_max_seal",
+      "capability": "second_board_max_seal_metrics",
+      "query": "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,最大封单金额,最大封单量,价格,成交额,行业",
+      "sort_key": "涨跌幅"
+    },
+    {
+      "name": "second_board_break_reseal",
+      "capability": "second_board_break_and_reseal",
+      "query": "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,炸板次数,首次炸板时间,回封次数,最后封板时间,价格,成交额,行业",
+      "sort_key": "涨跌幅"
+    },
+    {
+      "name": "today_limitup_seal_metrics",
+      "capability": "today_limitup_seal_metrics",
+      "query": "今日涨停,非ST,股票代码,股票简称,涨跌幅,首次涨停时间,封单量,封单金额,涨停封成比,价格,成交额,行业",
+      "sort_key": "涨跌幅"
+    },
+    {
+      "name": "multi_board_seal_metrics",
+      "capability": "multi_board_seal_metrics",
+      "query": "连板数大于1,非ST,股票代码,股票简称,涨跌幅,连板数,首次涨停时间,封单量,封单金额,涨停封成比,价格,成交额,行业",
+      "sort_key": "涨跌幅"
+    },
+    {
+      "name": "break_board_pool",
+      "capability": "break_board_pool",
+      "query": "炸板,非ST,股票代码,股票简称,涨跌幅,炸板次数,首次炸板时间,回封次数,价格,成交额,行业",
+      "sort_key": "涨跌幅"
+    },
+    {
+      "name": "auction_metrics",
+      "capability": "auction_metrics",
+      "query": "昨日涨停,非ST,股票代码,股票简称,竞价涨幅,竞价成交额,竞价换手率,开盘价,价格,成交额,行业",
+      "sort_key": "竞价涨幅"
+    },
+    {
+      "name": "theme_concept_metrics",
+      "capability": "theme_and_concept",
+      "query": "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,所属概念,概念,题材,行业,价格,成交额",
+      "sort_key": "涨跌幅"
+    },
+    {
+      "name": "historical_limitup_followthrough",
+      "capability": "historical_limitup_followthrough",
+      "query": "过去三年涨停,股票代码,股票简称,涨停后次日高开率,涨停后次日平均涨幅,封板成功率,行业",
+      "sort_key": "涨停后次日高开率"
+    }
+  ]
+}
