@@ -94,6 +94,7 @@ class AegisAlphaRunner:
         )
         self.status_path = self.config.get("storage", {}).get("status_path")
         self.detector = EventDetector(load_event_scoring_config())
+        self._last_persist_counts: dict[str, int] = {"snapshots": 0, "events": 0}
 
     def request_stop(self, *_args: object) -> None:
         self.stop_requested = True
@@ -116,6 +117,8 @@ class AegisAlphaRunner:
             notes=[
                 "launchd may keep this process alive; Aegis Alpha only opens market subscriptions during configured trading sessions.",
                 "Runner does not call LLMs, place orders, or expose raw WebSocket messages.",
+                f"last_persisted_snapshots={self._last_persist_counts['snapshots']}",
+                f"last_persisted_events={self._last_persist_counts['events']}",
             ],
         )
         write_runner_status(status, self.status_path)
@@ -164,14 +167,17 @@ class AegisAlphaRunner:
 
     def persist_buffer_outputs(self, symbols: list[str]) -> None:
         events = []
+        snapshot_count = 0
         for symbol in symbols:
             snapshot = self.buffer.latest_snapshot(symbol, received_at=now_iso())
             if snapshot.price <= 0:
                 continue
             self.store.save_signal_snapshot(snapshot)
+            snapshot_count += 1
             events.extend(self.detector.detect_from_snapshot(snapshot))
         if events:
             self.store.save_market_events(events)
+        self._last_persist_counts = {"snapshots": snapshot_count, "events": len(events)}
 
     def run_forever(self) -> None:
         signal.signal(signal.SIGTERM, self.request_stop)

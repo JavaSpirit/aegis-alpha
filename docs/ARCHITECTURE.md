@@ -115,7 +115,7 @@ launchd
   -> MCP read-only queries
 ```
 
-`launchd` owns process lifetime. Aegis Alpha owns market-session lifetime: outside configured trading sessions the runner stays alive but does not keep market subscriptions open. The runner writes `data/runner_status.json`, provider run records, signal snapshots, and market events; Hermes reads those through MCP and should not start or inspect raw streams.
+`launchd` owns process lifetime. Aegis Alpha owns market-session lifetime: outside configured trading sessions the runner stays alive but does not keep market subscriptions open. The runner writes `data/runner_status.json`, provider run records, signal snapshots, and market events; Hermes reads those through MCP and should not start or inspect raw streams. MCP tools prefer runner-produced SQLite events and snapshots, falling back to provider queries only when the local store is empty.
 
 Current storage direction:
 

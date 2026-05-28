@@ -163,6 +163,26 @@ class AegisAlphaStore:
             rows = conn.execute(query, params).fetchall()
         return [MarketEvent.model_validate_json(row[0]) for row in rows]
 
+    def signal_snapshot_count(self, symbol: str | None = None) -> int:
+        query = "SELECT COUNT(*) FROM signal_snapshots"
+        params: list[object] = []
+        if symbol:
+            query += " WHERE symbol = ?"
+            params.append(symbol)
+        with self._connect() as conn:
+            row = conn.execute(query, params).fetchone()
+        return int(row[0]) if row else 0
+
+    def market_event_count(self, event_type: str | None = None) -> int:
+        query = "SELECT COUNT(*) FROM market_events"
+        params: list[object] = []
+        if event_type:
+            query += " WHERE event_type = ?"
+            params.append(event_type)
+        with self._connect() as conn:
+            row = conn.execute(query, params).fetchone()
+        return int(row[0]) if row else 0
+
     def latest_signal_snapshot(self, symbol: str) -> SignalSnapshot | None:
         with self._connect() as conn:
             row = conn.execute(

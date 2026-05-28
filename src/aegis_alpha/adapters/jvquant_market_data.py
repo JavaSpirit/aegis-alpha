@@ -198,10 +198,15 @@ class JvQuantMarketDataAdapter:
 
     def get_signal_snapshot(self, symbol: str) -> SignalSnapshot:
         normalized = normalize_symbol(symbol)
+        store = AegisAlphaStore()
+        stored = store.latest_signal_snapshot(normalized)
+        if stored is not None:
+            return stored
+
         for candidate in self.get_second_board_candidates():
             if candidate.symbol == normalized or normalize_symbol(candidate.symbol) == normalized:
                 snapshot = self._signal_snapshot_from_candidate(candidate)
-                AegisAlphaStore().save_signal_snapshot(snapshot)
+                store.save_signal_snapshot(snapshot)
                 return snapshot
 
         realtime = self.get_stock_realtime_snapshot(symbol)
@@ -223,17 +228,21 @@ class JvQuantMarketDataAdapter:
                 "Speed windows are unavailable unless the symbol is in the second-board candidate pool or realtime buffer.",
             ],
         )
-        AegisAlphaStore().save_signal_snapshot(snapshot)
+        store.save_signal_snapshot(snapshot)
         return snapshot
 
     def get_recent_market_events(self, limit: int = 20, event_type: str | None = None) -> list[MarketEvent]:
+        store = AegisAlphaStore()
+        stored = store.recent_market_events(limit, event_type)
+        if stored:
+            return stored
+
         snapshots = [self._signal_snapshot_from_candidate(candidate) for candidate in self.get_second_board_candidates()]
         detector = EventDetector(self.get_event_scoring_config())
         events: list[MarketEvent] = []
         for snapshot in snapshots:
             events.extend(detector.detect_from_snapshot(snapshot))
         events.extend(detector.detect_theme_cluster(snapshots))
-        store = AegisAlphaStore()
         store.save_market_events(events)
         recent = store.recent_market_events(limit, event_type)
         if not recent:

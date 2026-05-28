@@ -69,14 +69,28 @@ class SignalWindowBuffer:
             lambda: deque(maxlen=max_points_per_symbol)
         )
         self._big_order_amount: dict[str, float] = defaultdict(float)
+        self._change_pct: dict[str, float] = defaultdict(float)
+        self._orderbook_quality: dict[str, float] = defaultdict(lambda: 50.0)
 
-    def add_price(self, symbol: str, timestamp: str, price: float, turnover_cny: float = 0.0) -> None:
+    def add_price(
+        self,
+        symbol: str,
+        timestamp: str,
+        price: float,
+        turnover_cny: float = 0.0,
+        change_pct: float | None = None,
+    ) -> None:
         if price <= 0:
             return
         self._points[symbol].append((timestamp, price, turnover_cny))
+        if change_pct is not None:
+            self._change_pct[symbol] = change_pct
 
     def add_big_order_flow(self, symbol: str, amount_cny: float) -> None:
         self._big_order_amount[symbol] += amount_cny
+
+    def set_orderbook_quality(self, symbol: str, quality_score: float) -> None:
+        self._orderbook_quality[symbol] = round(max(0.0, min(100.0, quality_score)), 2)
 
     def speed_pct(self, symbol: str, minutes: int) -> float:
         points = list(self._points.get(symbol, []))
@@ -99,7 +113,7 @@ class SignalWindowBuffer:
         provider: str = "jvQuant",
         data_mode: str = "realtime_buffer",
         change_pct: float = 0.0,
-        orderbook_quality_score: float = 50.0,
+        orderbook_quality_score: float | None = None,
         seal_amount_cny: float = 0.0,
         received_at: str | None = None,
     ) -> SignalSnapshot:
@@ -116,14 +130,18 @@ class SignalWindowBuffer:
             provider=provider,
             data_mode=data_mode,
             price=price,
-            change_pct=change_pct,
+            change_pct=change_pct if change_pct != 0.0 else self._change_pct.get(symbol, 0.0),
             speed_1m_pct=self.speed_pct(symbol, 1),
             speed_3m_pct=self.speed_pct(symbol, 3),
             speed_5m_pct=self.speed_pct(symbol, 5),
             speed_10m_pct=self.speed_pct(symbol, 10),
             big_order_net_inflow_cny=big_order_net,
             big_order_net_inflow_ratio=round(big_order_net / turnover, 4) if turnover else 0.0,
-            orderbook_quality_score=orderbook_quality_score,
+            orderbook_quality_score=(
+                orderbook_quality_score
+                if orderbook_quality_score is not None
+                else self._orderbook_quality.get(symbol, 50.0)
+            ),
             seal_amount_cny=seal_amount_cny,
             data_timestamp=timestamp,
             provider_timestamp=timestamp,

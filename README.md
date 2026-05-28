@@ -165,6 +165,8 @@ Open a short read-only WebSocket smoke subscription:
 PYTHONPATH=src .venv/bin/python scripts/smoke_jvquant_realtime.py --symbols 600519 --levels lv1,lv2,lv10 --connect --duration 5
 ```
 
+When run with `--connect`, the smoke helper persists any received signal snapshots and generated events into the local SQLite store. During non-trading hours, it may connect but receive no live ticks.
+
 ## Launchd Runner
 
 Aegis Alpha includes a launchd-managed runner for macOS. `launchd` keeps the process alive; Aegis Alpha itself decides whether the current time is inside configured trading sessions before opening WebSocket subscriptions.
@@ -194,7 +196,7 @@ scripts/uninstall_launchd_runner.sh
 scripts/uninstall_launchd_runner.sh --remove-plist
 ```
 
-The runner uses [config/runner.yaml](config/runner.yaml), writes `data/runner_status.json`, logs to `logs/runner.out.log` and `logs/runner.err.log`, and keeps raw WebSocket data inside the local signal engine.
+The runner uses [config/runner.yaml](config/runner.yaml), writes `data/runner_status.json`, logs to `logs/runner.out.log` and `logs/runner.err.log`, persists signal snapshots and generated events into SQLite during active sessions, and keeps raw WebSocket data inside the local signal engine.
 
 Each second-board candidate also includes `data_quality`, a per-signal metadata map covering source, source field, timestamp, confidence, grading usability, limitations, and evidence. Evidence entries use `authority` to separate `official_doc`, `observed_probe`, and `internal_inference`. Current jvQuant official capability notes are documented in [docs/JVQUANT_OFFICIAL_INDEX.md](docs/JVQUANT_OFFICIAL_INDEX.md), and observed semantic-query probes are documented in [docs/JVQUANT_FIELD_MAP.md](docs/JVQUANT_FIELD_MAP.md) and [docs/JVQUANT_CAPABILITY_MATRIX.md](docs/JVQUANT_CAPABILITY_MATRIX.md).
 

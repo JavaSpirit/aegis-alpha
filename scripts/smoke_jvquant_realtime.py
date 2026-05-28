@@ -6,6 +6,8 @@ import time
 
 from aegis_alpha.adapters.jvquant_websocket import JvQuantRealtimeClient, subscription_codes
 from aegis_alpha.config import load_project_env
+from aegis_alpha.events import EventDetector
+from aegis_alpha.storage import AegisAlphaStore
 
 
 def main() -> None:
@@ -38,6 +40,19 @@ def main() -> None:
 
     status = client.subscribe(symbols, levels)
     time.sleep(max(0.0, args.duration))
+    store = AegisAlphaStore()
+    detector = EventDetector()
+    snapshots = []
+    events = []
+    for symbol in symbols:
+        snapshot = client.buffer.latest_snapshot(symbol)
+        if snapshot.price <= 0:
+            continue
+        store.save_signal_snapshot(snapshot)
+        snapshots.append(snapshot.model_dump())
+        detected = detector.detect_from_snapshot(snapshot)
+        store.save_market_events(detected)
+        events.extend(event.model_dump() for event in detected)
     final_status = client.disconnect()
     print(
         json.dumps(
@@ -45,6 +60,10 @@ def main() -> None:
                 "mode": "connected",
                 "initial_status": status.model_dump(),
                 "final_status": final_status.model_dump(),
+                "snapshot_count": len(snapshots),
+                "event_count": len(events),
+                "snapshots": snapshots,
+                "events": events,
             },
             ensure_ascii=False,
             indent=2,

@@ -136,6 +136,7 @@ class JvQuantRealtimeClient:
             self._provider_time(lv1.time),
             float(lv1.price),
             float(getattr(lv1, "amount", 0.0)),
+            change_pct=float(getattr(lv1, "ratio", 0.0)),
         )
 
     def _on_ab_lv2(self, lv2: Any) -> None:
@@ -152,7 +153,13 @@ class JvQuantRealtimeClient:
             self._provider_time(lv10.time),
             float(lv10.price),
             float(getattr(lv10, "amount", 0.0)),
+            change_pct=float(getattr(lv10, "ratio", 0.0)),
         )
+        bid_volume = sum(float(getattr(lv10, f"b{index}", 0.0)) for index in range(1, 11))
+        ask_volume = sum(float(getattr(lv10, f"s{index}", 0.0)) for index in range(1, 11))
+        total_volume = bid_volume + ask_volume
+        if total_volume > 0:
+            self.buffer.set_orderbook_quality(str(lv10.code), 100 * bid_volume / total_volume)
 
     def _provider_time(self, value: str) -> str:
         text = str(value or "").strip()

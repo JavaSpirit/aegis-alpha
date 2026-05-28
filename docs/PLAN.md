@@ -129,6 +129,7 @@ Lifecycle boundary:
 - launchd keeps the runner process alive.
 - The runner opens jvQuant subscriptions only during configured trading sessions.
 - The runner writes local status, snapshots, events, and provider run records.
+- MCP reads runner-produced SQLite events and snapshots first; provider queries are fallback paths when the local store is empty.
 - MCP and Hermes only read local state; they do not own the realtime process.
 
 ## Phase 3: Review And Correction

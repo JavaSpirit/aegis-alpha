@@ -17,16 +17,17 @@ def test_event_scoring_config_loads() -> None:
 def test_signal_window_buffer_calculates_speed_and_flow() -> None:
     buffer = SignalWindowBuffer()
     for index, price in enumerate([10.0, 10.1, 10.2, 10.4, 10.6, 10.9]):
-        buffer.add_price("600000", f"2026-05-28T09:3{index}:00+08:00", price, 100_000_000)
+        buffer.add_price("600000", f"2026-05-28T09:3{index}:00+08:00", price, 100_000_000, change_pct=9.1)
     buffer.add_big_order_flow("600000", 12_000_000)
+    buffer.set_orderbook_quality("600000", 72)
 
     snapshot = buffer.latest_snapshot(
         "600000",
-        change_pct=9.1,
-        orderbook_quality_score=72,
         received_at="2026-05-28T09:35:30+08:00",
     )
 
+    assert snapshot.change_pct == 9.1
+    assert snapshot.orderbook_quality_score == 72
     assert snapshot.speed_1m_pct == 2.8302
     assert snapshot.speed_5m_pct == 9.0
     assert snapshot.big_order_net_inflow_ratio == 0.12

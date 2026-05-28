@@ -68,7 +68,10 @@ echo "  $TARGET"
 
 if [[ "$LOAD" == true ]]; then
   launchctl bootout "gui/$UID/$LABEL" >/dev/null 2>&1 || true
-  launchctl bootstrap "gui/$UID" "$TARGET"
+  if ! launchctl bootstrap "gui/$UID" "$TARGET"; then
+    sleep 1
+    launchctl bootstrap "gui/$UID" "$TARGET"
+  fi
   launchctl enable "gui/$UID/$LABEL"
   launchctl kickstart -k "gui/$UID/$LABEL"
   echo "Loaded launchd service:"
