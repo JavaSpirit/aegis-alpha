@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from aegis_alpha.adapters.jvquant_websocket import subscription_codes
+from aegis_alpha.adapters.jvquant_websocket import summarize_raw_ab_payload, subscription_codes
 from aegis_alpha.events import EventDetector, SignalWindowBuffer, load_event_scoring_config
 from aegis_alpha.models import CandidateOutcomeReview, SignalSnapshot
 from aegis_alpha.storage import AegisAlphaStore, ParquetSink
@@ -76,6 +76,17 @@ def test_subscription_code_generation() -> None:
         "lv1_000001",
         "lv2_000001",
     ]
+
+
+def test_raw_websocket_payload_summary() -> None:
+    summary = summarize_raw_ab_payload(
+        "lv2_600519=09:30:00,1,100.1,400|09:30:01,2,100.2,500\n"
+        "lv10_600519=09:30:01,茅台,100.2,99.0,1000000,1000,100.1,100.0,99.9,99.8,99.7,99.6,99.5,99.4,99.3,99.2,1,2,3,4,5,6,7,8,9,10,100.3,100.4,100.5,100.6,100.7,100.8,100.9,101.0,101.1,101.2,10,9,8,7,6,5,4,3,2,1"
+    )
+
+    assert summary["levels"]["lv2"]["latest_field_counts"] == [4]
+    assert summary["levels"]["lv2"]["max_piece_count"] == 2
+    assert summary["levels"]["lv10"]["latest_field_counts"] == [46]
 
 
 def test_sqlite_store_roundtrip(tmp_path) -> None:

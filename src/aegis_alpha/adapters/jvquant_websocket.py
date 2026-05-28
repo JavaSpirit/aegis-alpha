@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Any
 
 from aegis_alpha.events import SignalWindowBuffer, now_iso
@@ -21,6 +22,38 @@ def subscription_codes(symbols: list[str], levels: list[str]) -> list[str]:
     ]
 
 
+def summarize_raw_ab_payload(text: str, *, max_rows: int = 20, include_samples: bool = False) -> dict[str, Any]:
+    rows = [row for row in text.splitlines() if row.strip()]
+    summary: dict[str, Any] = {"row_count": len(rows), "levels": {}}
+    samples: list[dict[str, Any]] = []
+    for row in rows[:max_rows]:
+        if "=" not in row:
+            continue
+        symbol, payload = row.split("=", 1)
+        level = symbol.split("_", 1)[0]
+        pieces = [piece for piece in payload.split("|") if piece]
+        latest = pieces[-1] if pieces else ""
+        fields = latest.split(",") if latest else []
+        level_summary = summary["levels"].setdefault(
+            level,
+            {"row_count": 0, "max_piece_count": 0, "latest_field_counts": []},
+        )
+        level_summary["row_count"] += 1
+        level_summary["max_piece_count"] = max(level_summary["max_piece_count"], len(pieces))
+        level_summary["latest_field_counts"].append(len(fields))
+        sample = {
+            "level": level,
+            "symbol": re.sub(r"^(lv1|lv2|lv10)_", "", symbol),
+            "piece_count": len(pieces),
+            "latest_field_count": len(fields),
+        }
+        if include_samples:
+            sample["latest_fields"] = fields
+        samples.append(sample)
+    summary["samples"] = samples
+    return summary
+
+
 class JvQuantRealtimeClient:
     """Thin read-only jvQuant WebSocket wrapper.
 
@@ -34,10 +67,12 @@ class JvQuantRealtimeClient:
         token: str | None = None,
         market: str | None = None,
         buffer: SignalWindowBuffer | None = None,
+        raw_data_handle: Any | None = None,
     ) -> None:
         self.token = token or os.environ.get("JVQUANT_TOKEN", "")
         self.market = market or os.environ.get("JVQUANT_MARKET", "ab")
         self.buffer = buffer or SignalWindowBuffer()
+        self.raw_data_handle = raw_data_handle
         self._client: Any | None = None
         self._connected = False
         self._subscribed: set[str] = set()
@@ -56,6 +91,7 @@ class JvQuantRealtimeClient:
                 token=self.token,
                 log_level=logging.ERROR,
                 log_handle=self._on_log,
+                data_handle=self._on_raw_data,
                 ab_lv1_handle=self._on_ab_lv1,
                 ab_lv2_handle=self._on_ab_lv2,
                 ab_lv10_handle=self._on_ab_lv10,
@@ -128,6 +164,11 @@ class JvQuantRealtimeClient:
     def _on_log(self, message: str) -> None:
         if "error" in message.lower() or "失败" in message:
             self._last_error = "provider_log_error"
+
+    def _on_raw_data(self, text: str) -> None:
+        self._last_message_at = now_iso()
+        if callable(self.raw_data_handle):
+            self.raw_data_handle(text)
 
     def _on_ab_lv1(self, lv1: Any) -> None:
         self._last_message_at = now_iso()
