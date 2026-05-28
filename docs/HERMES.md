@@ -110,6 +110,8 @@ mcp_servers:
         - get_limitup_pool
         - get_break_board_pool
         - get_stock_realtime_snapshot
+        - get_stock_orderbook_snapshot
+        - get_stock_minute_replay_snapshot
         - get_stock_history_limitup_stats
         - get_theme_strength
         - get_second_board_candidates
@@ -162,7 +164,7 @@ Use the second-board-radar skill to review today's second-board candidates.
 
 ## Safety Boundary
 
-The current MCP server is read-only and uses mock data. It does not expose:
+The current MCP server is read-only. It uses mock data by default and can use authorized jvQuant read-only data when configured. It does not expose:
 
 - Broker login.
 - Account query.

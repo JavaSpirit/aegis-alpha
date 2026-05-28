@@ -15,6 +15,8 @@ from aegis_alpha.models import (
     LimitUpStock,
     MarketSentimentGate,
     MarketSnapshot,
+    MinuteReplayBar,
+    MinuteReplaySnapshot,
     OrderbookQueueLevel,
     SecondBoardCandidate,
     SignalEvidence,
@@ -230,6 +232,13 @@ class JvQuantMarketDataAdapter:
         query_timestamp = _now()
         max_candidates = _int_or_zero(os.environ.get("AEGIS_ALPHA_SECOND_BOARD_MAX_CANDIDATES")) or 12
         orderbook_limit = _int_or_zero(os.environ.get("AEGIS_ALPHA_SECOND_BOARD_ORDERBOOK_LIMIT")) or 5
+        minute_replay_enabled = os.environ.get("AEGIS_ALPHA_ENABLE_MINUTE_REPLAY", "true").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "y",
+        }
+        minute_replay_limit = _int_or_zero(os.environ.get("AEGIS_ALPHA_SECOND_BOARD_MINUTE_REPLAY_LIMIT")) or 12
         theme_counts = Counter(self._theme_from_row(row) for row in rows)
         gate = self.get_market_sentiment_gate()
 
@@ -265,6 +274,38 @@ class JvQuantMarketDataAdapter:
             ten_min_speed_pct, ten_min_speed_window, ten_min_speed_timestamp, has_exact_10m_window = (
                 self._speed_from_row(speed_10m_row, query_timestamp)
             )
+            minute_replay_timestamp = ""
+            minute_replay_trading_day = ""
+            minute_replay_bar_count = 0
+            minute_replay_notes: list[str] = []
+            minute_replay_used = False
+            if minute_replay_enabled and index < minute_replay_limit:
+                try:
+                    minute_replay = self.get_stock_minute_replay_snapshot(symbol)
+                    minute_replay_timestamp = minute_replay.timestamp
+                    minute_replay_trading_day = minute_replay.trading_day
+                    minute_replay_bar_count = minute_replay.minute_count
+                    if minute_replay.minute_count >= 2 and minute_replay.speed_pct_by_window:
+                        one_min_speed_pct = minute_replay.speed_pct_by_window.get("1m", one_min_speed_pct)
+                        three_min_speed_pct = minute_replay.speed_pct_by_window.get("3m", three_min_speed_pct)
+                        five_min_speed_pct = minute_replay.speed_pct_by_window.get("5m", five_min_speed_pct)
+                        ten_min_speed_pct = minute_replay.speed_pct_by_window.get("10m", ten_min_speed_pct)
+                        one_min_speed_window = minute_replay.speed_window_by_window.get("1m", one_min_speed_window)
+                        three_min_speed_window = minute_replay.speed_window_by_window.get("3m", three_min_speed_window)
+                        speed_window = minute_replay.speed_window_by_window.get("5m", speed_window)
+                        ten_min_speed_window = minute_replay.speed_window_by_window.get("10m", ten_min_speed_window)
+                        one_min_speed_timestamp = minute_replay.timestamp
+                        three_min_speed_timestamp = minute_replay.timestamp
+                        speed_timestamp = minute_replay.timestamp
+                        ten_min_speed_timestamp = minute_replay.timestamp
+                        has_exact_speed_window = True
+                        has_exact_1m_window = True
+                        has_exact_3m_window = True
+                        has_exact_10m_window = True
+                        minute_replay_used = True
+                    minute_replay_notes.extend(minute_replay.notes)
+                except Exception as exc:
+                    minute_replay_notes.append(f"minute_replay_unavailable={type(exc).__name__}")
             turnover_cny = self._parse_cny_amount(self._field_value(row, "成交额"))
             main_net_inflow_cny = self._parse_cny_amount(
                 self._field_value(row, "主力净额", "大单净额", "超大单净额")
@@ -380,6 +421,9 @@ class JvQuantMarketDataAdapter:
                 has_seal_data=first_limit_up_time != "unknown" or seal_amount_cny > 0 or seal_volume_shares > 0,
                 has_orderbook_rows=orderbook_has_rows,
                 orderbook_timestamp=orderbook_timestamp,
+                minute_replay_used=minute_replay_used,
+                minute_replay_timestamp=minute_replay_timestamp,
+                minute_replay_bar_count=minute_replay_bar_count,
             )
 
             candidates.append(
@@ -402,6 +446,9 @@ class JvQuantMarketDataAdapter:
                     five_min_speed_pct=five_min_speed_pct,
                     five_min_speed_window=speed_window,
                     five_min_speed_timestamp=speed_timestamp,
+                    minute_replay_timestamp=minute_replay_timestamp,
+                    minute_replay_trading_day=minute_replay_trading_day,
+                    minute_replay_bar_count=minute_replay_bar_count,
                     one_min_speed_pct=one_min_speed_pct,
                     one_min_speed_window=one_min_speed_window,
                     one_min_speed_timestamp=one_min_speed_timestamp,
@@ -434,11 +481,23 @@ class JvQuantMarketDataAdapter:
                             if change_pct_inferred
                             else "current_change_pct comes from a jvQuant semantic field."
                         ),
-                        "five_min_speed_pct comes from a jvQuant semantic interval field; use five_min_speed_window for its time meaning.",
+                        (
+                            "five_min_speed_pct comes from jvQuant minute replay bars recalculated by Aegis Alpha."
+                            if minute_replay_used
+                            else "five_min_speed_pct comes from a jvQuant semantic interval field; use five_min_speed_window for its time meaning."
+                        ),
+                        (
+                            "minute replay was used to recalculate 1m/3m/5m/10m speed windows."
+                            if minute_replay_used
+                            else "minute replay was unavailable or disabled; speed fields use jvQuant semantic query values."
+                        ),
                         "capital-flow ratio comes from jvQuant semantic fields, not tick-by-tick trade classification.",
                         "Historical limit-up rates are not derived yet.",
                         f"five_min_speed_window={speed_window}",
                         f"five_min_speed_timestamp={speed_timestamp}",
+                        f"minute_replay_timestamp={minute_replay_timestamp}",
+                        f"minute_replay_trading_day={minute_replay_trading_day}",
+                        f"minute_replay_bar_count={minute_replay_bar_count}",
                         f"one_min_speed_pct={one_min_speed_pct:.2f}",
                         f"three_min_speed_pct={three_min_speed_pct:.2f}",
                         f"ten_min_speed_pct={ten_min_speed_pct:.2f}",
@@ -459,6 +518,7 @@ class JvQuantMarketDataAdapter:
                         f"turnover_cny={turnover_cny:.0f}",
                         f"main_net_inflow_cny={main_net_inflow_cny:.0f}",
                         *orderbook_notes,
+                        *minute_replay_notes[:5],
                     ],
                 )
             )
@@ -505,6 +565,7 @@ class JvQuantMarketDataAdapter:
                 f"Auction change is {candidate.auction_change_pct:.2f}%; auction turnover is {candidate.auction_turnover_cny:.0f} CNY.",
                 f"Five-minute speed is {candidate.five_min_speed_pct:.2f}%.",
                 f"Five-minute speed window is {candidate.five_min_speed_window}; timestamp is {candidate.five_min_speed_timestamp}.",
+                f"Minute replay trading day is {candidate.minute_replay_trading_day or 'unknown'}; bar count is {candidate.minute_replay_bar_count}.",
                 f"Multi-speed structure is 1m={candidate.one_min_speed_pct:.2f}%, 3m={candidate.three_min_speed_pct:.2f}%, 10m={candidate.ten_min_speed_pct:.2f}%.",
                 f"Capital-flow net inflow ratio is {candidate.big_order_net_inflow_ratio:.2f}.",
                 f"First limit-up time is {candidate.first_limit_up_time}.",
@@ -521,7 +582,8 @@ class JvQuantMarketDataAdapter:
                 f"Estimated seal probability is {candidate.estimated_seal_probability:.0%} from current coarse factors.",
             ],
             risks=[
-                "Candidate pool is live-provider jvQuant; speed and capital-flow fields are semantic-query values, not tick-by-tick order classification.",
+                "Candidate pool is live-provider jvQuant; capital-flow fields are semantic-query values, not tick-by-tick order classification.",
+                "Minute replay speed is minute-level historical/replay data, not tick-by-tick realtime Level-2.",
                 "Auction, concept, topic, break/reseal, and max-seal fields are observed semantic-query values, not official field-level definitions.",
                 "Historical three-year limit-up success and next-day premium are placeholders.",
                 "True own-order queue position and cancellation rules require broker order/trade callbacks and are not implemented.",
@@ -577,6 +639,59 @@ class JvQuantMarketDataAdapter:
                 f"orderbook_level_count={orderbook.level_count}",
                 f"best_bid_price={orderbook.best_bid_price}",
                 f"best_ask_price={orderbook.best_ask_price}",
+            ],
+        )
+
+    def get_stock_minute_replay_snapshot(
+        self,
+        symbol: str,
+        end_day: str | None = None,
+        limit_days: int = 1,
+    ) -> MinuteReplaySnapshot:
+        code = normalize_symbol(symbol)
+        safe_limit = max(1, min(int(limit_days or 1), 30))
+        safe_end_day = (end_day or datetime.now(SH_TZ).date().isoformat()).strip()
+        payload = self.client.minute(code, safe_end_day, safe_limit)
+        data = payload.get("data", {}) if isinstance(payload, dict) else {}
+        fields = data.get("fields", []) if isinstance(data, dict) else []
+        days = data.get("list", []) if isinstance(data, dict) else []
+        if not isinstance(fields, list):
+            fields = []
+        if not fields:
+            fields = ["时间", "最新价", "均价", "成交量"]
+
+        selected_day = self._latest_minute_day(days)
+        trading_day = str(selected_day.get("date") or data.get("end") or safe_end_day)
+        previous_close = _float_or_zero(selected_day.get("last_price"))
+        raw_bars = selected_day.get("list", [])
+        bars = self._minute_bars_from_rows(raw_bars, fields)
+        last_bar = bars[-1] if bars else None
+        timestamp = (
+            self._iso_from_provider_datetime(f"{trading_day} {self._time_with_seconds(last_bar.time)}")
+            if last_bar is not None
+            else _now()
+        )
+        speed_pct_by_window, speed_window_by_window = self._minute_speed_windows(trading_day, bars)
+
+        return MinuteReplaySnapshot(
+            symbol=symbol,
+            name=str(data.get("name") or selected_day.get("name") or "unknown") if isinstance(data, dict) else "unknown",
+            timestamp=timestamp or _now(),
+            data_mode="minute_replay",
+            provider="jvQuant",
+            trading_day=trading_day,
+            previous_close=previous_close,
+            last_price=last_bar.last_price if last_bar else 0.0,
+            minute_count=len(bars),
+            bars=bars[-30:],
+            speed_pct_by_window=speed_pct_by_window,
+            speed_window_by_window=speed_window_by_window,
+            notes=[
+                "Read-only jvQuant minute replay data from client.minute(mode=minute).",
+                "Speed windows are recalculated by Aegis Alpha from minute bars, not from semantic-query speed fields.",
+                "Minute replay is minute-level historical/replay data; it is not tick-by-tick realtime Level-2.",
+                f"requested_end_day={safe_end_day}",
+                f"requested_limit_days={safe_limit}",
             ],
         )
 
@@ -672,6 +787,85 @@ class JvQuantMarketDataAdapter:
     def _query_count(self, payload: dict[str, Any]) -> int:
         data = payload.get("data", {}) if isinstance(payload, dict) else {}
         return _int_or_zero(data.get("count")) if isinstance(data, dict) else 0
+
+    def _latest_minute_day(self, days: Any) -> dict[str, Any]:
+        if not isinstance(days, list):
+            return {}
+        valid_days = [day for day in days if isinstance(day, dict) and isinstance(day.get("list"), list) and day["list"]]
+        if not valid_days:
+            return {}
+        return sorted(valid_days, key=lambda item: str(item.get("date") or ""))[-1]
+
+    def _minute_bars_from_rows(self, rows: Any, fields: list[Any]) -> list[MinuteReplayBar]:
+        if not isinstance(rows, list):
+            return []
+        time_index = self._field_index(fields, "时间", "time")
+        price_index = self._field_index(fields, "最新价", "价格", "last_price")
+        average_index = self._field_index(fields, "均价", "average_price", "avg_price")
+        volume_index = self._field_index(fields, "成交量", "volume")
+
+        bars: list[MinuteReplayBar] = []
+        for row in rows:
+            if not isinstance(row, list):
+                continue
+            time_value = self._row_value(row, time_index)
+            price_value = self._row_value(row, price_index)
+            if time_value in (None, "") or price_value in (None, ""):
+                continue
+            bar = MinuteReplayBar(
+                time=str(time_value),
+                last_price=_float_or_zero(price_value),
+                average_price=_float_or_zero(self._row_value(row, average_index)),
+                volume=_float_or_zero(self._row_value(row, volume_index)),
+            )
+            if bar.last_price > 0:
+                bars.append(bar)
+        return sorted(bars, key=lambda item: item.time)
+
+    def _field_index(self, fields: list[Any], *prefixes: str) -> int:
+        normalized_prefixes = tuple(prefix.lower() for prefix in prefixes)
+        for index, field in enumerate(fields):
+            field_text = str(field).strip()
+            field_lower = field_text.lower()
+            if field_text in prefixes or any(field_lower.startswith(prefix) for prefix in normalized_prefixes):
+                return index
+        return -1
+
+    def _row_value(self, row: list[Any], index: int) -> Any:
+        if index < 0 or index >= len(row):
+            return None
+        return row[index]
+
+    def _minute_speed_windows(self, trading_day: str, bars: list[MinuteReplayBar]) -> tuple[dict[str, float], dict[str, str]]:
+        speed_pct_by_window: dict[str, float] = {}
+        speed_window_by_window: dict[str, str] = {}
+        if len(bars) < 2:
+            return speed_pct_by_window, speed_window_by_window
+
+        latest_index = len(bars) - 1
+        latest = bars[latest_index]
+        for minutes in (1, 3, 5, 10):
+            base_index = max(0, latest_index - minutes)
+            base = bars[base_index]
+            label = f"{minutes}m"
+            if base.last_price <= 0:
+                speed = 0.0
+            else:
+                speed = round((latest.last_price / base.last_price - 1.0) * 100.0, 4)
+            exactness = "exact" if latest_index - base_index == minutes else "partial"
+            speed_pct_by_window[label] = speed
+            speed_window_by_window[label] = (
+                f"minute_replay_{exactness}_window:"
+                f"{trading_day} {self._time_with_seconds(base.time)}-"
+                f"{trading_day} {self._time_with_seconds(latest.time)}"
+            )
+        return speed_pct_by_window, speed_window_by_window
+
+    def _time_with_seconds(self, value: str) -> str:
+        text = str(value or "").strip()
+        if re.fullmatch(r"\d{2}:\d{2}", text):
+            return f"{text}:00"
+        return text
 
     def _limitup_from_row(self, row: dict[str, Any]) -> LimitUpStock:
         turnover_cny = self._parse_cny_amount(self._field_value(row, "成交额"))
@@ -846,6 +1040,9 @@ class JvQuantMarketDataAdapter:
         has_seal_data: bool,
         has_orderbook_rows: bool,
         orderbook_timestamp: str,
+        minute_replay_used: bool,
+        minute_replay_timestamp: str,
+        minute_replay_bar_count: int,
     ) -> dict[str, SignalMetadata]:
         semantic_query_doc = SignalEvidence(
             authority="official_doc",
@@ -859,41 +1056,77 @@ class JvQuantMarketDataAdapter:
             detail="jvQuant documentation lists沪深Level2千档盘口队列 / level queue capabilities.",
             observed_at=query_timestamp,
         )
+        minute_replay_doc = SignalEvidence(
+            authority="official_doc",
+            source="https://jvquant.com/wiki/%E6%95%B0%E6%8D%AE%E5%BA%93/%E6%B2%AA%E6%B7%B1%E5%88%86%E6%97%B6%E6%95%B0%E6%8D%AE.html",
+            detail="jvQuant documentation lists mode=minute minute replay data with time, latest price, average price, and volume fields.",
+            observed_at=query_timestamp,
+        )
+        speed_source = "jvquant.minute_replay" if minute_replay_used else "jvquant.semantic_query"
+        speed_source_field = (
+            "client.minute(mode=minute) bars recalculated into 1m/3m/5m/10m speeds"
+            if minute_replay_used
+            else "5分钟涨幅/区间涨跌幅"
+        )
+        speed_evidence = (
+            [
+                minute_replay_doc,
+                SignalEvidence(
+                    authority="internal_inference",
+                    source="aegis_alpha.adapter",
+                    detail=(
+                        "Aegis Alpha recalculates speed windows from jvQuant minute replay bars; "
+                        f"minute_replay_bar_count={minute_replay_bar_count}."
+                    ),
+                    observed_at=minute_replay_timestamp or query_timestamp,
+                ),
+            ]
+            if minute_replay_used
+            else [
+                semantic_query_doc,
+                SignalEvidence(
+                    authority="observed_probe",
+                    source="docs/JVQUANT_FIELD_MAP.md",
+                    detail=(
+                        f"Observed jvQuant speed field returned a parseable window: {speed_window}."
+                        if has_exact_speed_window
+                        else "Observed jvQuant speed field returned without a parseable window."
+                    ),
+                    observed_at=speed_timestamp,
+                ),
+                SignalEvidence(
+                    authority="internal_inference",
+                    source="aegis_alpha.adapter",
+                    detail="Confidence is high only when a provider window is parsed; otherwise medium.",
+                    observed_at=query_timestamp,
+                ),
+            ]
+        )
         return {
             "five_min_speed": SignalMetadata(
-                source="jvquant.semantic_query",
-                source_field="5分钟涨幅/区间涨跌幅",
+                source=speed_source,
+                source_field=speed_source_field,
                 timestamp=speed_timestamp,
                 confidence="high" if has_exact_speed_window else "medium",
                 usable_for_grading=True,
                 limitations=[
                     f"window={speed_window}",
                     (
-                        "Exact provider interval parsed from returned field name."
-                        if has_exact_speed_window
-                        else "Provider did not expose exact five-minute window start/end in the field name."
-                    ),
-                    "Not independently recalculated from minute bars or ticks yet.",
-                ],
-                evidence=[
-                    semantic_query_doc,
-                    SignalEvidence(
-                        authority="observed_probe",
-                        source="docs/JVQUANT_FIELD_MAP.md",
-                        detail=(
-                            f"Observed jvQuant speed field returned a parseable window: {speed_window}."
+                        "Speed was independently recalculated from minute replay bars."
+                        if minute_replay_used
+                        else (
+                            "Exact provider interval parsed from returned field name."
                             if has_exact_speed_window
-                            else "Observed jvQuant speed field returned without a parseable window."
-                        ),
-                        observed_at=speed_timestamp,
+                            else "Provider did not expose exact five-minute window start/end in the field name."
+                        )
                     ),
-                    SignalEvidence(
-                        authority="internal_inference",
-                        source="aegis_alpha.adapter",
-                        detail="Confidence is high only when a provider window is parsed; otherwise medium.",
-                        observed_at=query_timestamp,
+                    (
+                        "Still minute-level replay, not tick-by-tick realtime Level-2."
+                        if minute_replay_used
+                        else "Not independently recalculated from minute bars or ticks yet."
                     ),
                 ],
+                evidence=speed_evidence,
             ),
             "capital_flow": SignalMetadata(
                 source="jvquant.semantic_query",
@@ -922,22 +1155,42 @@ class JvQuantMarketDataAdapter:
                 ],
             ),
             "multi_speed": SignalMetadata(
-                source="jvquant.semantic_query",
-                source_field="1分钟涨幅/3分钟涨幅/10分钟涨幅",
-                timestamp=query_timestamp,
+                source=speed_source,
+                source_field=(
+                    "client.minute(mode=minute) bars recalculated into 1m/3m/5m/10m speeds"
+                    if minute_replay_used
+                    else "1分钟涨幅/3分钟涨幅/10分钟涨幅"
+                ),
+                timestamp=minute_replay_timestamp or query_timestamp,
                 confidence="high" if has_exact_multi_speed_windows else "medium",
                 usable_for_grading=True,
                 limitations=[
-                    "Observed semantic-query interval fields; not independently recalculated from minute bars or ticks.",
+                    (
+                        "Recalculated from jvQuant minute replay bars."
+                        if minute_replay_used
+                        else "Observed semantic-query interval fields; not independently recalculated from minute bars or ticks."
+                    ),
                     "Aegis Alpha treats this as speed-structure context rather than a standalone decision signal.",
                 ],
                 evidence=[
-                    semantic_query_doc,
-                    SignalEvidence(
-                        authority="observed_probe",
-                        source="docs/JVQUANT_CAPABILITY_MATRIX.md",
-                        detail="Observed jvQuant semantic queries return 1m, 3m, and 10m interval speed fields.",
-                        observed_at=query_timestamp,
+                    minute_replay_doc if minute_replay_used else semantic_query_doc,
+                    (
+                        SignalEvidence(
+                            authority="internal_inference",
+                            source="aegis_alpha.adapter",
+                            detail=(
+                                "Aegis Alpha recalculates multi-speed structure from minute bars; "
+                                f"minute_replay_bar_count={minute_replay_bar_count}."
+                            ),
+                            observed_at=minute_replay_timestamp or query_timestamp,
+                        )
+                        if minute_replay_used
+                        else SignalEvidence(
+                            authority="observed_probe",
+                            source="docs/JVQUANT_CAPABILITY_MATRIX.md",
+                            detail="Observed jvQuant semantic queries return 1m, 3m, and 10m interval speed fields.",
+                            observed_at=query_timestamp,
+                        )
                     ),
                     SignalEvidence(
                         authority="internal_inference",

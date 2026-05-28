@@ -61,6 +61,16 @@ def get_stock_orderbook_snapshot(symbol: str) -> dict:
 
 
 @mcp.tool
+def get_stock_minute_replay_snapshot(symbol: str, end_day: str = "", limit_days: int = 1) -> dict:
+    """Return read-only jvQuant minute replay data and Aegis-calculated speed windows."""
+    safe_limit = max(1, min(int(limit_days or 1), 30))
+    safe_end_day = end_day.strip() or None
+    return _call_tool(
+        lambda adapter: adapter.get_stock_minute_replay_snapshot(symbol, safe_end_day, safe_limit).model_dump()
+    )
+
+
+@mcp.tool
 def get_stock_history_limitup_stats(symbol: str) -> dict:
     """Return mock historical limit-up success and next-day premium stats."""
     return _call_tool(lambda adapter: adapter.get_stock_history_limitup_stats(symbol).model_dump())
@@ -101,6 +111,10 @@ def get_second_board_candidates_compact(limit: int = 12) -> list[dict]:
                     "three_min_speed_pct": candidate.three_min_speed_pct,
                     "five_min_speed_pct": candidate.five_min_speed_pct,
                     "five_min_speed_window": candidate.five_min_speed_window,
+                    "five_min_speed_timestamp": candidate.five_min_speed_timestamp,
+                    "minute_replay_timestamp": candidate.minute_replay_timestamp,
+                    "minute_replay_trading_day": candidate.minute_replay_trading_day,
+                    "minute_replay_bar_count": candidate.minute_replay_bar_count,
                     "ten_min_speed_pct": candidate.ten_min_speed_pct,
                     "big_order_net_inflow_ratio": candidate.big_order_net_inflow_ratio,
                     "first_limit_up_time": candidate.first_limit_up_time,

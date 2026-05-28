@@ -16,12 +16,15 @@ Options:
   --target PATH       Hermes config path. Defaults to ~/.hermes/config.yaml.
   --source PATH       MCP config snippet. Defaults to .hermes/config/aegis-alpha-mcp.yaml.
   --replace           Replace target config with the Aegis Alpha snippet.
-  --append            Append snippet to an existing config. Default.
+  --append            Append snippet to an existing config only when no existing
+                     mcp_servers block is present. Default.
   -h, --help          Show this help.
 
 Notes:
   - Existing config files are backed up before mutation.
-  - If your config already has mcp_servers, review the result manually.
+  - If your config already has mcp_servers, use the reproducible project config
+    installer or --replace. Appending another top-level mcp_servers block can
+    produce ambiguous YAML.
 USAGE
 }
 
@@ -69,6 +72,13 @@ if [[ -f "$TARGET_CONFIG" ]]; then
   echo "  $backup"
 fi
 
+if [[ "$MODE" == "append" && -f "$TARGET_CONFIG" ]] && grep -q "^mcp_servers:" "$TARGET_CONFIG"; then
+  echo "Target config already has a top-level mcp_servers block:" >&2
+  echo "  $TARGET_CONFIG" >&2
+  echo "Refusing to append a duplicate block. Use scripts/install_hermes_project_config.sh --replace or rerun with --replace." >&2
+  exit 1
+fi
+
 if [[ "$MODE" == "replace" || ! -f "$TARGET_CONFIG" ]]; then
   cp "$SOURCE_CONFIG" "$TARGET_CONFIG"
 else
@@ -83,4 +93,3 @@ echo "Installed Aegis Alpha MCP config:"
 echo "  $TARGET_CONFIG"
 echo
 echo "Review the file before starting Hermes, especially if another mcp_servers block already exists."
-

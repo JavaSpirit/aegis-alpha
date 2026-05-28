@@ -191,6 +191,35 @@ class FakeJvQuantClient:
             },
         }
 
+    def minute(self, code: str, end_day: str, limit: int) -> dict:
+        return {
+            "code": 0,
+            "cnt": 1,
+            "msg": "",
+            "data": {
+                "code": code,
+                "start": "2026-05-26",
+                "end": "2026-05-26",
+                "count": 1,
+                "days": ["2026-05-26"],
+                "fields": ["时间", "最新价", "均价", "成交量"],
+                "list": [
+                    {
+                        "date": "2026-05-26",
+                        "last_price": 16.92,
+                        "list": [
+                            ["09:30", 17.30, 17.30, 100000],
+                            ["09:31", 17.70, 17.50, 150000],
+                            ["09:32", 17.82, 17.62, 160000],
+                            ["09:33", 18.00, 17.75, 170000],
+                            ["09:34", 18.18, 17.91, 190000],
+                            ["09:35", 18.61, 18.05, 230000],
+                        ],
+                    }
+                ],
+            },
+        }
+
 
 def test_normalize_symbol_for_jvquant() -> None:
     assert normalize_symbol("600519.SH") == "600519"
@@ -227,6 +256,24 @@ def test_jvquant_orderbook_snapshot_from_fake_client() -> None:
     assert len(snapshot.ask_levels) == 2
 
 
+def test_jvquant_minute_replay_snapshot_from_fake_client() -> None:
+    adapter = JvQuantMarketDataAdapter(token="fake")
+    adapter._client = FakeJvQuantClient()
+
+    snapshot = adapter.get_stock_minute_replay_snapshot("001366.SZ", end_day="2026-05-26", limit_days=1)
+
+    assert snapshot.data_mode == "minute_replay"
+    assert snapshot.provider == "jvQuant"
+    assert snapshot.trading_day == "2026-05-26"
+    assert snapshot.timestamp == "2026-05-26T09:35:00+08:00"
+    assert snapshot.minute_count == 6
+    assert snapshot.speed_pct_by_window["1m"] == 2.3652
+    assert snapshot.speed_pct_by_window["5m"] == 7.5723
+    assert snapshot.speed_window_by_window["5m"] == (
+        "minute_replay_exact_window:2026-05-26 09:30:00-2026-05-26 09:35:00"
+    )
+
+
 def test_jvquant_market_gate_from_semantic_query() -> None:
     adapter = JvQuantMarketDataAdapter(token="fake")
     adapter._client = FakeJvQuantClient()
@@ -251,7 +298,7 @@ def test_jvquant_market_gate_from_semantic_query() -> None:
     assert break_pool[0].current_change_pct == 6.0
 
 
-def test_jvquant_second_board_candidates_from_semantic_query() -> None:
+def test_jvquant_second_board_candidates_use_minute_replay_when_available() -> None:
     adapter = JvQuantMarketDataAdapter(token="fake")
     adapter._client = FakeJvQuantClient()
 
@@ -266,12 +313,14 @@ def test_jvquant_second_board_candidates_from_semantic_query() -> None:
     assert candidates[0].auction_change_pct == 3.20
     assert candidates[0].auction_turnover_cny == 92_000_000
     assert candidates[0].auction_turnover_rate == 1.80
-    assert candidates[0].five_min_speed_pct == 2.10
-    assert candidates[0].five_min_speed_window == "provider_exact_window:2026-05-26 09:35:00-2026-05-26 09:40:00"
-    assert candidates[0].five_min_speed_timestamp == "2026-05-26T09:40:00+08:00"
-    assert candidates[0].one_min_speed_pct == 0.90
-    assert candidates[0].three_min_speed_pct == 2.30
-    assert candidates[0].ten_min_speed_pct == 5.20
+    assert candidates[0].five_min_speed_pct == 7.5723
+    assert candidates[0].five_min_speed_window == "minute_replay_exact_window:2026-05-26 09:30:00-2026-05-26 09:35:00"
+    assert candidates[0].five_min_speed_timestamp == "2026-05-26T09:35:00+08:00"
+    assert candidates[0].minute_replay_trading_day == "2026-05-26"
+    assert candidates[0].minute_replay_bar_count == 6
+    assert candidates[0].one_min_speed_pct == 2.3652
+    assert candidates[0].three_min_speed_pct == 4.4332
+    assert candidates[0].ten_min_speed_pct == 7.5723
     assert candidates[0].big_order_net_inflow_ratio > 0
     assert candidates[0].concept_tags == ["饲料", "乡村振兴"]
     assert candidates[0].topic_tags == ["农业涨价"]
@@ -279,7 +328,7 @@ def test_jvquant_second_board_candidates_from_semantic_query() -> None:
     assert candidates[0].reseal_count == 0
     assert candidates[0].final_seal_time == "09:42:18"
     assert candidates[0].max_seal_amount_cny == 128_000_000
-    assert candidates[0].data_quality["five_min_speed"].source == "jvquant.semantic_query"
+    assert candidates[0].data_quality["five_min_speed"].source == "jvquant.minute_replay"
     assert candidates[0].data_quality["five_min_speed"].confidence == "high"
     assert candidates[0].data_quality["auction_metrics"].usable_for_grading is True
     assert candidates[0].data_quality["theme_tags"].usable_for_grading is True
@@ -287,7 +336,6 @@ def test_jvquant_second_board_candidates_from_semantic_query() -> None:
     assert candidates[0].data_quality["multi_speed"].usable_for_grading is True
     assert {item.authority for item in candidates[0].data_quality["five_min_speed"].evidence} == {
         "official_doc",
-        "observed_probe",
         "internal_inference",
     }
     assert any(
@@ -306,3 +354,21 @@ def test_jvquant_second_board_candidates_from_semantic_query() -> None:
     assert explanation.grade_reason
     assert any("Five-minute speed window" in observation for observation in explanation.observations)
     assert "not investment advice" in explanation.disclaimer.lower()
+
+
+def test_jvquant_second_board_candidates_can_fallback_to_semantic_speed(monkeypatch) -> None:
+    monkeypatch.setenv("AEGIS_ALPHA_ENABLE_MINUTE_REPLAY", "false")
+    adapter = JvQuantMarketDataAdapter(token="fake")
+    adapter._client = FakeJvQuantClient()
+
+    candidates = adapter.get_second_board_candidates()
+
+    assert candidates[0].five_min_speed_pct == 2.10
+    assert candidates[0].five_min_speed_window == "provider_exact_window:2026-05-26 09:35:00-2026-05-26 09:40:00"
+    assert candidates[0].five_min_speed_timestamp == "2026-05-26T09:40:00+08:00"
+    assert candidates[0].data_quality["five_min_speed"].source == "jvquant.semantic_query"
+    assert {item.authority for item in candidates[0].data_quality["five_min_speed"].evidence} == {
+        "official_doc",
+        "observed_probe",
+        "internal_inference",
+    }

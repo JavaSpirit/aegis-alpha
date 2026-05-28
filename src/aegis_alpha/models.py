@@ -122,6 +122,29 @@ class StockOrderbookSnapshot(BaseModel):
     notes: list[str]
 
 
+class MinuteReplayBar(BaseModel):
+    time: str
+    last_price: float
+    average_price: float = 0.0
+    volume: float = 0.0
+
+
+class MinuteReplaySnapshot(BaseModel):
+    symbol: str
+    name: str = "unknown"
+    timestamp: str
+    data_mode: str = "minute_replay"
+    provider: str = "jvQuant"
+    trading_day: str
+    previous_close: float = 0.0
+    last_price: float = 0.0
+    minute_count: int = 0
+    bars: list[MinuteReplayBar] = Field(default_factory=list)
+    speed_pct_by_window: dict[str, float] = Field(default_factory=dict)
+    speed_window_by_window: dict[str, str] = Field(default_factory=dict)
+    notes: list[str] = Field(default_factory=list)
+
+
 class LimitUpHistoryStats(BaseModel):
     symbol: str
     sample_size: int
@@ -161,6 +184,9 @@ class SecondBoardCandidate(BaseModel):
     five_min_speed_pct: float
     five_min_speed_window: str = "unknown"
     five_min_speed_timestamp: str = ""
+    minute_replay_timestamp: str = ""
+    minute_replay_trading_day: str = ""
+    minute_replay_bar_count: int = 0
     one_min_speed_pct: float = 0.0
     one_min_speed_window: str = "unknown"
     one_min_speed_timestamp: str = ""

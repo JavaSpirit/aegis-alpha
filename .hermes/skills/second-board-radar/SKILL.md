@@ -42,6 +42,7 @@ Core tools:
 - `get_second_board_candidate_data_quality`
 - `explain_second_board_candidate`
 - `get_stock_realtime_snapshot`
+- `get_stock_minute_replay_snapshot`
 - `get_theme_strength`
 
 Useful supporting tools:
@@ -59,6 +60,8 @@ If these tools are unavailable, first ask Hermes to reload MCP with `/reload-mcp
 If Aegis Alpha MCP times out, returns an error, or provides empty data, explicitly state `Data source unavailable` and halt candidate analysis. Do not guess, interpolate, or backfill missing speed, orderbook, big-order, or theme metrics.
 
 Before grading during active trading hours, verify the timestamp of speed, big-order, and orderbook data. Active trading hours are 09:30-11:30 and 13:00-15:00 Asia/Shanghai. If any required realtime field is delayed by more than 3 minutes, cap the maximum grade at `B`, warn the user, and do not describe the candidate as high-confidence. If `five_min_speed_window` starts with `provider_exact_window:`, report that exact provider window; if it is `provider_latest_rolling_5m`, explain that the provider did not expose the exact five-minute start/end time.
+
+If `five_min_speed_window` starts with `minute_replay_exact_window:` or `minute_replay_partial_window:`, state that Aegis Alpha recalculated the speed from jvQuant minute replay bars. Minute replay is minute-level replay data, not tick-by-tick realtime Level-2. During active trading hours, use `five_min_speed_timestamp` or `minute_replay_timestamp` to check freshness before grading.
 
 ## Standard Workflow
 
@@ -101,6 +104,7 @@ Use this structure for user-facing answers:
    评级原因: 用一两句自然语言说明为什么是这个评级，必须点名主要加分项和主要扣分项。
    竞价数据: auction_change_pct / auction_turnover_cny / auction_turnover_rate
    涨速数据: five_min_speed_pct / five_min_speed_window / five_min_speed_timestamp / data_quality.five_min_speed
+   分时回放: minute_replay_trading_day / minute_replay_bar_count / minute_replay_timestamp
    题材数据: concept_tags / topic_tags
    证据层级: official_doc / observed_probe / internal_inference 中实际出现的 authority
    封板数据: 首次封板时间 / 最终封板时间 / 封单额 / 最大封单额 / 炸板次数 / 回封次数 / 封成比 / 排队位置说明

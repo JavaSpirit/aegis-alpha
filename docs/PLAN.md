@@ -39,6 +39,7 @@ Initial tools:
 - `get_break_board_pool`
 - `get_stock_realtime_snapshot`
 - `get_stock_orderbook_snapshot`
+- `get_stock_minute_replay_snapshot`
 - `get_stock_history_limitup_stats`
 - `get_theme_strength`
 - `get_second_board_candidates`
@@ -51,7 +52,7 @@ The output must stay structured, timestamped, and explicit about data quality. `
 
 Add real-time adapters for providers such as jvQuant, StockApi, MyQuant, or miniQMT.
 
-Current jvQuant-backed coverage includes market gate, limit-up pool, break-board pool, single-symbol snapshots, orderbook snapshots, a coarse second-board candidate pool, semantic-query auction metrics, 1/3/5/10-minute speed structure with parsed provider windows when available, semantic-query capital-flow net inflow ratio, concept/topic tags, first/final seal time, seal amount, max seal amount, seal volume, break/reseal counts, and seal-to-turnover ratio. Exact minute-bar or tick recalculation is still pending. True own-order queue position still requires broker order/trade callbacks, so Aegis Alpha currently exposes a read-only queue-position note instead of a real order position. The next gaps are tick-level big-order classification and historical follow-through statistics.
+Current jvQuant-backed coverage includes market gate, limit-up pool, break-board pool, single-symbol snapshots, orderbook snapshots, minute replay snapshots, a coarse second-board candidate pool, semantic-query auction metrics, Aegis-calculated 1/3/5/10-minute speed structure from minute replay when available, semantic-query speed fallback with parsed provider windows, semantic-query capital-flow net inflow ratio, concept/topic tags, first/final seal time, seal amount, max seal amount, seal volume, break/reseal counts, and seal-to-turnover ratio. Tick-level recalculation is still pending. True own-order queue position still requires broker order/trade callbacks, so Aegis Alpha currently exposes a read-only queue-position note instead of a real order position. The next gaps are tick-level big-order classification and historical follow-through statistics.
 
 The candidate contract now includes `data_quality` metadata per core signal. Keep expanding this layer before making strategy decisions stricter: every signal should declare its provider source, raw field name, timestamp, confidence, grading usability, limitations, and evidence. Evidence authority must distinguish official docs, observed API probes, and internal inference.
 

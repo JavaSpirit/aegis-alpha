@@ -10,6 +10,8 @@ from aegis_alpha.models import (
     LimitUpStock,
     MarketSentimentGate,
     MarketSnapshot,
+    MinuteReplayBar,
+    MinuteReplaySnapshot,
     OrderbookQueueLevel,
     SecondBoardCandidate,
     SignalEvidence,
@@ -123,6 +125,50 @@ class MockMarketDataAdapter:
             orderbook_notes=[
                 "Bid queue is stable in mock data.",
                 "Ask pressure is moderate; verify with real Level-2 order queue before live use.",
+            ],
+        )
+
+    def get_stock_minute_replay_snapshot(
+        self,
+        symbol: str,
+        end_day: str | None = None,
+        limit_days: int = 1,
+    ) -> MinuteReplaySnapshot:
+        trading_day = end_day or "2026-05-26"
+        bars = [
+            MinuteReplayBar(time="10:10", last_price=12.01, average_price=11.92, volume=210_000),
+            MinuteReplayBar(time="10:11", last_price=12.08, average_price=11.95, volume=280_000),
+            MinuteReplayBar(time="10:12", last_price=12.16, average_price=11.99, volume=330_000),
+            MinuteReplayBar(time="10:13", last_price=12.22, average_price=12.03, volume=410_000),
+            MinuteReplayBar(time="10:14", last_price=12.28, average_price=12.06, volume=500_000),
+            MinuteReplayBar(time="10:15", last_price=12.34, average_price=12.10, volume=640_000),
+        ]
+        return MinuteReplaySnapshot(
+            symbol=symbol,
+            name="示例股票",
+            timestamp=f"{trading_day}T10:15:00+08:00",
+            data_mode="minute_replay",
+            provider="mock",
+            trading_day=trading_day,
+            previous_close=11.22,
+            last_price=12.34,
+            minute_count=len(bars),
+            bars=bars,
+            speed_pct_by_window={
+                "1m": 0.4886,
+                "3m": 1.4803,
+                "5m": 2.7477,
+                "10m": 2.7477,
+            },
+            speed_window_by_window={
+                "1m": f"mock_minute_replay_window:{trading_day} 10:14:00-{trading_day} 10:15:00",
+                "3m": f"mock_minute_replay_window:{trading_day} 10:12:00-{trading_day} 10:15:00",
+                "5m": f"mock_minute_replay_window:{trading_day} 10:10:00-{trading_day} 10:15:00",
+                "10m": f"mock_minute_replay_partial_window:{trading_day} 10:10:00-{trading_day} 10:15:00",
+            },
+            notes=[
+                "Mock minute replay data only.",
+                f"requested_limit_days={limit_days}",
             ],
         )
 

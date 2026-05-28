@@ -61,7 +61,9 @@ Current jvQuant coverage:
 - Coarse market sentiment gate derived from limit-up count, break-board rate, and theme breadth.
 - Semantic-query second-board candidate pool based on yesterday limit-up stocks with current strength.
 - Semantic-query auction metrics, concept/topic tags, break/reseal counts, final seal time, and max seal metrics for second-board candidates.
-- Semantic-query five-minute speed and capital-flow net inflow ratio for second-board candidates. If jvQuant exposes a range in the returned field name, the adapter marks it as `provider_exact_window:...`; otherwise it falls back to `provider_latest_rolling_5m`.
+- Minute replay via jvQuant `client.minute(..., mode=minute)` for single-symbol intraday bars. Aegis Alpha recalculates 1/3/5/10-minute speed windows from minute bars and marks them as `minute_replay_exact_window:...` or `minute_replay_partial_window:...`.
+- Semantic-query five-minute speed remains a fallback for second-board candidates. If jvQuant exposes a range in the returned field name, the adapter marks it as `provider_exact_window:...`; otherwise it falls back to `provider_latest_rolling_5m`.
+- Semantic-query capital-flow net inflow ratio for second-board candidates.
 - Semantic-query first limit-up time, seal amount, seal volume, and seal-to-turnover ratio.
 - Single-symbol K-line snapshot.
 - Single-symbol level queue / orderbook summary. True own-order queue position remains unavailable until broker order/trade callbacks are introduced.
