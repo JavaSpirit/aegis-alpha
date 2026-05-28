@@ -136,6 +136,7 @@ When `AEGIS_ALPHA_MARKET_DATA_PROVIDER=jvquant`, Hermes can access jvQuant-backe
 - `get_signal_snapshot(symbol)`
 - `get_event_scoring_config()`
 - `get_realtime_connection_status()`
+- `get_runner_status()`
 - `explain_market_event(event_id)`
 - `review_candidate_outcome(symbol, trading_day)`
 - `record_candidate_outcome(...)`
@@ -163,6 +164,37 @@ Open a short read-only WebSocket smoke subscription:
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/smoke_jvquant_realtime.py --symbols 600519 --levels lv1,lv2,lv10 --connect --duration 5
 ```
+
+## Launchd Runner
+
+Aegis Alpha includes a launchd-managed runner for macOS. `launchd` keeps the process alive; Aegis Alpha itself decides whether the current time is inside configured trading sessions before opening WebSocket subscriptions.
+
+Install and start it:
+
+```bash
+scripts/install_launchd_runner.sh
+```
+
+Install the plist without starting it:
+
+```bash
+scripts/install_launchd_runner.sh --no-load
+```
+
+Check status:
+
+```bash
+scripts/check_runner_status.sh
+```
+
+Uninstall or unload:
+
+```bash
+scripts/uninstall_launchd_runner.sh
+scripts/uninstall_launchd_runner.sh --remove-plist
+```
+
+The runner uses [config/runner.yaml](config/runner.yaml), writes `data/runner_status.json`, logs to `logs/runner.out.log` and `logs/runner.err.log`, and keeps raw WebSocket data inside the local signal engine.
 
 Each second-board candidate also includes `data_quality`, a per-signal metadata map covering source, source field, timestamp, confidence, grading usability, limitations, and evidence. Evidence entries use `authority` to separate `official_doc`, `observed_probe`, and `internal_inference`. Current jvQuant official capability notes are documented in [docs/JVQUANT_OFFICIAL_INDEX.md](docs/JVQUANT_OFFICIAL_INDEX.md), and observed semantic-query probes are documented in [docs/JVQUANT_FIELD_MAP.md](docs/JVQUANT_FIELD_MAP.md) and [docs/JVQUANT_CAPABILITY_MATRIX.md](docs/JVQUANT_CAPABILITY_MATRIX.md).
 
@@ -245,6 +277,7 @@ The MVP exposes these read-only tools:
 - `get_signal_snapshot`
 - `get_event_scoring_config`
 - `get_realtime_connection_status`
+- `get_runner_status`
 - `explain_market_event`
 - `review_candidate_outcome`
 - `record_candidate_outcome`

@@ -116,6 +116,7 @@ mcp_servers:
         - get_signal_snapshot
         - get_event_scoring_config
         - get_realtime_connection_status
+        - get_runner_status
         - explain_market_event
         - review_candidate_outcome
         - record_candidate_outcome

@@ -19,5 +19,6 @@ data/raw/
 data/processed/
 data/*.db
 data/*.db-*
+data/runner_status.json
 data/parquet/
 logs/

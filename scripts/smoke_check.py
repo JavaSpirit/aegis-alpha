@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from aegis_alpha.adapters.mock_market_data import MockMarketDataAdapter
+from aegis_alpha.runner import status_payload
 
 
 def main() -> None:
@@ -17,6 +18,7 @@ def main() -> None:
         "stock_minute_replay_snapshot": adapter.get_stock_minute_replay_snapshot("600000.SH").model_dump(),
         "event_scoring_config": adapter.get_event_scoring_config().model_dump(),
         "realtime_connection_status": adapter.get_realtime_connection_status().model_dump(),
+        "runner_status": status_payload(),
         "signal_snapshot": adapter.get_signal_snapshot("002230.SZ").model_dump(),
         "recent_market_events": [
             item.model_dump() for item in adapter.get_recent_market_events(limit=5)

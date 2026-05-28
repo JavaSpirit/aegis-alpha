@@ -6,7 +6,7 @@ import sqlite3
 from pathlib import Path
 from typing import Iterable
 
-from aegis_alpha.models import CandidateOutcomeReview, MarketEvent, SignalSnapshot
+from aegis_alpha.models import CandidateOutcomeReview, MarketEvent, RunnerStatus, SignalSnapshot
 
 
 def default_data_dir() -> Path:
@@ -15,6 +15,12 @@ def default_data_dir() -> Path:
 
 def default_db_path() -> Path:
     return Path(os.environ.get("AEGIS_ALPHA_DB_PATH", default_data_dir() / "aegis_alpha.db")).expanduser()
+
+
+def default_runner_status_path() -> Path:
+    return Path(
+        os.environ.get("AEGIS_ALPHA_RUNNER_STATUS_PATH", default_data_dir() / "runner_status.json")
+    ).expanduser()
 
 
 class AegisAlphaStore:
@@ -199,6 +205,47 @@ class AegisAlphaStore:
             trading_day=trading_day,
             notes=["No stored review outcome yet."],
         )
+
+    def save_provider_run(
+        self,
+        *,
+        provider: str,
+        run_type: str,
+        status: str,
+        payload: dict,
+        started_at: str = "",
+        ended_at: str = "",
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO provider_runs (
+                    provider, run_type, status, started_at, ended_at, payload_json
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    provider,
+                    run_type,
+                    status,
+                    started_at,
+                    ended_at,
+                    json.dumps(payload, ensure_ascii=False),
+                ),
+            )
+
+
+def write_runner_status(status: RunnerStatus, path: str | Path | None = None) -> Path:
+    status_path = Path(path).expanduser() if path else default_runner_status_path()
+    status_path.parent.mkdir(parents=True, exist_ok=True)
+    status_path.write_text(status.model_dump_json(indent=2))
+    return status_path
+
+
+def read_runner_status(path: str | Path | None = None) -> RunnerStatus | None:
+    status_path = Path(path).expanduser() if path else default_runner_status_path()
+    if not status_path.exists():
+        return None
+    return RunnerStatus.model_validate_json(status_path.read_text())
 
 
 class ParquetSink:

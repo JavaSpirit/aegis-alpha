@@ -102,6 +102,21 @@ jvQuant WebSocket / query / minute replay
   -> Hermes explanation and review
 ```
 
+## Launchd Runner
+
+On macOS, the realtime engine is designed to be supervised by launchd:
+
+```text
+launchd
+  -> aegis-alpha-runner
+  -> trading-session scheduler
+  -> jvQuant WebSocket subscriptions
+  -> local buffers, events, and SQLite status
+  -> MCP read-only queries
+```
+
+`launchd` owns process lifetime. Aegis Alpha owns market-session lifetime: outside configured trading sessions the runner stays alive but does not keep market subscriptions open. The runner writes `data/runner_status.json`, provider run records, signal snapshots, and market events; Hermes reads those through MCP and should not start or inspect raw streams.
+
 Current storage direction:
 
 - SQLite stores structured market events, signal snapshots, candidate scores, agent reviews, provider runs, and review outcomes.

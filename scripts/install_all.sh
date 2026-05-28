@@ -14,9 +14,11 @@ INSTALL_HERMES=true
 INSTALL_PROVIDER=true
 INSTALL_SKILL=true
 INSTALL_CONFIG=true
+INSTALL_LAUNCHD_RUNNER=true
 RUN_CHECK=true
 REPLACE_CONFIG=false
 HERMES_SKIP_SETUP=false
+LOAD_RUNNER=true
 DRY_RUN=false
 
 usage() {
@@ -27,8 +29,8 @@ Usage:
   scripts/install_all.sh [options]
 
 Installs the local Python environment, Aegis Alpha package, jvQuant dependency,
-Hermes, Aegis Alpha Hermes skill, Aegis Alpha MCP config, and then runs the
-integration check.
+Hermes, Aegis Alpha Hermes skill, Aegis Alpha MCP config, launchd runner, and
+then runs the integration check.
 
 Options:
   --dry-run           Print the planned steps without executing them.
@@ -39,6 +41,8 @@ Options:
   --skip-provider     Do not install Hermes provider config scaffold.
   --skip-skill        Do not install the second-board-radar Hermes skill.
   --skip-config       Do not install the Aegis Alpha MCP config.
+  --skip-launchd      Do not install the launchd-managed realtime runner.
+  --no-load-runner    Install the launchd plist but do not start it.
   --skip-check        Do not run the final integration check.
   --replace-config    Replace ~/.hermes/config.yaml instead of appending.
   --skip-setup        Pass --skip-setup to the official Hermes installer.
@@ -91,6 +95,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-config)
       INSTALL_CONFIG=false
+      shift
+      ;;
+    --skip-launchd)
+      INSTALL_LAUNCHD_RUNNER=false
+      shift
+      ;;
+    --no-load-runner)
+      LOAD_RUNNER=false
       shift
       ;;
     --skip-check)
@@ -212,6 +224,16 @@ if [[ "$INSTALL_CONFIG" == true ]]; then
   fi
 else
   skip_step "Install Aegis Alpha MCP config" "--skip-config"
+fi
+
+if [[ "$INSTALL_LAUNCHD_RUNNER" == true ]]; then
+  launchd_args=()
+  if [[ "$LOAD_RUNNER" != true ]]; then
+    launchd_args+=(--no-load)
+  fi
+  run_step "Install launchd realtime runner" "$SCRIPT_DIR/install_launchd_runner.sh" "${launchd_args[@]}"
+else
+  skip_step "Install launchd realtime runner" "--skip-launchd"
 fi
 
 if [[ "$RUN_CHECK" == true ]]; then

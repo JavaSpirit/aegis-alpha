@@ -17,6 +17,17 @@ MarketEventType = Literal[
     "BIG_ORDER_INFLOW_SPIKE",
     "SECOND_BOARD_CANDIDATE_REPRICE",
 ]
+RunnerState = Literal[
+    "STOPPED",
+    "STARTING",
+    "WAITING",
+    "CONNECTED",
+    "SUBSCRIBING",
+    "RUNNING",
+    "DEGRADED",
+    "RECONNECTING",
+    "STOPPING",
+]
 
 
 class SignalEvidence(BaseModel):
@@ -214,6 +225,21 @@ class RealtimeConnectionStatus(BaseModel):
     subscribed: list[str] = Field(default_factory=list)
     last_message_at: str = ""
     last_error: str = ""
+    notes: list[str] = Field(default_factory=list)
+
+
+class RunnerStatus(BaseModel):
+    state: RunnerState
+    pid: int | None = None
+    started_at: str = ""
+    updated_at: str
+    trading_session_active: bool = False
+    next_action: str = ""
+    provider: str = "jvQuant"
+    subscribed: list[str] = Field(default_factory=list)
+    last_event_at: str = ""
+    last_error: str = ""
+    connection: RealtimeConnectionStatus | None = None
     notes: list[str] = Field(default_factory=list)
 
 

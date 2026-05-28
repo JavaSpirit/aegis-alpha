@@ -31,6 +31,7 @@ market-data = [
 
 [project.scripts]
 aegis-alpha-mcp = "aegis_alpha.mcp.server:main"
+aegis-alpha-runner = "aegis_alpha.runner:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/aegis_alpha"]

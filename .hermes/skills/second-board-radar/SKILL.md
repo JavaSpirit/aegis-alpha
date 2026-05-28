@@ -47,6 +47,7 @@ Core tools:
 - `get_signal_snapshot`
 - `get_event_scoring_config`
 - `get_realtime_connection_status`
+- `get_runner_status`
 - `explain_market_event`
 - `get_theme_strength`
 
@@ -71,6 +72,7 @@ Before grading during active trading hours, verify the timestamp of speed, big-o
 If `five_min_speed_window` starts with `minute_replay_exact_window:` or `minute_replay_partial_window:`, state that Aegis Alpha recalculated the speed from jvQuant minute replay bars. Minute replay is minute-level replay data, not tick-by-tick realtime Level-2. During active trading hours, use `five_min_speed_timestamp` or `minute_replay_timestamp` to check freshness before grading.
 
 For event-driven reviews, consume `MarketEvent` and `SignalSnapshot` outputs. Do not ask for raw WebSocket messages and do not infer from individual ticks. If an event has stale or unknown `freshness_status`, explain the event as low-confidence context rather than a live trigger.
+Use `get_runner_status` when the user asks whether realtime monitoring is active. If the runner state is not `RUNNING`, do not describe Aegis Alpha as actively monitoring the market.
 
 ## Standard Workflow
 

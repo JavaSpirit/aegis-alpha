@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.aegis-alpha.runner</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__PROJECT_ROOT__/.venv/bin/python</string>
+    <string>-m</string>
+    <string>aegis_alpha.runner</string>
+    <string>--config</string>
+    <string>__PROJECT_ROOT__/config/runner.yaml</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__PROJECT_ROOT__</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>__PROJECT_ROOT__/logs/runner.out.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>__PROJECT_ROOT__/logs/runner.err.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>AEGIS_ALPHA_PROJECT_ROOT</key>
+    <string>__PROJECT_ROOT__</string>
+    <key>AEGIS_ALPHA_ENV_FILE</key>
+    <string>__PROJECT_ROOT__/.env.local</string>
+    <key>PYTHONPATH</key>
+    <string>__PROJECT_ROOT__/src</string>
+  </dict>
+</dict>
+</plist>

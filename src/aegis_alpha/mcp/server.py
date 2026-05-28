@@ -7,6 +7,7 @@ from fastmcp import FastMCP
 
 from aegis_alpha.adapters.factory import create_market_data_adapter
 from aegis_alpha.models import CandidateOutcomeReview
+from aegis_alpha.runner import status_payload
 
 
 mcp = FastMCP("aegis-alpha")
@@ -100,6 +101,20 @@ def get_event_scoring_config() -> dict:
 def get_realtime_connection_status() -> dict:
     """Return realtime provider connection state without starting a raw stream."""
     return _call_tool(lambda adapter: adapter.get_realtime_connection_status().model_dump())
+
+
+@mcp.tool
+def get_runner_status() -> dict:
+    """Return launchd-managed runner status from the local status file."""
+    try:
+        return status_payload()
+    except Exception as exc:
+        return {
+            "state": "STOPPED",
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+            "disclaimer": "Runner status unavailable. Do not infer live market state.",
+        }
 
 
 @mcp.tool

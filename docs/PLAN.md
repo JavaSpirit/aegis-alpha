@@ -106,11 +106,30 @@ Agent-facing tools:
 - `get_signal_snapshot`
 - `get_event_scoring_config`
 - `get_realtime_connection_status`
+- `get_runner_status`
 - `explain_market_event`
 - `review_candidate_outcome`
 - `record_candidate_outcome`
 
 Raw WebSocket messages must not be exposed through MCP. Hermes should only consume events, signal snapshots, and explanations.
+
+## Phase 2.6: Launchd-Managed Runner
+
+The realtime engine should run as a macOS LaunchAgent, not as a Hermes child process.
+
+- `aegis-alpha-runner` is the long-lived process entrypoint.
+- `config/runner.yaml` controls trading sessions, subscription symbols, levels, loop interval, reconnect interval, and storage paths.
+- `.launchd/com.aegis-alpha.runner.plist.template` is rendered into `~/Library/LaunchAgents/com.aegis-alpha.runner.plist`.
+- `scripts/install_launchd_runner.sh` installs and bootstraps the service; `--no-load` installs without starting.
+- `scripts/uninstall_launchd_runner.sh` unloads the service.
+- `scripts/check_runner_status.sh` reports both launchd state and `data/runner_status.json`.
+
+Lifecycle boundary:
+
+- launchd keeps the runner process alive.
+- The runner opens jvQuant subscriptions only during configured trading sessions.
+- The runner writes local status, snapshots, events, and provider run records.
+- MCP and Hermes only read local state; they do not own the realtime process.
 
 ## Phase 3: Review And Correction
 

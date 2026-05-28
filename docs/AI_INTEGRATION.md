@@ -56,6 +56,7 @@ The skill expects Aegis Alpha MCP to expose:
 - `get_signal_snapshot`
 - `get_event_scoring_config`
 - `get_realtime_connection_status`
+- `get_runner_status`
 - `explain_market_event`
 - `get_theme_strength`
 - `record_candidate_outcome`

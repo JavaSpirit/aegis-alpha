@@ -1,0 +1,35 @@
+version: 1
+provider: jvQuant
+market: ab
+
+timezone: Asia/Shanghai
+loop_interval_seconds: 15
+reconnect_interval_seconds: 30
+stale_after_seconds: 180
+
+trading_sessions:
+  - name: morning
+    start: "09:15"
+    end: "11:30"
+  - name: afternoon
+    start: "13:00"
+    end: "15:15"
+
+subscription:
+  symbols_env: JVQUANT_SUBSCRIBE_SYMBOLS
+  default_symbols:
+    - "600519"
+    - "000001"
+  levels:
+    - lv1
+    - lv2
+    - lv10
+
+storage:
+  status_path: data/runner_status.json
+  sqlite_path: data/aegis_alpha.db
+  parquet_root: data/parquet
+
+post_close:
+  enabled: true
+  review_after: "15:10"
