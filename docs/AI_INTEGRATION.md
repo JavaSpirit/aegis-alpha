@@ -52,7 +52,13 @@ The skill expects Aegis Alpha MCP to expose:
 - `explain_second_board_candidate`
 - `get_stock_realtime_snapshot`
 - `get_stock_minute_replay_snapshot`
+- `get_recent_market_events`
+- `get_signal_snapshot`
+- `get_event_scoring_config`
+- `get_realtime_connection_status`
+- `explain_market_event`
 - `get_theme_strength`
+- `record_candidate_outcome`
 
 The Hermes MCP configuration example lives in [HERMES.md](HERMES.md).
 
@@ -64,6 +70,7 @@ Hermes should:
 - Halt candidate analysis when Aegis Alpha returns timeout, error, or empty data; state `Data source unavailable`.
 - Check realtime data timestamps during 09:30-11:30 and 13:00-15:00 Asia/Shanghai.
 - Treat minute replay as minute-level replay data: useful for recalculated speed windows, but not equivalent to tick-by-tick Level-2.
+- Treat market events as structured context for explanation and re-scoring, not as order instructions.
 - Cap maximum grade at `B` when speed, big-order, or orderbook data is delayed by more than 3 minutes during active trading hours.
 - Stop or downgrade when the gate is `avoid` or `defensive`.
 - Focus on yesterday-limit-up stocks trying to advance to a second board.
@@ -78,6 +85,7 @@ Hermes should not:
 - Create real orders.
 - Treat mock data as live data.
 - Guess or interpolate missing realtime metrics.
+- Request raw WebSocket messages or reason directly over individual ticks.
 - Analyze arbitrary symbols as valid second-board candidates without pool membership.
 
 ## References

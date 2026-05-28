@@ -1,0 +1,163 @@
+from __future__ import annotations
+
+import logging
+import os
+from typing import Any
+
+from aegis_alpha.events import SignalWindowBuffer, now_iso
+from aegis_alpha.models import RealtimeConnectionStatus
+
+
+def normalize_realtime_symbol(symbol: str) -> str:
+    return symbol.strip().upper().split(".", 1)[0]
+
+
+def subscription_codes(symbols: list[str], levels: list[str]) -> list[str]:
+    clean_levels = [level.lower() for level in levels if level.lower() in {"lv1", "lv2", "lv10"}]
+    return [
+        f"{level}_{normalize_realtime_symbol(symbol)}"
+        for symbol in symbols
+        for level in clean_levels
+    ]
+
+
+class JvQuantRealtimeClient:
+    """Thin read-only jvQuant WebSocket wrapper.
+
+    This client updates local buffers from parsed SDK callbacks. It does not expose
+    raw WebSocket payloads to MCP tools or agents.
+    """
+
+    def __init__(
+        self,
+        *,
+        token: str | None = None,
+        market: str | None = None,
+        buffer: SignalWindowBuffer | None = None,
+    ) -> None:
+        self.token = token or os.environ.get("JVQUANT_TOKEN", "")
+        self.market = market or os.environ.get("JVQUANT_MARKET", "ab")
+        self.buffer = buffer or SignalWindowBuffer()
+        self._client: Any | None = None
+        self._connected = False
+        self._subscribed: set[str] = set()
+        self._last_message_at = ""
+        self._last_error = ""
+
+    def connect(self) -> RealtimeConnectionStatus:
+        if not self.token:
+            self._last_error = "JVQUANT_TOKEN missing"
+            return self.status()
+        try:
+            from jvQuant import websocket_client
+
+            self._client = websocket_client.Construct(
+                market=self.market,
+                token=self.token,
+                log_level=logging.ERROR,
+                log_handle=self._on_log,
+                ab_lv1_handle=self._on_ab_lv1,
+                ab_lv2_handle=self._on_ab_lv2,
+                ab_lv10_handle=self._on_ab_lv10,
+            )
+            self._connected = True
+        except Exception as exc:
+            self._connected = False
+            self._last_error = type(exc).__name__
+        return self.status()
+
+    def subscribe(self, symbols: list[str], levels: list[str] | None = None) -> RealtimeConnectionStatus:
+        if self._client is None:
+            self.connect()
+        if self._client is None:
+            return self.status()
+        clean_symbols = [normalize_realtime_symbol(symbol) for symbol in symbols if symbol.strip()]
+        clean_levels = [level.lower() for level in (levels or ["lv1", "lv2", "lv10"])]
+        try:
+            if "lv1" in clean_levels:
+                self._client.add_lv1(clean_symbols)
+            if "lv2" in clean_levels:
+                self._client.add_lv2(clean_symbols)
+            if "lv10" in clean_levels:
+                self._client.add_lv10(clean_symbols)
+            self._subscribed.update(subscription_codes(clean_symbols, clean_levels))
+        except Exception as exc:
+            self._last_error = type(exc).__name__
+        return self.status()
+
+    def unsubscribe(self, symbols: list[str], levels: list[str] | None = None) -> RealtimeConnectionStatus:
+        if self._client is None:
+            return self.status()
+        clean_symbols = [normalize_realtime_symbol(symbol) for symbol in symbols if symbol.strip()]
+        clean_levels = [level.lower() for level in (levels or ["lv1", "lv2", "lv10"])]
+        try:
+            if "lv1" in clean_levels:
+                self._client.del_lv1(clean_symbols)
+            if "lv2" in clean_levels:
+                self._client.del_lv2(clean_symbols)
+            if "lv10" in clean_levels:
+                self._client.del_lv10(clean_symbols)
+            self._subscribed.difference_update(subscription_codes(clean_symbols, clean_levels))
+        except Exception as exc:
+            self._last_error = type(exc).__name__
+        return self.status()
+
+    def disconnect(self) -> RealtimeConnectionStatus:
+        if self._client is not None:
+            try:
+                self._client.disconnect()
+            except Exception as exc:
+                self._last_error = type(exc).__name__
+        self._connected = False
+        return self.status()
+
+    def status(self) -> RealtimeConnectionStatus:
+        return RealtimeConnectionStatus(
+            provider="jvQuant",
+            market=self.market,
+            connected=self._connected,
+            subscribed=sorted(self._subscribed),
+            last_message_at=self._last_message_at,
+            last_error=self._last_error,
+            notes=[
+                "WebSocket feeds update the local signal engine; raw messages are not exposed to agents.",
+                "MCP tools should consume SignalSnapshot and MarketEvent outputs instead.",
+            ],
+        )
+
+    def _on_log(self, message: str) -> None:
+        if "error" in message.lower() or "失败" in message:
+            self._last_error = "provider_log_error"
+
+    def _on_ab_lv1(self, lv1: Any) -> None:
+        self._last_message_at = now_iso()
+        self.buffer.add_price(
+            str(lv1.code),
+            self._provider_time(lv1.time),
+            float(lv1.price),
+            float(getattr(lv1, "amount", 0.0)),
+        )
+
+    def _on_ab_lv2(self, lv2: Any) -> None:
+        self._last_message_at = now_iso()
+        for deal in getattr(lv2, "deal_list", []):
+            amount = float(getattr(deal, "price", 0.0)) * float(getattr(deal, "volume", 0.0))
+            if amount >= float(os.environ.get("AEGIS_ALPHA_BIG_ORDER_THRESHOLD_CNY", "3000000")):
+                self.buffer.add_big_order_flow(str(lv2.code), amount)
+
+    def _on_ab_lv10(self, lv10: Any) -> None:
+        self._last_message_at = now_iso()
+        self.buffer.add_price(
+            str(lv10.code),
+            self._provider_time(lv10.time),
+            float(lv10.price),
+            float(getattr(lv10, "amount", 0.0)),
+        )
+
+    def _provider_time(self, value: str) -> str:
+        text = str(value or "").strip()
+        if len(text) == 8 and text.count(":") == 2:
+            return f"{now_iso()[:10]}T{text}+08:00"
+        if "T" in text:
+            return text
+        return now_iso()

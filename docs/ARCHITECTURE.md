@@ -15,7 +15,7 @@ Hermes Agent
   -> MCP client
   -> Aegis Alpha MCP Server
   -> MarketDataAdapter
-  -> Signal models and explanation contracts
+  -> Signal models, market events, and explanation contracts
 ```
 
 The MVP keeps `MockMarketDataAdapter` for contract tests and provides a read-only `JvQuantMarketDataAdapter` for live-provider snapshots. Real providers stay behind the same adapter boundary so the MCP tool contracts remain stable.
@@ -46,6 +46,11 @@ The MCP server exposes only read-only tools in the MVP:
 - Break-board pool.
 - Realtime stock snapshot.
 - Orderbook snapshot.
+- Signal snapshot.
+- Recent market events.
+- Event scoring configuration.
+- Market event explanation.
+- Candidate outcome review.
 - Historical limit-up stats.
 - Theme strength.
 - Candidate explanation.
@@ -77,11 +82,33 @@ Documentation and discovery are split deliberately:
 
 Future adapters or jvQuant extensions may include:
 
+- jvQuant WebSocket `lv1/lv2/lv10` for realtime market sensing. The current wrapper manages connection/subscription callbacks and feeds local buffers; raw WebSocket messages are not exposed to MCP.
 - StockApi for limit-up pools, break-board pools, capital flow, and early-session signals.
 - MyQuant for broker-environment Level-2 data.
 - miniQMT or QMT for local terminal data and future trading integration.
 
 Provider-specific quirks should stay inside adapters. MCP tools should expose stable, provider-neutral shapes.
+
+## Event And Storage Layer
+
+Aegis Alpha treats events as the boundary between high-frequency data and agent reasoning.
+
+```text
+jvQuant WebSocket / query / minute replay
+  -> SignalWindowBuffer
+  -> SignalSnapshot
+  -> EventDetector + config/event_scoring.yaml
+  -> MarketEvent
+  -> Hermes explanation and review
+```
+
+Current storage direction:
+
+- SQLite stores structured market events, signal snapshots, candidate scores, agent reviews, provider runs, and review outcomes.
+- Parquet is reserved for high-volume minute bars, Level-2 trades, and orderbook snapshots after a pyarrow-backed writer is added.
+- DuckDB remains a future research layer for querying Parquet history and building second-board sample statistics.
+
+Every event must include evidence, timestamps, freshness status, score, confidence, and suggested agent actions. Suggested actions are prompts for analysis, not trading instructions.
 
 ## Hermes Skills
 

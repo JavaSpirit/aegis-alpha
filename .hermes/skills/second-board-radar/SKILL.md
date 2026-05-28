@@ -43,6 +43,11 @@ Core tools:
 - `explain_second_board_candidate`
 - `get_stock_realtime_snapshot`
 - `get_stock_minute_replay_snapshot`
+- `get_recent_market_events`
+- `get_signal_snapshot`
+- `get_event_scoring_config`
+- `get_realtime_connection_status`
+- `explain_market_event`
 - `get_theme_strength`
 
 Useful supporting tools:
@@ -52,6 +57,8 @@ Useful supporting tools:
 - `get_break_board_pool`
 - `get_stock_orderbook_snapshot`
 - `get_stock_history_limitup_stats`
+- `review_candidate_outcome`
+- `record_candidate_outcome`
 
 If these tools are unavailable, first ask Hermes to reload MCP with `/reload-mcp` or inspect the Hermes MCP configuration. Do not fabricate live data.
 
@@ -63,6 +70,8 @@ Before grading during active trading hours, verify the timestamp of speed, big-o
 
 If `five_min_speed_window` starts with `minute_replay_exact_window:` or `minute_replay_partial_window:`, state that Aegis Alpha recalculated the speed from jvQuant minute replay bars. Minute replay is minute-level replay data, not tick-by-tick realtime Level-2. During active trading hours, use `five_min_speed_timestamp` or `minute_replay_timestamp` to check freshness before grading.
 
+For event-driven reviews, consume `MarketEvent` and `SignalSnapshot` outputs. Do not ask for raw WebSocket messages and do not infer from individual ticks. If an event has stale or unknown `freshness_status`, explain the event as low-confidence context rather than a live trigger.
+
 ## Standard Workflow
 
 1. Check the market sentiment gate before analyzing individual candidates.
@@ -70,13 +79,14 @@ If `five_min_speed_window` starts with `minute_replay_exact_window:` or `minute_
 3. If the gate action is `defensive`, only discuss why risk is elevated and list what would need to improve.
 4. If Aegis Alpha data is unavailable, stale beyond the freshness rule, or empty, follow the data availability rule before continuing.
 5. If the gate action is `selective` or `active`, fetch second-board candidates with `get_second_board_candidates_compact` first.
-6. For each candidate, analyze only the structured signals returned by Aegis Alpha:
+6. If Aegis Alpha returns recent market events, use them as context for re-scoring candidates, but do not treat event suggestions as order instructions.
+7. For each candidate, analyze only the structured signals returned by Aegis Alpha:
    market gate, auction metrics, 1/3/5/10-minute speed structure, big-order net inflow ratio, concept/topic tags, first/final limit-up time, seal amount, max seal amount, seal-to-turnover ratio, break/reseal count, queue position note, same-theme rising count, orderbook quality, historical touch-limit success rate, and historical gap-up statistics.
-7. Produce a watchlist report with grades `A`, `B`, `C`, or `REJECT`.
-8. Always include structured trigger conditions and avoid conditions.
-9. Always state both model identity and market-data identity. Keep `llm_provider` / `llm_model` separate from `market_data_mode` / `market_data_provider`.
-10. After every candidate grade, explain the reason in natural Chinese. Prefer the MCP `grade_reason` field when present; if it is absent, synthesize one from the returned metrics without inventing missing data.
-11. Use the full `get_second_board_candidates` only when the compact output is insufficient. If evidence details are needed, prefer `get_second_board_candidate_data_quality(symbol)` over fetching the full candidate pool again, to avoid tool-output truncation.
+8. Produce a watchlist report with grades `A`, `B`, `C`, or `REJECT`.
+9. Always include structured trigger conditions and avoid conditions.
+10. Always state both model identity and market-data identity. Keep `llm_provider` / `llm_model` separate from `market_data_mode` / `market_data_provider`.
+11. After every candidate grade, explain the reason in natural Chinese. Prefer the MCP `grade_reason` field when present; if it is absent, synthesize one from the returned metrics without inventing missing data.
+12. Use the full `get_second_board_candidates` only when the compact output is insufficient. If evidence details are needed, prefer `get_second_board_candidate_data_quality(symbol)` over fetching the full candidate pool again, to avoid tool-output truncation.
 
 ## Candidate Interpretation Rules
 
@@ -144,6 +154,7 @@ Do not write "buy", "must buy", "sell", "full position", or "guaranteed". Use "è
 ## Review And Memory
 
 When the user corrects a judgment, summarize the reusable lesson and ask whether to remember it.
+Use `record_candidate_outcome` for explicit review facts or user corrections; do not store rumors, credentials, or unverified tips as outcomes.
 
 Good memory candidates:
 

@@ -1,0 +1,81 @@
+version: 1
+default_freshness_limit_seconds: 180
+
+rules:
+  THEME_CLUSTER_RISING:
+    enabled: true
+    trigger:
+      min_symbols: 3
+      min_5m_change_pct: 5.0
+      window_seconds: 300
+    weights:
+      theme_breadth: 0.35
+      leader_strength: 0.25
+      market_gate: 0.20
+      big_order_inflow: 0.20
+    freshness_limits:
+      active_trading_seconds: 180
+    agent_action:
+      - explain_theme_strength
+      - rescore_second_board_candidates
+
+  APPROACHING_LIMIT_UP:
+    enabled: true
+    trigger:
+      min_change_pct: 8.5
+      min_5m_speed_pct: 1.5
+    weights:
+      price_distance: 0.35
+      speed: 0.25
+      orderbook_quality: 0.20
+      seal_context: 0.20
+    freshness_limits:
+      active_trading_seconds: 180
+    agent_action:
+      - explain_second_board_candidate
+
+  SEAL_ORDER_DECAY:
+    enabled: true
+    trigger:
+      min_decay_pct: 30.0
+      window_seconds: 180
+    weights:
+      seal_decay: 0.45
+      ask_pressure: 0.25
+      break_reseal_count: 0.20
+      market_gate: 0.10
+    freshness_limits:
+      active_trading_seconds: 180
+    agent_action:
+      - warn_orderbook_risk
+
+  BIG_ORDER_INFLOW_SPIKE:
+    enabled: true
+    trigger:
+      min_big_order_net_inflow_ratio: 0.08
+      min_big_order_net_inflow_cny: 30000000
+    weights:
+      inflow_ratio: 0.45
+      inflow_amount: 0.30
+      speed_confirmation: 0.15
+      orderbook_quality: 0.10
+    freshness_limits:
+      active_trading_seconds: 180
+    agent_action:
+      - rescore_second_board_candidates
+
+  SECOND_BOARD_CANDIDATE_REPRICE:
+    enabled: true
+    trigger:
+      min_score_delta: 12.0
+      min_current_change_pct: 7.0
+    weights:
+      market_gate: 0.20
+      speed: 0.25
+      seal_quality: 0.25
+      theme_confirmation: 0.15
+      orderbook_quality: 0.15
+    freshness_limits:
+      active_trading_seconds: 180
+    agent_action:
+      - explain_second_board_candidate

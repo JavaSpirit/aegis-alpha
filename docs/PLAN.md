@@ -81,6 +81,37 @@ Core indicators:
 
 The first production-grade scoring output should use grades such as `A`, `B`, `C`, and `REJECT`.
 
+## Phase 2.5: Realtime Events And Local Data Layer
+
+WebSocket should drive the local market engine, not the agent directly. The first event-driven layer includes:
+
+- jvQuant WebSocket wrapper for `lv1`, `lv2`, and `lv10` subscription management.
+- `SignalWindowBuffer` for rolling 1/3/5/10-minute speed and big-order flow calculations.
+- `MarketEvent` and `SignalSnapshot` contracts for agent-safe structured outputs.
+- `config/event_scoring.yaml` for configurable event triggers, weights, freshness limits, and suggested agent actions.
+- SQLite storage for `market_events`, `signal_snapshots`, `candidate_scores`, `agent_reviews`, `provider_runs`, and `review_outcomes`.
+- Parquet storage boundary for future minute bars, Level-2 trades, and orderbook snapshots. Parquet writing is reserved until a dedicated pyarrow-backed persistence step.
+
+Initial event types:
+
+- `THEME_CLUSTER_RISING`
+- `APPROACHING_LIMIT_UP`
+- `SEAL_ORDER_DECAY`
+- `BIG_ORDER_INFLOW_SPIKE`
+- `SECOND_BOARD_CANDIDATE_REPRICE`
+
+Agent-facing tools:
+
+- `get_recent_market_events`
+- `get_signal_snapshot`
+- `get_event_scoring_config`
+- `get_realtime_connection_status`
+- `explain_market_event`
+- `review_candidate_outcome`
+- `record_candidate_outcome`
+
+Raw WebSocket messages must not be exposed through MCP. Hermes should only consume events, signal snapshots, and explanations.
+
 ## Phase 3: Review And Correction
 
 Add daily review records so Hermes can learn user preferences through skills.

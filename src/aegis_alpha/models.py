@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -9,6 +9,14 @@ CandidateGrade = Literal["A", "B", "C", "REJECT"]
 MarketAction = Literal["active", "selective", "defensive", "avoid"]
 SignalConfidence = Literal["high", "medium", "low", "placeholder", "unavailable"]
 SignalAuthority = Literal["official_doc", "observed_probe", "internal_inference"]
+FreshnessStatus = Literal["fresh", "stale", "unknown"]
+MarketEventType = Literal[
+    "THEME_CLUSTER_RISING",
+    "APPROACHING_LIMIT_UP",
+    "SEAL_ORDER_DECAY",
+    "BIG_ORDER_INFLOW_SPIKE",
+    "SECOND_BOARD_CANDIDATE_REPRICE",
+]
 
 
 class SignalEvidence(BaseModel):
@@ -142,6 +150,83 @@ class MinuteReplaySnapshot(BaseModel):
     bars: list[MinuteReplayBar] = Field(default_factory=list)
     speed_pct_by_window: dict[str, float] = Field(default_factory=dict)
     speed_window_by_window: dict[str, str] = Field(default_factory=dict)
+    notes: list[str] = Field(default_factory=list)
+
+
+class SignalSnapshot(BaseModel):
+    symbol: str
+    name: str = "unknown"
+    theme: str = "unknown"
+    provider: str = "mock"
+    data_mode: str = "mock"
+    price: float = 0.0
+    change_pct: float = 0.0
+    speed_1m_pct: float = 0.0
+    speed_3m_pct: float = 0.0
+    speed_5m_pct: float = 0.0
+    speed_10m_pct: float = 0.0
+    big_order_net_inflow_cny: float = 0.0
+    big_order_net_inflow_ratio: float = Field(default=0.0, ge=-1, le=1)
+    orderbook_quality_score: float = Field(default=50.0, ge=0, le=100)
+    seal_amount_cny: float = 0.0
+    seal_decay_pct: float = 0.0
+    data_timestamp: str
+    provider_timestamp: str = ""
+    received_at: str = ""
+    freshness_status: FreshnessStatus = "unknown"
+    notes: list[str] = Field(default_factory=list)
+
+
+class MarketEvent(BaseModel):
+    event_id: str
+    event_type: MarketEventType
+    symbol: str = ""
+    name: str = ""
+    theme: str = "unknown"
+    confidence: SignalConfidence = "medium"
+    score: float = Field(ge=0, le=100)
+    evidence: list[str] = Field(default_factory=list)
+    provider_timestamp: str = ""
+    received_at: str
+    freshness_status: FreshnessStatus = "unknown"
+    suggested_agent_action: list[str] = Field(default_factory=list)
+    data: dict[str, Any] = Field(default_factory=dict)
+
+
+class EventScoringRule(BaseModel):
+    enabled: bool = True
+    trigger: dict[str, Any] = Field(default_factory=dict)
+    weights: dict[str, float] = Field(default_factory=dict)
+    freshness_limits: dict[str, int] = Field(default_factory=dict)
+    agent_action: list[str] = Field(default_factory=list)
+
+
+class EventScoringConfig(BaseModel):
+    version: int = 1
+    default_freshness_limit_seconds: int = 180
+    rules: dict[str, EventScoringRule] = Field(default_factory=dict)
+
+
+class RealtimeConnectionStatus(BaseModel):
+    provider: str
+    market: str = "ab"
+    connected: bool = False
+    subscribed: list[str] = Field(default_factory=list)
+    last_message_at: str = ""
+    last_error: str = ""
+    notes: list[str] = Field(default_factory=list)
+
+
+class CandidateOutcomeReview(BaseModel):
+    symbol: str
+    trading_day: str
+    touched_limit_up: bool | None = None
+    sealed_second_board: bool | None = None
+    broke_after_seal: bool | None = None
+    next_day_open_pct: float | None = None
+    next_day_high_pct: float | None = None
+    third_day_premium_pct: float | None = None
+    user_correction: str = ""
     notes: list[str] = Field(default_factory=list)
 
 

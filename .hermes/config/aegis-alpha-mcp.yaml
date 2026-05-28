@@ -14,6 +14,13 @@ mcp_servers:
         - get_stock_realtime_snapshot
         - get_stock_orderbook_snapshot
         - get_stock_minute_replay_snapshot
+        - get_recent_market_events
+        - get_signal_snapshot
+        - get_event_scoring_config
+        - get_realtime_connection_status
+        - explain_market_event
+        - review_candidate_outcome
+        - record_candidate_outcome
         - get_stock_history_limitup_stats
         - get_theme_strength
         - get_second_board_candidates
