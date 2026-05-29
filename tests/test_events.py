@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from aegis_alpha.agent_eval import evaluate_agent_replay_response
 from aegis_alpha.adapters.jvquant_websocket import summarize_raw_ab_payload, subscription_codes
 from aegis_alpha.events import EventDetector, SignalWindowBuffer, load_event_scoring_config
 from aegis_alpha.models import CandidateOutcomeReview, SignalSnapshot
@@ -189,3 +190,25 @@ def test_orderbook_replay_fixture_triggers_expected_events() -> None:
     assert "BIG_ORDER_INFLOW_SPIKE" in event_types
     assert "SEAL_ORDER_DECAY" in event_types
     assert "SECOND_BOARD_CANDIDATE_REPRICE" in event_types
+
+
+def test_agent_replay_response_evaluation() -> None:
+    content = """
+    {
+      "grade": "B",
+      "natural_language_reason": "这是离线合成回放，盘口指标只能说明规则链路触发，不能当作真实行情。",
+      "data_facts": ["freshness_status=stale"],
+      "rule_score": "封单衰减较高",
+      "risks": ["非真实行情"],
+      "trigger_conditions": {"price": [], "volume": [], "theme": [], "orderbook": []},
+      "avoid_conditions": ["数据过期"],
+      "freshness_warning": "stale",
+      "data_timestamp": "2000-01-01T09:35:00+08:00",
+      "disclaimer": "仅供研究观察，非投资建议。"
+    }
+    """
+
+    result = evaluate_agent_replay_response(content, expected_freshness_status="stale")
+
+    assert result["passed"] is True
+    assert result["parsed"]["grade"] == "B"
