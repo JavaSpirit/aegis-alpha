@@ -16,6 +16,20 @@ Optional stale-data test:
 PYTHONPATH=src .venv/bin/python scripts/smoke_agent_replay.py --stale
 ```
 
+Run one historical SQLite snapshot through DeepSeek:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/smoke_agent_historical_snapshot.py --target-time 2026-05-29T10:00:00+08:00 --symbols 600519,000001
+```
+
+Run a batch of historical SQLite snapshots:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/batch_agent_historical_eval.py --symbols 600519,000001
+```
+
+Batch reports are written under `data/agent_eval_runs/` and are ignored by git.
+
 The script reads `DEEPSEEK_API_KEY` from `.env.local` or the shell environment and does not print the key.
 
 ## Expected Behavior

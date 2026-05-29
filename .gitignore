@@ -20,6 +20,7 @@ data/processed/
 data/*.db
 data/*.db-*
 data/*.json
+data/agent_eval_runs/
 data/runner_status.json
 data/parquet/
 logs/

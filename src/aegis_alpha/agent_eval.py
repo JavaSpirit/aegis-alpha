@@ -95,7 +95,7 @@ def evaluate_agent_replay_response(
     checks.append(
         {
             "name": "contains_non_advice_disclaimer",
-            "passed": bool(re.search(r"(非|不是|不构成).{0,8}投资建议", content)),
+            "passed": bool(re.search(r"(非|不是|不构成|不作为|不能作为).{0,12}(投资建议|交易建议|交易指令|操作指令)", content)),
         }
     )
     checks.append(

@@ -4,8 +4,6 @@ import argparse
 import json
 import os
 import sqlite3
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 from aegis_alpha.agent_context import signal_snapshot_agent_context
@@ -41,6 +39,9 @@ def latest_near_snapshots(db_path: Path, symbols: list[str], target_time: str) -
 
 
 def call_deepseek(messages: list[dict[str, str]], *, model: str, timeout_seconds: int) -> dict:
+    import urllib.error
+    import urllib.request
+
     api_key = os.environ.get("DEEPSEEK_API_KEY", "")
     if not api_key:
         raise ValueError("DEEPSEEK_API_KEY missing")
@@ -95,6 +96,38 @@ def build_messages(*, target_time: str, snapshots: list[dict]) -> list[dict[str,
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
 
+def evaluate_historical_snapshot(
+    *,
+    db_path: Path,
+    target_time: str,
+    symbols: list[str],
+    model: str,
+    timeout_seconds: int,
+) -> dict:
+    snapshots = latest_near_snapshots(db_path, symbols, target_time)
+    if not snapshots:
+        raise ValueError("No historical snapshots found for requested symbols.")
+
+    response = call_deepseek(
+        build_messages(target_time=target_time, snapshots=snapshots),
+        model=model,
+        timeout_seconds=timeout_seconds,
+    )
+    content = response["choices"][0]["message"]["content"]
+    evaluation = evaluate_agent_replay_response(content, expected_freshness_status="fresh")
+    return {
+        "provider": "deepseek",
+        "model": model,
+        "target_time": target_time,
+        "symbols": symbols,
+        "agent_context": signal_snapshot_agent_context(),
+        "input_snapshots": snapshots,
+        "agent_content": content,
+        "evaluation": evaluation,
+        "usage": response.get("usage", {}),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run DeepSeek evaluation for historical local SignalSnapshot rows.")
     parser.add_argument("--target-time", default="2026-05-29T10:00:00+08:00")
@@ -108,28 +141,13 @@ def main() -> int:
     load_project_env()
     db_path = args.db_path or default_db_path()
     symbols = [item.strip().upper().split(".", 1)[0] for item in args.symbols.split(",") if item.strip()]
-    snapshots = latest_near_snapshots(db_path, symbols, args.target_time)
-    if not snapshots:
-        raise ValueError("No historical snapshots found for requested symbols.")
-
-    response = call_deepseek(
-        build_messages(target_time=args.target_time, snapshots=snapshots),
+    result = evaluate_historical_snapshot(
+        db_path=db_path,
+        target_time=args.target_time,
+        symbols=symbols,
         model=args.model,
         timeout_seconds=args.timeout_seconds,
     )
-    content = response["choices"][0]["message"]["content"]
-    evaluation = evaluate_agent_replay_response(content, expected_freshness_status="fresh")
-    result = {
-        "provider": "deepseek",
-        "model": args.model,
-        "target_time": args.target_time,
-        "symbols": symbols,
-        "agent_context": signal_snapshot_agent_context(),
-        "input_snapshots": snapshots,
-        "agent_content": content,
-        "evaluation": evaluation,
-        "usage": response.get("usage", {}),
-    }
     text = json.dumps(result, ensure_ascii=False, indent=2)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)

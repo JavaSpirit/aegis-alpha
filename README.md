@@ -223,6 +223,7 @@ Run a historical local SQLite snapshot through DeepSeek:
 
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/smoke_agent_historical_snapshot.py --target-time 2026-05-29T10:00:00+08:00 --symbols 600519,000001
+PYTHONPATH=src .venv/bin/python scripts/batch_agent_historical_eval.py --symbols 600519,000001
 ```
 
 See [docs/AGENT_EVALUATION.md](docs/AGENT_EVALUATION.md) for the expected guardrails.

@@ -241,6 +241,27 @@ def test_agent_evaluation_accepts_per_symbol_grades() -> None:
     assert result["passed"] is True
 
 
+def test_agent_evaluation_accepts_trade_instruction_disclaimer() -> None:
+    content = """
+    {
+      "market_context": "历史回放截面。",
+      "per_symbol": [
+        {
+          "symbol": "600519",
+          "grade": "C",
+          "natural_language_reason": "涨幅低且无封单，不适合打板观察。"
+        }
+      ],
+      "overall_conclusion": "不适合。",
+      "disclaimer": "本分析仅用于研究目的，不构成任何形式的交易建议或操作指令。"
+    }
+    """
+
+    result = evaluate_agent_replay_response(content, expected_freshness_status="fresh")
+
+    assert result["passed"] is True
+
+
 def test_signal_snapshot_agent_context_documents_pct_units() -> None:
     context = signal_snapshot_agent_context()
 
