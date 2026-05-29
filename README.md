@@ -198,6 +198,20 @@ scripts/uninstall_launchd_runner.sh --remove-plist
 
 The runner uses [config/runner.yaml](config/runner.yaml), writes `data/runner_status.json`, logs to `logs/runner.out.log` and `logs/runner.err.log`, persists signal snapshots and generated events into SQLite during active sessions, and keeps raw WebSocket data inside the local signal engine.
 
+Inspect the latest local signal snapshots and freshness gate:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/check_realtime_snapshots.py --symbols 600519,000001
+```
+
+Run the offline second-board orderbook replay harness without live market data:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/replay_orderbook_fixture.py
+```
+
+The replay harness validates the local signal/event pipeline only. It uses synthetic data and must not be treated as a live trading signal.
+
 Each second-board candidate also includes `data_quality`, a per-signal metadata map covering source, source field, timestamp, confidence, grading usability, limitations, and evidence. Evidence entries use `authority` to separate `official_doc`, `observed_probe`, and `internal_inference`. Current jvQuant official capability notes are documented in [docs/JVQUANT_OFFICIAL_INDEX.md](docs/JVQUANT_OFFICIAL_INDEX.md), and observed semantic-query probes are documented in [docs/JVQUANT_FIELD_MAP.md](docs/JVQUANT_FIELD_MAP.md) and [docs/JVQUANT_CAPABILITY_MATRIX.md](docs/JVQUANT_CAPABILITY_MATRIX.md).
 
 Use `get_second_board_candidates_compact(limit)` for routine agent screening, then `get_second_board_candidate_data_quality(symbol)` when an agent only needs evidence details for one candidate; both avoid pulling the full verbose candidate pool and reduce output truncation.

@@ -3,6 +3,7 @@ from __future__ import annotations
 from aegis_alpha.adapters.jvquant_websocket import summarize_raw_ab_payload, subscription_codes
 from aegis_alpha.events import EventDetector, SignalWindowBuffer, load_event_scoring_config
 from aegis_alpha.models import CandidateOutcomeReview, SignalSnapshot
+from aegis_alpha.replay import run_orderbook_replay_fixture
 from aegis_alpha.signals.orderbook import estimate_orderbook_metrics
 from aegis_alpha.storage import AegisAlphaStore, ParquetSink, refresh_snapshot_freshness
 
@@ -173,3 +174,18 @@ def test_refresh_snapshot_freshness_marks_old_data_stale() -> None:
 
     assert refreshed.freshness_status == "stale"
     assert any(note.startswith("freshness_status_refreshed_at=") for note in refreshed.notes)
+
+
+def test_orderbook_replay_fixture_triggers_expected_events() -> None:
+    snapshot, events = run_orderbook_replay_fixture()
+    event_types = {event.event_type for event in events}
+
+    assert snapshot.data_mode == "offline_replay"
+    assert snapshot.freshness_status == "fresh"
+    assert snapshot.speed_5m_pct > 1.5
+    assert snapshot.big_order_net_inflow_ratio > 0.08
+    assert snapshot.seal_decay_pct >= 30.0
+    assert "APPROACHING_LIMIT_UP" in event_types
+    assert "BIG_ORDER_INFLOW_SPIKE" in event_types
+    assert "SEAL_ORDER_DECAY" in event_types
+    assert "SECOND_BOARD_CANDIDATE_REPRICE" in event_types
