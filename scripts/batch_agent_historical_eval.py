@@ -8,7 +8,8 @@ from pathlib import Path
 
 from aegis_alpha.agent_eval import parsed_grades
 from aegis_alpha.config import load_project_env
-from aegis_alpha.storage import default_db_path, now_iso
+from aegis_alpha.models import AgentReview
+from aegis_alpha.storage import AegisAlphaStore, default_db_path, now_iso
 from smoke_agent_historical_snapshot import evaluate_historical_snapshot
 
 
@@ -23,6 +24,7 @@ def main() -> int:
     parser.add_argument("--model", default=os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-pro"))
     parser.add_argument("--timeout-seconds", type=int, default=60)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--write-store", action="store_true", help="Persist each case and the batch summary to SQLite agent_reviews.")
     args = parser.parse_args()
 
     load_project_env()
@@ -77,6 +79,23 @@ def main() -> int:
         },
         "results": results,
     }
+    if args.write_store:
+        store = AegisAlphaStore(db_path)
+        for result in results:
+            store.save_agent_review(review_from_result(result, run_type="historical_snapshot_eval"))
+        store.save_agent_review(
+            AgentReview(
+                run_type="batch_agent_historical_eval",
+                target_time=",".join(target_times),
+                symbols=symbols,
+                provider="deepseek",
+                model=args.model,
+                passed=failed_count == 0,
+                grades=list(grade_counts.elements()),
+                summary=report["summary"],
+                payload={key: value for key, value in report.items() if key != "results"},
+            )
+        )
     text = json.dumps(report, ensure_ascii=False, indent=2)
     output = args.output or Path("data") / "agent_eval_runs" / f"batch_{now_iso().replace(':', '').replace('+', '_')}.json"
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -84,6 +103,25 @@ def main() -> int:
     print(text)
     print(f"\nSaved report: {output}")
     return 0 if failed_count == 0 else 2
+
+
+def review_from_result(result: dict, *, run_type: str) -> AgentReview:
+    evaluation = result.get("evaluation") or {}
+    parsed = evaluation.get("parsed") or {}
+    return AgentReview(
+        run_type=run_type,
+        target_time=str(result.get("target_time") or ""),
+        symbols=[str(item) for item in result.get("symbols", [])],
+        provider=str(result.get("provider") or "deepseek"),
+        model=str(result.get("model") or ""),
+        passed=bool(evaluation.get("passed")),
+        grades=parsed_grades(parsed),
+        summary={
+            "checks": evaluation.get("checks", []),
+            "usage": result.get("usage", {}),
+        },
+        payload=result,
+    )
 
 
 if __name__ == "__main__":

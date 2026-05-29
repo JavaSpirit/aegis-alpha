@@ -30,6 +30,13 @@ PYTHONPATH=src .venv/bin/python scripts/batch_agent_historical_eval.py --symbols
 
 Batch reports are written under `data/agent_eval_runs/` and are ignored by git.
 
+Persist batch cases and the batch summary into SQLite:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/batch_agent_historical_eval.py --symbols 600519,000001 --write-store
+PYTHONPATH=src .venv/bin/python scripts/check_agent_reviews.py --limit 10
+```
+
 The script reads `DEEPSEEK_API_KEY` from `.env.local` or the shell environment and does not print the key.
 
 ## Expected Behavior

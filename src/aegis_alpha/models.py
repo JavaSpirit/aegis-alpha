@@ -258,6 +258,20 @@ class CandidateOutcomeReview(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
 
+class AgentReview(BaseModel):
+    review_id: str = ""
+    run_type: str
+    target_time: str = ""
+    symbols: list[str] = Field(default_factory=list)
+    provider: str = "deepseek"
+    model: str = ""
+    passed: bool = False
+    grades: list[CandidateGrade] = Field(default_factory=list)
+    summary: dict[str, Any] = Field(default_factory=dict)
+    payload: dict[str, Any] = Field(default_factory=dict)
+    created_at: str = ""
+
+
 class LimitUpHistoryStats(BaseModel):
     symbol: str
     sample_size: int

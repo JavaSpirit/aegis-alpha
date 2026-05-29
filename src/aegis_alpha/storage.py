@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Iterable
 from zoneinfo import ZoneInfo
 
-from aegis_alpha.models import CandidateOutcomeReview, MarketEvent, RunnerStatus, SignalSnapshot
+from aegis_alpha.models import AgentReview, CandidateOutcomeReview, MarketEvent, RunnerStatus, SignalSnapshot
 
 SH_TZ = ZoneInfo("Asia/Shanghai")
 
@@ -285,6 +285,40 @@ class AegisAlphaStore:
                     json.dumps(payload, ensure_ascii=False),
                 ),
             )
+
+    def save_agent_review(self, review: AgentReview) -> AgentReview:
+        if not review.created_at:
+            review.created_at = now_iso()
+        if not review.review_id:
+            review.review_id = f"{review.run_type}:{review.target_time}:{review.created_at}"
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO agent_reviews (event_id, symbol, provider, model, payload_json)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    review.review_id,
+                    ",".join(review.symbols),
+                    review.provider,
+                    review.model,
+                    review.model_dump_json(),
+                ),
+            )
+        return review
+
+    def recent_agent_reviews(self, limit: int = 20) -> list[AgentReview]:
+        safe_limit = max(1, min(int(limit or 20), 100))
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT payload_json FROM agent_reviews
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (safe_limit,),
+            ).fetchall()
+        return [AgentReview.model_validate_json(row[0]) for row in rows]
 
 
 def write_runner_status(status: RunnerStatus, path: str | Path | None = None) -> Path:

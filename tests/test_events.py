@@ -4,7 +4,7 @@ from aegis_alpha.agent_context import signal_snapshot_agent_context
 from aegis_alpha.agent_eval import evaluate_agent_replay_response
 from aegis_alpha.adapters.jvquant_websocket import summarize_raw_ab_payload, subscription_codes
 from aegis_alpha.events import EventDetector, SignalWindowBuffer, load_event_scoring_config
-from aegis_alpha.models import CandidateOutcomeReview, SignalSnapshot
+from aegis_alpha.models import AgentReview, CandidateOutcomeReview, SignalSnapshot
 from aegis_alpha.replay import run_orderbook_replay_fixture
 from aegis_alpha.signals.orderbook import estimate_orderbook_metrics
 from aegis_alpha.storage import AegisAlphaStore, ParquetSink, refresh_snapshot_freshness
@@ -161,6 +161,29 @@ def test_sqlite_store_roundtrip(tmp_path) -> None:
     assert store.recent_market_events()
     assert store.get_review_outcome("600000", "2026-05-28").symbol == "600000"
     assert ParquetSink(tmp_path / "parquet").status()["root"].endswith("parquet")
+
+
+def test_agent_review_store_roundtrip(tmp_path) -> None:
+    store = AegisAlphaStore(tmp_path / "aegis_alpha.db")
+    review = store.save_agent_review(
+        AgentReview(
+            run_type="historical_snapshot_eval",
+            target_time="2026-05-29T10:00:00+08:00",
+            symbols=["600519", "000001"],
+            provider="deepseek",
+            model="deepseek-v4-pro",
+            passed=True,
+            grades=["C", "REJECT"],
+            summary={"grade_counts": {"C": 1, "REJECT": 1}},
+            payload={"example": True},
+        )
+    )
+
+    reviews = store.recent_agent_reviews()
+
+    assert review.review_id
+    assert reviews[0].passed is True
+    assert reviews[0].grades == ["C", "REJECT"]
 
 
 def test_refresh_snapshot_freshness_marks_old_data_stale() -> None:
