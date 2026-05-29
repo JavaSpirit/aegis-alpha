@@ -71,6 +71,11 @@ class SignalWindowBuffer:
         self._big_order_amount: dict[str, float] = defaultdict(float)
         self._change_pct: dict[str, float] = defaultdict(float)
         self._orderbook_quality: dict[str, float] = defaultdict(lambda: 50.0)
+        self._ask_pressure: dict[str, float] = defaultdict(lambda: 50.0)
+        self._seal_amount: dict[str, float] = defaultdict(float)
+        self._seal_decay: dict[str, float] = defaultdict(float)
+        self._sell_wall_amount: dict[str, float] = defaultdict(float)
+        self._notes: dict[str, list[str]] = defaultdict(list)
 
     def add_price(
         self,
@@ -91,6 +96,27 @@ class SignalWindowBuffer:
 
     def set_orderbook_quality(self, symbol: str, quality_score: float) -> None:
         self._orderbook_quality[symbol] = round(max(0.0, min(100.0, quality_score)), 2)
+
+    def set_orderbook_metrics(
+        self,
+        symbol: str,
+        *,
+        quality_score: float,
+        seal_amount_cny: float,
+        seal_decay_pct: float,
+        ask_pressure_score: float = 50.0,
+        sell_wall_amount_cny: float = 0.0,
+        notes: list[str] | None = None,
+    ) -> None:
+        self.set_orderbook_quality(symbol, quality_score)
+        self._ask_pressure[symbol] = round(max(0.0, min(100.0, ask_pressure_score)), 2)
+        self._seal_amount[symbol] = max(0.0, seal_amount_cny)
+        self._seal_decay[symbol] = max(0.0, seal_decay_pct)
+        self._sell_wall_amount[symbol] = max(0.0, sell_wall_amount_cny)
+        self._notes[symbol] = list(notes or [])
+
+    def previous_seal_amount(self, symbol: str) -> float:
+        return self._seal_amount.get(symbol, 0.0)
 
     def speed_pct(self, symbol: str, minutes: int) -> float:
         points = list(self._points.get(symbol, []))
@@ -142,12 +168,18 @@ class SignalWindowBuffer:
                 if orderbook_quality_score is not None
                 else self._orderbook_quality.get(symbol, 50.0)
             ),
-            seal_amount_cny=seal_amount_cny,
+            ask_pressure_score=self._ask_pressure.get(symbol, 50.0),
+            seal_amount_cny=seal_amount_cny or self._seal_amount.get(symbol, 0.0),
+            seal_decay_pct=self._seal_decay.get(symbol, 0.0),
+            sell_wall_amount_cny=self._sell_wall_amount.get(symbol, 0.0),
             data_timestamp=timestamp,
             provider_timestamp=timestamp,
             received_at=received,
             freshness_status=freshness_status(timestamp, received),
-            notes=["Realtime buffer snapshot; raw WebSocket messages are not exposed to agents."],
+            notes=[
+                "Realtime buffer snapshot; raw WebSocket messages are not exposed to agents.",
+                *self._notes.get(symbol, []),
+            ],
         )
 
 

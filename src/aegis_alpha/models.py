@@ -179,8 +179,10 @@ class SignalSnapshot(BaseModel):
     big_order_net_inflow_cny: float = 0.0
     big_order_net_inflow_ratio: float = Field(default=0.0, ge=-1, le=1)
     orderbook_quality_score: float = Field(default=50.0, ge=0, le=100)
+    ask_pressure_score: float = Field(default=50.0, ge=0, le=100)
     seal_amount_cny: float = 0.0
     seal_decay_pct: float = 0.0
+    sell_wall_amount_cny: float = 0.0
     data_timestamp: str
     provider_timestamp: str = ""
     received_at: str = ""

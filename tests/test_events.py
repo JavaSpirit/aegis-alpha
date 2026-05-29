@@ -3,6 +3,7 @@ from __future__ import annotations
 from aegis_alpha.adapters.jvquant_websocket import summarize_raw_ab_payload, subscription_codes
 from aegis_alpha.events import EventDetector, SignalWindowBuffer, load_event_scoring_config
 from aegis_alpha.models import CandidateOutcomeReview, SignalSnapshot
+from aegis_alpha.signals.orderbook import estimate_orderbook_metrics
 from aegis_alpha.storage import AegisAlphaStore, ParquetSink
 
 
@@ -32,6 +33,50 @@ def test_signal_window_buffer_calculates_speed_and_flow() -> None:
     assert snapshot.speed_5m_pct == 9.0
     assert snapshot.big_order_net_inflow_ratio == 0.12
     assert snapshot.freshness_status == "fresh"
+
+
+def test_orderbook_metrics_estimate_quality_and_seal_decay() -> None:
+    strong = estimate_orderbook_metrics(
+        price=11.0,
+        change_pct=9.9,
+        bid_volumes=[100_000, 50_000, 30_000],
+        ask_volumes=[10_000, 20_000, 30_000],
+    )
+    weaker = estimate_orderbook_metrics(
+        price=11.0,
+        change_pct=9.9,
+        bid_volumes=[50_000, 25_000, 15_000],
+        ask_volumes=[20_000, 30_000, 40_000],
+        previous_seal_amount_cny=strong.seal_amount_cny,
+    )
+
+    assert strong.orderbook_quality_score > 70
+    assert strong.seal_amount_cny == 110_000_000
+    assert weaker.seal_decay_pct == 50.0
+    assert weaker.ask_pressure_score > strong.ask_pressure_score
+
+
+def test_signal_window_buffer_carries_orderbook_metrics() -> None:
+    buffer = SignalWindowBuffer()
+    buffer.add_price("600000", "2026-05-28T09:35:00+08:00", 11.0, 80_000_000, change_pct=9.9)
+    buffer.set_orderbook_metrics(
+        "600000",
+        quality_score=82.5,
+        ask_pressure_score=17.5,
+        seal_amount_cny=110_000_000,
+        seal_decay_pct=12.0,
+        sell_wall_amount_cny=5_000_000,
+        notes=["test_orderbook_note"],
+    )
+
+    snapshot = buffer.latest_snapshot("600000", received_at="2026-05-28T09:35:01+08:00")
+
+    assert snapshot.orderbook_quality_score == 82.5
+    assert snapshot.ask_pressure_score == 17.5
+    assert snapshot.seal_amount_cny == 110_000_000
+    assert snapshot.seal_decay_pct == 12.0
+    assert snapshot.sell_wall_amount_cny == 5_000_000
+    assert "test_orderbook_note" in snapshot.notes
 
 
 def test_event_detector_builds_structured_events() -> None:

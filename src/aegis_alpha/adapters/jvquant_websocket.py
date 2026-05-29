@@ -7,6 +7,7 @@ from typing import Any
 
 from aegis_alpha.events import SignalWindowBuffer, now_iso
 from aegis_alpha.models import RealtimeConnectionStatus
+from aegis_alpha.signals.orderbook import estimate_from_lv10_object
 
 
 def normalize_realtime_symbol(symbol: str) -> str:
@@ -196,11 +197,20 @@ class JvQuantRealtimeClient:
             float(getattr(lv10, "amount", 0.0)),
             change_pct=float(getattr(lv10, "ratio", 0.0)),
         )
-        bid_volume = sum(float(getattr(lv10, f"b{index}", 0.0)) for index in range(1, 11))
-        ask_volume = sum(float(getattr(lv10, f"s{index}", 0.0)) for index in range(1, 11))
-        total_volume = bid_volume + ask_volume
-        if total_volume > 0:
-            self.buffer.set_orderbook_quality(str(lv10.code), 100 * bid_volume / total_volume)
+        symbol = str(lv10.code)
+        metrics = estimate_from_lv10_object(
+            lv10,
+            previous_seal_amount_cny=self.buffer.previous_seal_amount(symbol),
+        )
+        self.buffer.set_orderbook_metrics(
+            symbol,
+            quality_score=metrics.orderbook_quality_score,
+            ask_pressure_score=metrics.ask_pressure_score,
+            seal_amount_cny=metrics.seal_amount_cny,
+            seal_decay_pct=metrics.seal_decay_pct,
+            sell_wall_amount_cny=metrics.sell_wall_amount_cny,
+            notes=metrics.notes,
+        )
 
     def _provider_time(self, value: str) -> str:
         text = str(value or "").strip()
