@@ -216,6 +216,46 @@ def test_agent_review_correction_summary_suggests_skill_patch(tmp_path) -> None:
     assert summary.by_symbol["600519"] == 2
     assert "lower the grade" in summary.suggested_skill_patch
     assert "skill" in summary.recommended_next_action.lower()
+    assert {action.target for action in summary.recommended_actions} == {"scoring_config", "skill"}
+    assert all(action.correction_type == "STRATEGY_ERROR" for action in summary.recommended_actions)
+
+
+def test_agent_review_correction_summary_routes_data_unit_and_expression_errors(tmp_path) -> None:
+    store = AegisAlphaStore(tmp_path / "aegis_alpha.db")
+    store.save_agent_review_correction(
+        AgentReviewCorrection(
+            review_id="review-data",
+            correction_type="DATA_ERROR",
+            comment="数据时间戳过期，不能继续评级。",
+        )
+    )
+    store.save_agent_review_correction(
+        AgentReviewCorrection(
+            review_id="review-unit",
+            correction_type="UNIT_ERROR",
+            comment="把 speed_5m_pct 当成比例放大了。",
+        )
+    )
+    store.save_agent_review_correction(
+        AgentReviewCorrection(
+            review_id="review-expression",
+            correction_type="EXPRESSION_RISK",
+            comment="表达像直接下单指令。",
+        )
+    )
+
+    summary = store.agent_correction_summary(limit=10)
+    actions = {(action.target, action.correction_type) for action in summary.recommended_actions}
+
+    assert ("adapter", "DATA_ERROR") in actions
+    assert ("memory", "UNIT_ERROR") in actions
+    assert ("skill", "EXPRESSION_RISK") in actions
+    assert any(action.status == "ready_to_apply" for action in summary.recommended_actions)
+    assert any(
+        action.correction_type == "EXPRESSION_RISK" and "direct buy/sell commands" in action.suggested_patch
+        for action in summary.recommended_actions
+    )
+    assert summary.suggested_memory
 
 
 def test_refresh_snapshot_freshness_marks_old_data_stale() -> None:

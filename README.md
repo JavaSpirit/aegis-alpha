@@ -156,7 +156,7 @@ Aegis Alpha now also has the first event-driven layer:
 - jvQuant WebSocket `lv1/lv2/lv10` has a wrapper for connection/subscription callbacks; raw WebSocket messages are kept inside the market engine and are not exposed through MCP.
 - SQLite stores structured events, signal snapshots, reviews, agent review corrections, and provider runs under `data/aegis_alpha.db` by default. Parquet storage is reserved for high-volume bars, ticks, and orderbook snapshots after a dedicated writer is added.
 
-Agent review corrections are chat-first: Hermes can retrieve recent DeepSeek/OpenRouter evaluations, record the user's correction, and ask Aegis Alpha for suggested memory or skill patches. Aegis Alpha does not automatically mutate Hermes memory or skills; it returns structured suggestions for review.
+Agent review corrections are chat-first: Hermes can retrieve recent DeepSeek/OpenRouter evaluations, record the user's correction, and ask Aegis Alpha for structured `recommended_actions`. Corrections route to adapter review, scoring config review, Hermes memory, Hermes skill, or review-only evidence collection. Aegis Alpha does not automatically mutate Hermes memory or skills; it returns suggestions for review.
 
 Preview jvQuant WebSocket subscription commands without opening a stream:
 

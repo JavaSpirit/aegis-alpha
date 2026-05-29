@@ -85,6 +85,14 @@ Recommended chat flow:
    - `correction_type`: `DATA_ERROR`, `UNIT_ERROR`, `STRATEGY_ERROR`, `EXPRESSION_RISK`, or `OTHER`.
    - `expected_grade`: optional `A`, `B`, `C`, or `REJECT`.
    - `comment`: the user's natural-language correction.
-3. Use `get_agent_correction_summary(limit)` to inspect repeated patterns and decide whether to update Hermes memory, patch the Aegis Alpha skill, or fix an adapter/rule.
+3. Use `get_agent_correction_summary(limit)` to inspect repeated patterns and route follow-up work through `recommended_actions`.
 
-Correction storage is deliberately separate from Hermes memory. Aegis Alpha records the structured correction and returns `suggested_memory` / `suggested_skill_patch`, but Hermes should only save memory or modify a skill after confirming the pattern is stable and useful.
+Correction routing:
+
+- `DATA_ERROR` routes to `adapter` first, with a secondary `skill` action for stricter freshness handling.
+- `UNIT_ERROR` routes to `memory` because field-unit interpretation is stable agent context.
+- `STRATEGY_ERROR` routes to `review_only` until at least two similar corrections exist, then routes to `scoring_config` and `skill`.
+- `EXPRESSION_RISK` routes to `skill` because unsafe wording is an agent behavior issue.
+- `OTHER` stays `review_only` until a human reclassifies it.
+
+Correction storage is deliberately separate from Hermes memory. Aegis Alpha records the structured correction and returns `recommended_actions`, `suggested_memory`, and `suggested_skill_patch`, but Hermes should only save memory or modify a skill after confirming the pattern is stable and useful.

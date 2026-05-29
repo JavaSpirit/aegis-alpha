@@ -116,7 +116,7 @@ Agent-facing tools:
 
 Raw WebSocket messages must not be exposed through MCP. Hermes should only consume events, signal snapshots, and explanations.
 
-Agent review corrections should be chat-first. Hermes can record a user's correction through MCP, then inspect repeated patterns and decide whether to update memory, patch the Aegis Alpha skill, or send the issue back to adapter/scoring code. Aegis Alpha stores correction evidence and returns suggestions; it does not automatically mutate Hermes memory or skills.
+Agent review corrections should be chat-first. Hermes can record a user's correction through MCP, then inspect repeated patterns and decide whether to update memory, patch the Aegis Alpha skill, adjust scoring config, or send the issue back to adapter code. Aegis Alpha stores correction evidence and returns structured `recommended_actions`; it does not automatically mutate Hermes memory, skills, or scoring config.
 
 ## Phase 2.6: Launchd-Managed Runner
 

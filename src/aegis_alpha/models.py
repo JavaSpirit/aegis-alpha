@@ -7,6 +7,9 @@ from pydantic import BaseModel, Field
 
 CandidateGrade = Literal["A", "B", "C", "REJECT"]
 AgentCorrectionType = Literal["DATA_ERROR", "UNIT_ERROR", "STRATEGY_ERROR", "EXPRESSION_RISK", "OTHER"]
+AgentCorrectionActionTarget = Literal["adapter", "scoring_config", "memory", "skill", "review_only"]
+AgentCorrectionActionPriority = Literal["high", "medium", "low"]
+AgentCorrectionActionStatus = Literal["needs_human_review", "ready_to_apply", "collect_more_evidence"]
 MarketAction = Literal["active", "selective", "defensive", "avoid"]
 SignalConfidence = Literal["high", "medium", "low", "placeholder", "unavailable"]
 SignalAuthority = Literal["official_doc", "observed_probe", "internal_inference"]
@@ -283,11 +286,23 @@ class AgentReviewCorrection(BaseModel):
     created_at: str = ""
 
 
+class AgentCorrectionAction(BaseModel):
+    target: AgentCorrectionActionTarget
+    priority: AgentCorrectionActionPriority = "medium"
+    status: AgentCorrectionActionStatus = "needs_human_review"
+    correction_type: AgentCorrectionType = "OTHER"
+    evidence_count: int = 0
+    reason: str = ""
+    action: str = ""
+    suggested_patch: str = ""
+
+
 class AgentCorrectionSummary(BaseModel):
     total_count: int = 0
     by_type: dict[str, int] = Field(default_factory=dict)
     by_symbol: dict[str, int] = Field(default_factory=dict)
     recent_corrections: list[AgentReviewCorrection] = Field(default_factory=list)
+    recommended_actions: list[AgentCorrectionAction] = Field(default_factory=list)
     suggested_memory: str = ""
     suggested_skill_patch: str = ""
     recommended_next_action: str = ""

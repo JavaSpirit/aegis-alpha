@@ -9,6 +9,7 @@ from typing import Iterable
 from zoneinfo import ZoneInfo
 
 from aegis_alpha.models import (
+    AgentCorrectionAction,
     AgentCorrectionSummary,
     AgentReview,
     AgentReviewCorrection,
@@ -396,12 +397,37 @@ class AegisAlphaStore:
 
         suggested_memory = ""
         suggested_skill_patch = ""
+        recommended_actions: list[AgentCorrectionAction] = []
         recommended_next_action = "No correction pattern yet. Keep collecting chat-based feedback."
+        data_skill_patch = (
+            "Before grading an Aegis Alpha candidate, verify data_mode, freshness_status, "
+            "data_timestamp, and provider_timestamp. If data is unavailable or stale, halt or cap the grade."
+        )
+        strategy_skill_patch = (
+            "When repeated user corrections mark a strategy judgment as too aggressive, lower the grade unless "
+            "fresh speed, big-order inflow, seal amount, orderbook quality, and same-theme linkage all support the conclusion."
+        )
+        expression_skill_patch = (
+            "Express Aegis Alpha outputs as observation, rating rationale, trigger conditions, and avoid conditions; "
+            "do not phrase them as direct buy/sell commands."
+        )
 
         if by_type.get("UNIT_ERROR", 0):
             suggested_memory = (
                 "Aegis Alpha agent reviews must treat `_pct` fields as already-percent values, "
                 "`_ratio` fields as ratios, `_cny` fields as CNY amounts, and `_score` fields as 0-100 internal scores."
+            )
+            recommended_actions.append(
+                AgentCorrectionAction(
+                    target="memory",
+                    priority="high",
+                    status="ready_to_apply",
+                    correction_type="UNIT_ERROR",
+                    evidence_count=by_type["UNIT_ERROR"],
+                    reason="Unit misunderstandings are stable agent context and should be remembered across sessions.",
+                    action="Ask Hermes to save a concise project memory after human confirmation.",
+                    suggested_patch=suggested_memory,
+                )
             )
             recommended_next_action = "Ask Hermes to save the suggested memory if this correction was valid."
 
@@ -411,30 +437,107 @@ class AegisAlphaStore:
                 or "When Aegis Alpha reports stale, unavailable, or synthetic data, agent conclusions must be capped and must not infer missing live metrics."
             )
             suggested_skill_patch = (
-                "Before grading an Aegis Alpha candidate, verify data_mode, freshness_status, "
-                "data_timestamp, and provider_timestamp. If data is unavailable or stale, halt or cap the grade."
+                data_skill_patch
+            )
+            recommended_actions.append(
+                AgentCorrectionAction(
+                    target="adapter",
+                    priority="high",
+                    status="needs_human_review",
+                    correction_type="DATA_ERROR",
+                    evidence_count=by_type["DATA_ERROR"],
+                    reason="Data errors usually indicate adapter, provider, timestamp, or freshness issues rather than agent reasoning issues.",
+                    action="Inspect the source adapter output and freshness metadata before changing strategy or skill behavior.",
+                )
+            )
+            recommended_actions.append(
+                AgentCorrectionAction(
+                    target="skill",
+                    priority="medium",
+                    status="ready_to_apply",
+                    correction_type="DATA_ERROR",
+                    evidence_count=by_type["DATA_ERROR"],
+                    reason="The agent should halt or downgrade when Aegis Alpha reports stale, empty, unavailable, or synthetic data.",
+                    action="Patch the Aegis Alpha Hermes skill to reinforce data availability and freshness checks.",
+                    suggested_patch=data_skill_patch,
+                )
             )
             recommended_next_action = "Review the adapter/data source first, then update Hermes memory or skill only after the data issue is understood."
 
         if by_type.get("STRATEGY_ERROR", 0) >= 2:
-            suggested_skill_patch = (
-                "When repeated user corrections mark a strategy judgment as too aggressive, lower the grade unless "
-                "fresh speed, big-order inflow, seal amount, orderbook quality, and same-theme linkage all support the conclusion."
+            suggested_skill_patch = strategy_skill_patch
+            recommended_actions.append(
+                AgentCorrectionAction(
+                    target="scoring_config",
+                    priority="medium",
+                    status="needs_human_review",
+                    correction_type="STRATEGY_ERROR",
+                    evidence_count=by_type["STRATEGY_ERROR"],
+                    reason="Repeated strategy corrections suggest the rule weights or thresholds may be too optimistic.",
+                    action="Review config/event_scoring.yaml and candidate grading rules against the corrected examples.",
+                )
+            )
+            recommended_actions.append(
+                AgentCorrectionAction(
+                    target="skill",
+                    priority="medium",
+                    status="ready_to_apply",
+                    correction_type="STRATEGY_ERROR",
+                    evidence_count=by_type["STRATEGY_ERROR"],
+                    reason="Repeated strategy corrections can also improve how the agent interprets rule scores and explains caution.",
+                    action="Promote the stable strategy pattern into the Aegis Alpha Hermes skill after manual review.",
+                    suggested_patch=strategy_skill_patch,
+                )
             )
             recommended_next_action = "Promote this repeated strategy correction into the Aegis Alpha Hermes skill after manual review."
+        elif by_type.get("STRATEGY_ERROR", 0):
+            recommended_actions.append(
+                AgentCorrectionAction(
+                    target="review_only",
+                    priority="low",
+                    status="collect_more_evidence",
+                    correction_type="STRATEGY_ERROR",
+                    evidence_count=by_type["STRATEGY_ERROR"],
+                    reason="A single strategy correction is useful evidence, but not enough to change scoring or skills.",
+                    action="Collect at least one more similar correction before proposing scoring or skill changes.",
+                )
+            )
 
         if by_type.get("EXPRESSION_RISK", 0):
-            suggested_skill_patch = (
-                suggested_skill_patch
-                or "Express Aegis Alpha outputs as observation, rating rationale, trigger conditions, and avoid conditions; do not phrase them as direct buy/sell commands."
+            suggested_skill_patch = suggested_skill_patch or expression_skill_patch
+            recommended_actions.append(
+                AgentCorrectionAction(
+                    target="skill",
+                    priority="high",
+                    status="ready_to_apply",
+                    correction_type="EXPRESSION_RISK",
+                    evidence_count=by_type["EXPRESSION_RISK"],
+                    reason="Risky wording is an agent behavior issue and should be corrected in the Hermes skill.",
+                    action="Patch the skill output rules to avoid direct buy/sell/order language.",
+                    suggested_patch=expression_skill_patch,
+                )
             )
             recommended_next_action = "Patch the Hermes skill wording if this phrasing issue repeats."
+
+        if by_type.get("OTHER", 0):
+            recommended_actions.append(
+                AgentCorrectionAction(
+                    target="review_only",
+                    priority="low",
+                    status="collect_more_evidence",
+                    correction_type="OTHER",
+                    evidence_count=by_type["OTHER"],
+                    reason="The correction type is not specific enough to route safely.",
+                    action="Keep the correction as review evidence until a human reclassifies it.",
+                )
+            )
 
         return AgentCorrectionSummary(
             total_count=len(corrections),
             by_type=by_type,
             by_symbol=by_symbol,
             recent_corrections=corrections[:10],
+            recommended_actions=recommended_actions,
             suggested_memory=suggested_memory,
             suggested_skill_patch=suggested_skill_patch,
             recommended_next_action=recommended_next_action,
