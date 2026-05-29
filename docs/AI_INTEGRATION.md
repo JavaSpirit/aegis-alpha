@@ -63,6 +63,10 @@ The skill expects Aegis Alpha MCP to expose:
 - `get_recent_agent_reviews`
 - `record_agent_review_correction`
 - `get_agent_correction_summary`
+- `create_correction_action_proposals`
+- `get_pending_correction_actions`
+- `record_correction_action_decision`
+- `get_correction_action_history`
 
 The Hermes MCP configuration example lives in [HERMES.md](HERMES.md).
 
@@ -77,6 +81,7 @@ Hermes should:
 - Treat market events as structured context for explanation and re-scoring, not as order instructions.
 - Cap maximum grade at `B` when speed, big-order, or orderbook data is delayed by more than 3 minutes during active trading hours.
 - Record user corrections through Aegis Alpha MCP first; only promote stable repeated patterns into Hermes memory or skills.
+- Treat correction action proposals as pending human-review items; do not apply memory, skill, config, or adapter changes from a proposal without explicit approval.
 - Stop or downgrade when the gate is `avoid` or `defensive`.
 - Focus on yesterday-limit-up stocks trying to advance to a second board.
 - Explain grades using structured Aegis Alpha data.

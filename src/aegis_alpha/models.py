@@ -10,6 +10,8 @@ AgentCorrectionType = Literal["DATA_ERROR", "UNIT_ERROR", "STRATEGY_ERROR", "EXP
 AgentCorrectionActionTarget = Literal["adapter", "scoring_config", "memory", "skill", "review_only"]
 AgentCorrectionActionPriority = Literal["high", "medium", "low"]
 AgentCorrectionActionStatus = Literal["needs_human_review", "ready_to_apply", "collect_more_evidence"]
+CorrectionActionProposalStatus = Literal["pending", "approved", "rejected", "applied", "superseded"]
+CorrectionActionDecisionType = Literal["approve", "reject", "apply", "supersede", "reopen"]
 MarketAction = Literal["active", "selective", "defensive", "avoid"]
 SignalConfidence = Literal["high", "medium", "low", "placeholder", "unavailable"]
 SignalAuthority = Literal["official_doc", "observed_probe", "internal_inference"]
@@ -306,6 +308,33 @@ class AgentCorrectionSummary(BaseModel):
     suggested_memory: str = ""
     suggested_skill_patch: str = ""
     recommended_next_action: str = ""
+
+
+class CorrectionActionDecision(BaseModel):
+    decision_id: str = ""
+    proposal_id: str
+    decision: CorrectionActionDecisionType
+    note: str = ""
+    decided_by: str = "user"
+    previous_status: CorrectionActionProposalStatus | None = None
+    new_status: CorrectionActionProposalStatus
+    created_at: str = ""
+
+
+class CorrectionActionProposal(BaseModel):
+    proposal_id: str = ""
+    source: str = "agent_correction_summary"
+    target: AgentCorrectionActionTarget
+    priority: AgentCorrectionActionPriority = "medium"
+    status: CorrectionActionProposalStatus = "pending"
+    correction_type: AgentCorrectionType = "OTHER"
+    evidence_count: int = 0
+    reason: str = ""
+    action: str = ""
+    suggested_patch: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+    decisions: list[CorrectionActionDecision] = Field(default_factory=list)
 
 
 class LimitUpHistoryStats(BaseModel):

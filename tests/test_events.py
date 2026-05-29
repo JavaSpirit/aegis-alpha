@@ -258,6 +258,40 @@ def test_agent_review_correction_summary_routes_data_unit_and_expression_errors(
     assert summary.suggested_memory
 
 
+def test_correction_action_proposal_decision_workflow(tmp_path) -> None:
+    store = AegisAlphaStore(tmp_path / "aegis_alpha.db")
+    store.save_agent_review_correction(
+        AgentReviewCorrection(
+            review_id="review-unit",
+            correction_type="UNIT_ERROR",
+            comment="字段单位解释错了。",
+        )
+    )
+
+    summary = store.agent_correction_summary(limit=10)
+    proposals = store.save_correction_action_proposals(summary)
+    pending = store.pending_correction_action_proposals()
+
+    assert len(proposals) == 1
+    assert pending[0].target == "memory"
+    assert pending[0].status == "pending"
+
+    decided = store.record_correction_action_decision(
+        pending[0].proposal_id,
+        decision="approve",
+        note="确认这是稳定项目记忆。",
+        decided_by="tester",
+    )
+    history = store.correction_action_history()
+
+    assert decided.status == "approved"
+    assert decided.decisions[0].decision == "approve"
+    assert decided.decisions[0].previous_status == "pending"
+    assert not store.pending_correction_action_proposals()
+    assert history[0].status == "approved"
+    assert history[0].decisions[0].decided_by == "tester"
+
+
 def test_refresh_snapshot_freshness_marks_old_data_stale() -> None:
     snapshot = SignalSnapshot(
         symbol="600000",

@@ -86,6 +86,10 @@ Recommended chat flow:
    - `expected_grade`: optional `A`, `B`, `C`, or `REJECT`.
    - `comment`: the user's natural-language correction.
 3. Use `get_agent_correction_summary(limit)` to inspect repeated patterns and route follow-up work through `recommended_actions`.
+4. Use `create_correction_action_proposals(limit)` when proposals need to be regenerated from current correction evidence.
+5. Use `get_pending_correction_actions(limit)` to show the user pending review items.
+6. Use `record_correction_action_decision(proposal_id, decision, note)` only after the user explicitly approves, rejects, applies, supersedes, or reopens a proposal.
+7. Use `get_correction_action_history(limit)` to review previous decisions and avoid repeating resolved work.
 
 Correction routing:
 
@@ -96,3 +100,13 @@ Correction routing:
 - `OTHER` stays `review_only` until a human reclassifies it.
 
 Correction storage is deliberately separate from Hermes memory. Aegis Alpha records the structured correction and returns `recommended_actions`, `suggested_memory`, and `suggested_skill_patch`, but Hermes should only save memory or modify a skill after confirming the pattern is stable and useful.
+
+Proposal lifecycle:
+
+- `pending`: waiting for user review.
+- `approved`: the user agrees with the proposal, but no change has been applied yet.
+- `rejected`: the user rejected the proposal.
+- `applied`: the user or agent completed the separate explicit change.
+- `superseded`: a newer proposal or manual decision replaced it.
+
+Approving a proposal is not the same as applying it. Aegis Alpha records the decision only; any memory, skill, scoring config, or adapter edit must happen in a separate explicit step.

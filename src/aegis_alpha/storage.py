@@ -14,6 +14,8 @@ from aegis_alpha.models import (
     AgentReview,
     AgentReviewCorrection,
     CandidateOutcomeReview,
+    CorrectionActionDecision,
+    CorrectionActionProposal,
     MarketEvent,
     RunnerStatus,
     SignalSnapshot,
@@ -133,6 +135,30 @@ class AegisAlphaStore:
                     correction_type TEXT NOT NULL,
                     expected_grade TEXT,
                     comment TEXT,
+                    created_at TEXT NOT NULL,
+                    payload_json TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS correction_action_proposals (
+                    proposal_id TEXT PRIMARY KEY,
+                    source TEXT NOT NULL,
+                    target TEXT NOT NULL,
+                    correction_type TEXT NOT NULL,
+                    priority TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    payload_json TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS correction_action_decisions (
+                    decision_id TEXT PRIMARY KEY,
+                    proposal_id TEXT NOT NULL,
+                    decision TEXT NOT NULL,
+                    note TEXT,
+                    decided_by TEXT,
+                    previous_status TEXT,
+                    new_status TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     payload_json TEXT NOT NULL
                 );
@@ -542,6 +568,197 @@ class AegisAlphaStore:
             suggested_skill_patch=suggested_skill_patch,
             recommended_next_action=recommended_next_action,
         )
+
+    def save_correction_action_proposals(
+        self,
+        summary: AgentCorrectionSummary,
+        source: str = "agent_correction_summary",
+    ) -> list[CorrectionActionProposal]:
+        proposals: list[CorrectionActionProposal] = []
+        timestamp = now_iso()
+        with self._connect() as conn:
+            for action in summary.recommended_actions:
+                proposal_id = f"{source}:{action.target}:{action.correction_type}"
+                row = conn.execute(
+                    """
+                    SELECT payload_json FROM correction_action_proposals
+                    WHERE proposal_id = ?
+                    LIMIT 1
+                    """,
+                    (proposal_id,),
+                ).fetchone()
+                if row:
+                    proposal = CorrectionActionProposal.model_validate_json(row[0])
+                    proposal.priority = action.priority
+                    proposal.evidence_count = action.evidence_count
+                    proposal.reason = action.reason
+                    proposal.action = action.action
+                    proposal.suggested_patch = action.suggested_patch
+                    proposal.updated_at = timestamp
+                else:
+                    proposal = CorrectionActionProposal(
+                        proposal_id=proposal_id,
+                        source=source,
+                        target=action.target,
+                        priority=action.priority,
+                        status="pending",
+                        correction_type=action.correction_type,
+                        evidence_count=action.evidence_count,
+                        reason=action.reason,
+                        action=action.action,
+                        suggested_patch=action.suggested_patch,
+                        created_at=timestamp,
+                        updated_at=timestamp,
+                    )
+                conn.execute(
+                    """
+                    INSERT INTO correction_action_proposals (
+                        proposal_id, source, target, correction_type, priority,
+                        status, created_at, updated_at, payload_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(proposal_id) DO UPDATE SET
+                        priority = excluded.priority,
+                        status = excluded.status,
+                        updated_at = excluded.updated_at,
+                        payload_json = excluded.payload_json
+                    """,
+                    (
+                        proposal.proposal_id,
+                        proposal.source,
+                        proposal.target,
+                        proposal.correction_type,
+                        proposal.priority,
+                        proposal.status,
+                        proposal.created_at,
+                        proposal.updated_at,
+                        proposal.model_dump_json(),
+                    ),
+                )
+                proposals.append(proposal)
+        return proposals
+
+    def _decision_history_for_proposal(self, proposal_id: str) -> list[CorrectionActionDecision]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT payload_json FROM correction_action_decisions
+                WHERE proposal_id = ?
+                ORDER BY created_at DESC
+                """,
+                (proposal_id,),
+            ).fetchall()
+        return [CorrectionActionDecision.model_validate_json(row[0]) for row in rows]
+
+    def _proposal_from_payload(self, payload_json: str, include_decisions: bool = True) -> CorrectionActionProposal:
+        proposal = CorrectionActionProposal.model_validate_json(payload_json)
+        if include_decisions:
+            proposal.decisions = self._decision_history_for_proposal(proposal.proposal_id)
+        return proposal
+
+    def pending_correction_action_proposals(self, limit: int = 20) -> list[CorrectionActionProposal]:
+        safe_limit = max(1, min(int(limit or 20), 100))
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT payload_json FROM correction_action_proposals
+                WHERE status = 'pending'
+                ORDER BY
+                    CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
+                    updated_at DESC
+                LIMIT ?
+                """,
+                (safe_limit,),
+            ).fetchall()
+        return [self._proposal_from_payload(row[0]) for row in rows]
+
+    def correction_action_history(self, limit: int = 20) -> list[CorrectionActionProposal]:
+        safe_limit = max(1, min(int(limit or 20), 100))
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT payload_json FROM correction_action_proposals
+                ORDER BY updated_at DESC
+                LIMIT ?
+                """,
+                (safe_limit,),
+            ).fetchall()
+        return [self._proposal_from_payload(row[0]) for row in rows]
+
+    def record_correction_action_decision(
+        self,
+        proposal_id: str,
+        decision: str,
+        note: str = "",
+        decided_by: str = "user",
+    ) -> CorrectionActionProposal:
+        decision_to_status = {
+            "approve": "approved",
+            "reject": "rejected",
+            "apply": "applied",
+            "supersede": "superseded",
+            "reopen": "pending",
+        }
+        normalized_decision = decision.strip().lower()
+        if normalized_decision not in decision_to_status:
+            raise ValueError("decision must be one of: approve, reject, apply, supersede, reopen")
+
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT payload_json FROM correction_action_proposals
+                WHERE proposal_id = ?
+                LIMIT 1
+                """,
+                (proposal_id,),
+            ).fetchone()
+            if not row:
+                raise ValueError(f"Correction action proposal not found: {proposal_id}")
+
+            proposal = CorrectionActionProposal.model_validate_json(row[0])
+            previous_status = proposal.status
+            new_status = decision_to_status[normalized_decision]
+            timestamp = now_iso()
+            decision_record = CorrectionActionDecision(
+                decision_id=f"{proposal_id}:{normalized_decision}:{timestamp}",
+                proposal_id=proposal_id,
+                decision=normalized_decision,
+                note=note.strip(),
+                decided_by=decided_by.strip() or "user",
+                previous_status=previous_status,
+                new_status=new_status,
+                created_at=timestamp,
+            )
+            proposal.status = new_status
+            proposal.updated_at = timestamp
+            conn.execute(
+                """
+                INSERT INTO correction_action_decisions (
+                    decision_id, proposal_id, decision, note, decided_by,
+                    previous_status, new_status, created_at, payload_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    decision_record.decision_id,
+                    decision_record.proposal_id,
+                    decision_record.decision,
+                    decision_record.note,
+                    decision_record.decided_by,
+                    decision_record.previous_status,
+                    decision_record.new_status,
+                    decision_record.created_at,
+                    decision_record.model_dump_json(),
+                ),
+            )
+            conn.execute(
+                """
+                UPDATE correction_action_proposals
+                SET status = ?, updated_at = ?, payload_json = ?
+                WHERE proposal_id = ?
+                """,
+                (proposal.status, proposal.updated_at, proposal.model_dump_json(), proposal_id),
+            )
+        proposal.decisions = self._decision_history_for_proposal(proposal_id)
+        return proposal
 
 
 def write_runner_status(status: RunnerStatus, path: str | Path | None = None) -> Path:

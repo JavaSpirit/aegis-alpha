@@ -25,6 +25,10 @@ mcp_servers:
         - get_recent_agent_reviews
         - record_agent_review_correction
         - get_agent_correction_summary
+        - create_correction_action_proposals
+        - get_pending_correction_actions
+        - record_correction_action_decision
+        - get_correction_action_history
         - get_stock_history_limitup_stats
         - get_theme_strength
         - get_second_board_candidates

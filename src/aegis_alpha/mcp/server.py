@@ -200,9 +200,11 @@ def record_agent_review_correction(
         )
         saved = store.save_agent_review_correction(correction)
         summary = store.agent_correction_summary(limit=100)
+        proposals = store.save_correction_action_proposals(summary)
         return {
             "correction": saved.model_dump(),
             "summary": summary.model_dump(exclude={"recent_corrections"}),
+            "proposals": [proposal.model_dump(exclude={"decisions"}) for proposal in proposals],
             "disclaimer": "Correction stored locally for review. Hermes memory or skill updates are suggested, not automatically applied.",
         }
 
@@ -214,6 +216,63 @@ def get_agent_correction_summary(limit: int = 100) -> dict:
     """Return correction patterns and suggested Hermes memory or skill updates."""
     safe_limit = max(1, min(int(limit or 100), 200))
     return _call_store(lambda store: store.agent_correction_summary(safe_limit).model_dump())
+
+
+@mcp.tool
+def create_correction_action_proposals(limit: int = 100) -> dict:
+    """Create or update human-reviewable proposals from current correction routing."""
+    safe_limit = max(1, min(int(limit or 100), 200))
+
+    def _create(store: AegisAlphaStore) -> dict:
+        summary = store.agent_correction_summary(safe_limit)
+        proposals = store.save_correction_action_proposals(summary)
+        return {
+            "created_or_updated": [proposal.model_dump(exclude={"decisions"}) for proposal in proposals],
+            "count": len(proposals),
+            "disclaimer": "Proposals are pending review. Aegis Alpha does not apply memory, skill, config, or adapter changes automatically.",
+        }
+
+    return _call_store(_create)
+
+
+@mcp.tool
+def get_pending_correction_actions(limit: int = 20) -> list[dict] | dict:
+    """Return pending correction action proposals waiting for human review."""
+    safe_limit = max(1, min(int(limit or 20), 100))
+    return _call_store(
+        lambda store: [proposal.model_dump() for proposal in store.pending_correction_action_proposals(safe_limit)]
+    )
+
+
+@mcp.tool
+def record_correction_action_decision(
+    proposal_id: str,
+    decision: str,
+    note: str = "",
+    decided_by: str = "user",
+) -> dict:
+    """Record a human decision for a correction action proposal without applying code/config changes."""
+
+    def _record(store: AegisAlphaStore) -> dict:
+        proposal = store.record_correction_action_decision(
+            proposal_id=proposal_id.strip(),
+            decision=decision.strip(),
+            note=note.strip(),
+            decided_by=decided_by.strip() or "user",
+        )
+        return {
+            "proposal": proposal.model_dump(),
+            "disclaimer": "Decision recorded only. Applying memory, skill, config, or adapter changes remains a separate explicit step.",
+        }
+
+    return _call_store(_record)
+
+
+@mcp.tool
+def get_correction_action_history(limit: int = 20) -> list[dict] | dict:
+    """Return correction action proposals and their decision history."""
+    safe_limit = max(1, min(int(limit or 20), 100))
+    return _call_store(lambda store: [proposal.model_dump() for proposal in store.correction_action_history(safe_limit)])
 
 
 @mcp.tool

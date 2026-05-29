@@ -89,7 +89,7 @@ WebSocket should drive the local market engine, not the agent directly. The firs
 - `SignalWindowBuffer` for rolling 1/3/5/10-minute speed and big-order flow calculations.
 - `MarketEvent` and `SignalSnapshot` contracts for agent-safe structured outputs.
 - `config/event_scoring.yaml` for configurable event triggers, weights, freshness limits, and suggested agent actions.
-- SQLite storage for `market_events`, `signal_snapshots`, `candidate_scores`, `agent_reviews`, `agent_review_corrections`, `provider_runs`, and `review_outcomes`.
+- SQLite storage for `market_events`, `signal_snapshots`, `candidate_scores`, `agent_reviews`, `agent_review_corrections`, `correction_action_proposals`, `correction_action_decisions`, `provider_runs`, and `review_outcomes`.
 - Parquet storage boundary for future minute bars, Level-2 trades, and orderbook snapshots. Parquet writing is reserved until a dedicated pyarrow-backed persistence step.
 
 Initial event types:
@@ -113,10 +113,14 @@ Agent-facing tools:
 - `get_recent_agent_reviews`
 - `record_agent_review_correction`
 - `get_agent_correction_summary`
+- `create_correction_action_proposals`
+- `get_pending_correction_actions`
+- `record_correction_action_decision`
+- `get_correction_action_history`
 
 Raw WebSocket messages must not be exposed through MCP. Hermes should only consume events, signal snapshots, and explanations.
 
-Agent review corrections should be chat-first. Hermes can record a user's correction through MCP, then inspect repeated patterns and decide whether to update memory, patch the Aegis Alpha skill, adjust scoring config, or send the issue back to adapter code. Aegis Alpha stores correction evidence and returns structured `recommended_actions`; it does not automatically mutate Hermes memory, skills, or scoring config.
+Agent review corrections should be chat-first. Hermes can record a user's correction through MCP, then inspect repeated patterns and decide whether to update memory, patch the Aegis Alpha skill, adjust scoring config, or send the issue back to adapter code. Aegis Alpha stores correction evidence, returns structured `recommended_actions`, and can persist pending `CorrectionActionProposal` items for human review. It does not automatically mutate Hermes memory, skills, scoring config, or adapter code.
 
 ## Phase 2.6: Launchd-Managed Runner
 

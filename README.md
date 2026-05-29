@@ -143,6 +143,10 @@ When `AEGIS_ALPHA_MARKET_DATA_PROVIDER=jvquant`, Hermes can access jvQuant-backe
 - `get_recent_agent_reviews(limit)`
 - `record_agent_review_correction(...)`
 - `get_agent_correction_summary(limit)`
+- `create_correction_action_proposals(limit)`
+- `get_pending_correction_actions(limit)`
+- `record_correction_action_decision(...)`
+- `get_correction_action_history(limit)`
 
 The second-board candidate pool is currently derived from jvQuant semantic queries for yesterday limit-up stocks with current strength. Auction metrics, capital-flow net inflow ratio, concept/topic tags, first/final seal time, seal amount, max seal amount, break/reseal counts, seal volume, and seal-to-turnover ratio come from jvQuant semantic fields when available. Aegis Alpha now also calls jvQuant `client.minute(..., mode=minute)` for minute replay and recalculates 1/3/5/10-minute speed windows from minute bars when available. In that case speed fields use `minute_replay_exact_window:...` or `minute_replay_partial_window:...`; if minute replay is unavailable or disabled, the adapter falls back to jvQuant semantic speed fields such as `provider_exact_window:...` or `provider_latest_rolling_5m`. True own-order queue position still requires broker order/trade callbacks, so the current output only exposes a queue-position note from the read-only orderbook summary. Historical limit-up statistics and normalized theme strength still use placeholders until dedicated scanners are implemented.
 
@@ -154,9 +158,9 @@ Aegis Alpha now also has the first event-driven layer:
 - `SignalSnapshot` is the agent-safe signal surface for one symbol.
 - `MarketEvent` is the agent-safe event surface for theme clusters, approaching limit-up, big-order inflow spikes, second-board reprice, and seal-order risk.
 - jvQuant WebSocket `lv1/lv2/lv10` has a wrapper for connection/subscription callbacks; raw WebSocket messages are kept inside the market engine and are not exposed through MCP.
-- SQLite stores structured events, signal snapshots, reviews, agent review corrections, and provider runs under `data/aegis_alpha.db` by default. Parquet storage is reserved for high-volume bars, ticks, and orderbook snapshots after a dedicated writer is added.
+- SQLite stores structured events, signal snapshots, reviews, agent review corrections, correction action proposals, and provider runs under `data/aegis_alpha.db` by default. Parquet storage is reserved for high-volume bars, ticks, and orderbook snapshots after a dedicated writer is added.
 
-Agent review corrections are chat-first: Hermes can retrieve recent DeepSeek/OpenRouter evaluations, record the user's correction, and ask Aegis Alpha for structured `recommended_actions`. Corrections route to adapter review, scoring config review, Hermes memory, Hermes skill, or review-only evidence collection. Aegis Alpha does not automatically mutate Hermes memory or skills; it returns suggestions for review.
+Agent review corrections are chat-first: Hermes can retrieve recent DeepSeek/OpenRouter evaluations, record the user's correction, and ask Aegis Alpha for structured `recommended_actions`. Corrections route to adapter review, scoring config review, Hermes memory, Hermes skill, or review-only evidence collection. Aegis Alpha can persist those actions as pending review proposals and record user decisions, but it does not automatically mutate Hermes memory, skills, scoring config, or adapter code.
 
 Preview jvQuant WebSocket subscription commands without opening a stream:
 
@@ -323,6 +327,10 @@ The MVP exposes these read-only tools:
 - `get_recent_agent_reviews`
 - `record_agent_review_correction`
 - `get_agent_correction_summary`
+- `create_correction_action_proposals`
+- `get_pending_correction_actions`
+- `record_correction_action_decision`
+- `get_correction_action_history`
 - `get_stock_history_limitup_stats`
 - `get_theme_strength`
 - `get_second_board_candidates`
