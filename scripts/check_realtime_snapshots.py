@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from aegis_alpha.config import load_project_env
+from aegis_alpha.agent_context import signal_snapshot_agent_context
 from aegis_alpha.storage import AegisAlphaStore, default_db_path
 
 
@@ -60,7 +61,17 @@ def main() -> int:
             }
         )
 
-    print(json.dumps({"db_path": str(db_path), "snapshots": snapshots}, ensure_ascii=False, indent=2))
+    print(
+        json.dumps(
+            {
+                "db_path": str(db_path),
+                "agent_context": signal_snapshot_agent_context(),
+                "snapshots": snapshots,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
     return 0
 
 

@@ -7,6 +7,9 @@ This matrix is generated from configured read-only jvQuant semantic-query probes
 - `official_doc`: 来自 jvQuant 官方文档或官网明确说明，可作为优先口径。
 - `observed_probe`: 来自本项目只读探针的实际返回字段，只代表当前账号、当前市场、当前时间点观测到的能力。
 - `internal_inference`: Aegis Alpha 根据已有字段自行计算的派生指标，必须在输出中说明限制。
+- 所有 `_pct` 字段已经是百分比数值，`0.0929` 表示 `0.0929%`，不是 `9.29%`。
+- 所有 `_ratio` 字段是比例，`0.0311` 表示 `3.11%`。
+- 所有 `_score` 字段默认是 0-100 内部评分。
 - 盘中 Agent 只能消费结构化 `SignalSnapshot` / `MarketEvent`，不能直接消费原始 WebSocket payload。
 - 缺字段、超时、空数据时必须返回 `Data source unavailable` 或降低评级，不能猜测主动买卖方向、排单位置、真实封单队列。
 

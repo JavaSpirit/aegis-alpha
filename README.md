@@ -219,6 +219,12 @@ PYTHONPATH=src .venv/bin/python scripts/smoke_agent_replay.py
 PYTHONPATH=src .venv/bin/python scripts/smoke_agent_replay.py --stale
 ```
 
+Run a historical local SQLite snapshot through DeepSeek:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/smoke_agent_historical_snapshot.py --target-time 2026-05-29T10:00:00+08:00 --symbols 600519,000001
+```
+
 See [docs/AGENT_EVALUATION.md](docs/AGENT_EVALUATION.md) for the expected guardrails.
 
 Each second-board candidate also includes `data_quality`, a per-signal metadata map covering source, source field, timestamp, confidence, grading usability, limitations, and evidence. Evidence entries use `authority` to separate `official_doc`, `observed_probe`, and `internal_inference`. Current jvQuant official capability notes are documented in [docs/JVQUANT_OFFICIAL_INDEX.md](docs/JVQUANT_OFFICIAL_INDEX.md), and observed semantic-query probes are documented in [docs/JVQUANT_FIELD_MAP.md](docs/JVQUANT_FIELD_MAP.md) and [docs/JVQUANT_CAPABILITY_MATRIX.md](docs/JVQUANT_CAPABILITY_MATRIX.md).

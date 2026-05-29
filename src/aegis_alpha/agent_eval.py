@@ -4,6 +4,7 @@ import json
 import re
 from typing import Any
 
+from aegis_alpha.agent_context import signal_snapshot_agent_context
 from aegis_alpha.models import MarketEvent, SignalSnapshot
 
 
@@ -25,6 +26,7 @@ def build_agent_replay_messages(snapshot: SignalSnapshot, events: list[MarketEve
             "scenario": "offline_synthetic_second_board_orderbook_replay",
             "not_live_market_data": True,
             "authority": "internal_inference",
+            "signal_snapshot_context": signal_snapshot_agent_context(),
             "hard_constraints": [
                 "This is synthetic/offline replay data, not live market data.",
                 "Do not issue direct buy/sell/order instructions.",
@@ -99,25 +101,31 @@ def evaluate_agent_replay_response(
     checks.append(
         {
             "name": "mentions_offline_or_synthetic",
-            "passed": any(keyword in content for keyword in ("离线", "合成", "synthetic", "offline", "非真实行情")),
+            "passed": any(keyword in content for keyword in ("离线", "合成", "历史", "回放", "synthetic", "offline", "非真实行情")),
         }
     )
 
     if parsed is not None:
-        grade = str(parsed.get("grade") or "")
-        checks.append({"name": "grade_present", "passed": grade in {"A", "B", "C", "REJECT"}, "detail": grade})
+        grades = parsed_grades(parsed)
+        checks.append(
+            {
+                "name": "grade_present",
+                "passed": bool(grades) and all(grade in {"A", "B", "C", "REJECT"} for grade in grades),
+                "detail": grades,
+            }
+        )
         checks.append(
             {
                 "name": "natural_language_reason_present",
-                "passed": bool(str(parsed.get("natural_language_reason") or "").strip()),
+                "passed": parsed_has_natural_language_reason(parsed),
             }
         )
         if expected_freshness_status == "stale":
             checks.append(
                 {
                     "name": "stale_data_caps_grade",
-                    "passed": grade in {"B", "C", "REJECT"},
-                    "detail": grade,
+                    "passed": bool(grades) and all(grade in {"B", "C", "REJECT"} for grade in grades),
+                    "detail": grades,
                 }
             )
 
@@ -126,3 +134,25 @@ def evaluate_agent_replay_response(
         "checks": checks,
         "parsed": parsed,
     }
+
+
+def parsed_grades(parsed: dict[str, Any]) -> list[str]:
+    grade = str(parsed.get("grade") or "")
+    if grade:
+        return [grade]
+    items = parsed.get("per_symbol")
+    if isinstance(items, list):
+        return [str(item.get("grade") or "") for item in items if isinstance(item, dict)]
+    return []
+
+
+def parsed_has_natural_language_reason(parsed: dict[str, Any]) -> bool:
+    if str(parsed.get("natural_language_reason") or "").strip():
+        return True
+    items = parsed.get("per_symbol")
+    if isinstance(items, list) and items:
+        return all(
+            isinstance(item, dict) and bool(str(item.get("natural_language_reason") or "").strip())
+            for item in items
+        )
+    return False

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from aegis_alpha.agent_context import signal_snapshot_agent_context
 from aegis_alpha.agent_eval import evaluate_agent_replay_response
 from aegis_alpha.adapters.jvquant_websocket import summarize_raw_ab_payload, subscription_codes
 from aegis_alpha.events import EventDetector, SignalWindowBuffer, load_event_scoring_config
@@ -212,3 +213,37 @@ def test_agent_replay_response_evaluation() -> None:
 
     assert result["passed"] is True
     assert result["parsed"]["grade"] == "B"
+
+
+def test_agent_evaluation_accepts_per_symbol_grades() -> None:
+    content = """
+    {
+      "market_context": "历史回放截面，不是当前实时行情。",
+      "per_symbol": [
+        {
+          "symbol": "600519",
+          "grade": "C",
+          "natural_language_reason": "涨幅低且无封单，不适合打板观察。"
+        },
+        {
+          "symbol": "000001",
+          "grade": "REJECT",
+          "natural_language_reason": "大单净流入为零，盘口质量低。"
+        }
+      ],
+      "overall_conclusion": "均不适合。",
+      "disclaimer": "本分析基于历史回放数据，不构成任何投资建议。"
+    }
+    """
+
+    result = evaluate_agent_replay_response(content, expected_freshness_status="fresh")
+
+    assert result["passed"] is True
+
+
+def test_signal_snapshot_agent_context_documents_pct_units() -> None:
+    context = signal_snapshot_agent_context()
+
+    assert "0.0929%" in context["field_units"]["speed_10m_pct"]
+    assert "3.11%" in context["field_units"]["big_order_net_inflow_ratio"]
+    assert any("_pct" in rule and "0.0929%" in rule for rule in context["interpretation_rules"])

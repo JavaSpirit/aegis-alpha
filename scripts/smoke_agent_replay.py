@@ -7,6 +7,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from aegis_alpha.agent_context import signal_snapshot_agent_context
 from aegis_alpha.agent_eval import build_agent_replay_messages, evaluate_agent_replay_response
 from aegis_alpha.config import load_project_env
 from aegis_alpha.models import MarketEvent, SignalSnapshot
@@ -100,6 +101,7 @@ def main() -> int:
             "data_mode": snapshot.data_mode,
             "provider": snapshot.provider,
         },
+        "agent_context": signal_snapshot_agent_context(),
         "agent_content": content,
         "evaluation": evaluation,
         "usage": response.get("usage", {}),
