@@ -3,10 +3,14 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 from typing import Iterable
+from zoneinfo import ZoneInfo
 
 from aegis_alpha.models import CandidateOutcomeReview, MarketEvent, RunnerStatus, SignalSnapshot
+
+SH_TZ = ZoneInfo("Asia/Shanghai")
 
 
 def default_data_dir() -> Path:
@@ -21,6 +25,35 @@ def default_runner_status_path() -> Path:
     return Path(
         os.environ.get("AEGIS_ALPHA_RUNNER_STATUS_PATH", default_data_dir() / "runner_status.json")
     ).expanduser()
+
+
+def now_iso() -> str:
+    return datetime.now(SH_TZ).isoformat(timespec="seconds")
+
+
+def current_freshness_status(provider_timestamp: str, max_age_seconds: int = 180) -> str:
+    if not provider_timestamp:
+        return "unknown"
+    try:
+        provider_dt = datetime.fromisoformat(provider_timestamp)
+    except ValueError:
+        return "unknown"
+    if provider_dt.tzinfo is None:
+        provider_dt = provider_dt.replace(tzinfo=SH_TZ)
+    age_seconds = abs((datetime.now(SH_TZ) - provider_dt).total_seconds())
+    return "fresh" if age_seconds <= max_age_seconds else "stale"
+
+
+def refresh_snapshot_freshness(snapshot: SignalSnapshot, max_age_seconds: int = 180) -> SignalSnapshot:
+    status = current_freshness_status(snapshot.provider_timestamp or snapshot.data_timestamp, max_age_seconds)
+    if status == snapshot.freshness_status:
+        return snapshot
+    notes = list(snapshot.notes)
+    notes.append(f"freshness_status_refreshed_at={now_iso()}")
+    data = snapshot.model_dump()
+    data["freshness_status"] = status
+    data["notes"] = notes
+    return SignalSnapshot.model_validate(data)
 
 
 class AegisAlphaStore:
@@ -194,7 +227,7 @@ class AegisAlphaStore:
                 """,
                 (symbol,),
             ).fetchone()
-        return SignalSnapshot.model_validate_json(row[0]) if row else None
+        return refresh_snapshot_freshness(SignalSnapshot.model_validate_json(row[0])) if row else None
 
     def save_review_outcome(self, review: CandidateOutcomeReview) -> CandidateOutcomeReview:
         with self._connect() as conn:

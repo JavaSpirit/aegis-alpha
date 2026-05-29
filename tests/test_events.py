@@ -4,7 +4,7 @@ from aegis_alpha.adapters.jvquant_websocket import summarize_raw_ab_payload, sub
 from aegis_alpha.events import EventDetector, SignalWindowBuffer, load_event_scoring_config
 from aegis_alpha.models import CandidateOutcomeReview, SignalSnapshot
 from aegis_alpha.signals.orderbook import estimate_orderbook_metrics
-from aegis_alpha.storage import AegisAlphaStore, ParquetSink
+from aegis_alpha.storage import AegisAlphaStore, ParquetSink, refresh_snapshot_freshness
 
 
 def test_event_scoring_config_loads() -> None:
@@ -158,3 +158,18 @@ def test_sqlite_store_roundtrip(tmp_path) -> None:
     assert store.recent_market_events()
     assert store.get_review_outcome("600000", "2026-05-28").symbol == "600000"
     assert ParquetSink(tmp_path / "parquet").status()["root"].endswith("parquet")
+
+
+def test_refresh_snapshot_freshness_marks_old_data_stale() -> None:
+    snapshot = SignalSnapshot(
+        symbol="600000",
+        data_timestamp="2000-01-01T09:35:00+08:00",
+        provider_timestamp="2000-01-01T09:35:00+08:00",
+        received_at="2000-01-01T09:35:01+08:00",
+        freshness_status="fresh",
+    )
+
+    refreshed = refresh_snapshot_freshness(snapshot)
+
+    assert refreshed.freshness_status == "stale"
+    assert any(note.startswith("freshness_status_refreshed_at=") for note in refreshed.notes)
