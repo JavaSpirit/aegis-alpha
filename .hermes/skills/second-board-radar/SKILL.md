@@ -8,9 +8,9 @@ metadata:
     related_skills: []
     config:
       - key: aegis_alpha.workspace
-        description: Absolute path to the Aegis Alpha repository.
-        default: "/Users/xietian/Documents/trading"
-        prompt: Aegis Alpha workspace path
+        description: Absolute path to the Aegis Alpha repository (your local checkout).
+        default: ""
+        prompt: Aegis Alpha workspace path (absolute path to your local clone)
 ---
 
 # Second-Board Radar

@@ -63,6 +63,12 @@ if [[ ! -f "$SOURCE_CONFIG" ]]; then
   exit 1
 fi
 
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+RENDERED_SOURCE="$(mktemp)"
+trap 'rm -f "$RENDERED_SOURCE"' EXIT
+awk -v root="$REPO_ROOT" '{ gsub(/__PROJECT_ROOT__/, root); print }' "$SOURCE_CONFIG" > "$RENDERED_SOURCE"
+SOURCE_CONFIG="$RENDERED_SOURCE"
+
 mkdir -p "$(dirname "$TARGET_CONFIG")"
 
 if [[ -f "$TARGET_CONFIG" ]]; then

@@ -4,7 +4,7 @@
 
 Aegis Alpha separates reasoning from execution and integration from ownership.
 
-Hermes may observe, summarize, ask questions, and propose second-board watchlist conditions. It should not directly hold broker credentials or place real orders. Aegis Alpha exposes a controlled MCP boundary and keeps risky capabilities behind explicit future modules.
+Hermes may observe, summarize, ask questions, and propose second-board watchlist conditions. It must not directly hold broker credentials or place real orders. Aegis Alpha exposes a controlled MCP boundary and keeps risky capabilities behind explicit future modules.
 
 Aegis Alpha does not fork or patch Hermes. It treats Hermes as an upstream runtime and integrates through documented MCP configuration.
 
@@ -38,60 +38,25 @@ Aegis Alpha must not:
 
 ## MCP Boundary
 
-The MCP server exposes only read-only tools in the MVP:
+The MCP server exposes only read-only tools in the MVP. Each tool returns structured JSON-compatible data. Every response that depends on market data must include a timestamp or a clear mock-data note.
 
-- Market snapshot.
-- Market sentiment gate.
-- Limit-up pool.
-- Break-board pool.
-- Realtime stock snapshot.
-- Orderbook snapshot.
-- Signal snapshot.
-- Recent market events.
-- Event scoring configuration.
-- Market event explanation.
-- Candidate outcome review.
-- Historical limit-up stats.
-- Theme strength.
-- Candidate explanation.
-- Second-board candidates and explanation.
-
-Each tool returns structured JSON-compatible data. Every response that depends on market data must include a timestamp or a clear mock-data note.
+The current tool set lives in `.hermes/config/aegis-alpha-mcp.yaml` and the README's "MCP Tools" section. New tools land there as phases progress; this document captures the boundary, not the inventory.
 
 ## Data Adapter Direction
 
-Current jvQuant coverage:
+Provider-specific quirks stay inside adapters. MCP tools expose stable, provider-neutral shapes.
 
-- Semantic-query market snapshot, limit-up pool, and break-board pool.
-- Coarse market sentiment gate derived from limit-up count, break-board rate, and theme breadth.
-- Semantic-query second-board candidate pool based on yesterday limit-up stocks with current strength.
-- Semantic-query auction metrics, concept/topic tags, break/reseal counts, final seal time, and max seal metrics for second-board candidates.
-- Minute replay via jvQuant `client.minute(..., mode=minute)` for single-symbol intraday bars. Aegis Alpha recalculates 1/3/5/10-minute speed windows from minute bars and marks them as `minute_replay_exact_window:...` or `minute_replay_partial_window:...`.
-- Semantic-query five-minute speed remains a fallback for second-board candidates. If jvQuant exposes a range in the returned field name, the adapter marks it as `provider_exact_window:...`; otherwise it falls back to `provider_latest_rolling_5m`.
-- Semantic-query capital-flow net inflow ratio for second-board candidates.
-- Semantic-query first limit-up time, seal amount, seal volume, and seal-to-turnover ratio.
-- Single-symbol K-line snapshot.
-- Single-symbol level queue / orderbook summary. True own-order queue position remains unavailable until broker order/trade callbacks are introduced.
-- Per-signal `data_quality` metadata for second-board candidates, including source, source field, timestamp, confidence, grading usability, limitations, and evidence. Evidence authority separates `official_doc`, `observed_probe`, and `internal_inference`.
+Each candidate signal carries `data_quality` metadata: provider source, raw field name, timestamp, confidence, grading usability, limitations, and evidence. Evidence authority distinguishes:
 
-Documentation and discovery are split deliberately:
+- `official_doc` — confirmed by jvQuant official documentation. See [JVQUANT_OFFICIAL_INDEX.md](JVQUANT_OFFICIAL_INDEX.md).
+- `observed_probe` — observed in actual API responses. See [JVQUANT_FIELD_MAP.md](JVQUANT_FIELD_MAP.md) and [JVQUANT_CAPABILITY_MATRIX.md](JVQUANT_CAPABILITY_MATRIX.md).
+- `internal_inference` — derived by Aegis Alpha (e.g. ratios, scores, recalculated speed windows).
 
-- [JVQUANT_OFFICIAL_INDEX.md](JVQUANT_OFFICIAL_INDEX.md) records official documentation evidence.
-- [JVQUANT_FIELD_MAP.md](JVQUANT_FIELD_MAP.md) records observed semantic-query fields and samples.
-- [JVQUANT_CAPABILITY_MATRIX.md](JVQUANT_CAPABILITY_MATRIX.md) summarizes configured probes into a capability matrix.
-
-Future adapters or jvQuant extensions may include:
-
-- jvQuant WebSocket `lv1/lv2/lv10` for realtime market sensing. The current wrapper manages connection/subscription callbacks and feeds local buffers; raw WebSocket messages are not exposed to MCP.
-- StockApi for limit-up pools, break-board pools, capital flow, and early-session signals.
-- MyQuant for broker-environment Level-2 data.
-- miniQMT or QMT for local terminal data and future trading integration.
-
-Provider-specific quirks should stay inside adapters. MCP tools should expose stable, provider-neutral shapes.
+Current jvQuant coverage and known gaps are tracked in the README. The adapter is layered so future providers (StockApi, MyQuant, miniQMT, broker terminals) plug in without changing MCP shapes.
 
 ## Event And Storage Layer
 
-Aegis Alpha treats events as the boundary between high-frequency data and agent reasoning.
+Events are the boundary between high-frequency provider data and agent reasoning. Agents never see raw WebSocket payloads.
 
 ```text
 jvQuant WebSocket / query / minute replay
@@ -102,9 +67,17 @@ jvQuant WebSocket / query / minute replay
   -> Hermes explanation and review
 ```
 
+Storage:
+
+- SQLite stores structured market events, signal snapshots, candidate scores, agent reviews, agent review corrections, correction action proposals and decisions, provider runs, and review outcomes.
+- Parquet is reserved for high-volume minute bars, Level-2 trades, and orderbook snapshots until a pyarrow-backed writer is added.
+- DuckDB remains a future research layer for Parquet history and second-board sample statistics.
+
+Every event carries evidence, timestamps, freshness status, score, confidence, and suggested agent actions. Suggested actions are prompts for analysis, not trading instructions.
+
 ## Launchd Runner
 
-On macOS, the realtime engine is designed to be supervised by launchd:
+On macOS the realtime engine is supervised by launchd:
 
 ```text
 launchd
@@ -115,34 +88,8 @@ launchd
   -> MCP read-only queries
 ```
 
-`launchd` owns process lifetime. Aegis Alpha owns market-session lifetime: outside configured trading sessions the runner stays alive but does not keep market subscriptions open. The runner writes `data/runner_status.json`, provider run records, signal snapshots, and market events; Hermes reads those through MCP and should not start or inspect raw streams. MCP tools prefer runner-produced SQLite events and snapshots, falling back to provider queries only when the local store is empty.
-
-Current storage direction:
-
-- SQLite stores structured market events, signal snapshots, candidate scores, agent reviews, provider runs, and review outcomes.
-- Parquet is reserved for high-volume minute bars, Level-2 trades, and orderbook snapshots after a pyarrow-backed writer is added.
-- DuckDB remains a future research layer for querying Parquet history and building second-board sample statistics.
-
-Every event must include evidence, timestamps, freshness status, score, confidence, and suggested agent actions. Suggested actions are prompts for analysis, not trading instructions.
+`launchd` owns process lifetime. Aegis Alpha owns market-session lifetime: outside configured trading sessions the runner stays alive but does not keep market subscriptions open. The runner writes `data/runner_status.json`, provider run records, signal snapshots, and market events; Hermes reads these through MCP and never starts or inspects raw streams. MCP tools prefer runner-produced SQLite events and snapshots, falling back to provider queries only when the local store is empty.
 
 ## Hermes Skills
 
-Hermes skills should encode user preferences and review lessons, for example:
-
-- Avoid weak same-theme followers.
-- Penalize fast boards without theme confirmation.
-- Require order-book quality to remain stable during the observation window.
-- Prefer second-board candidates only when the market sentiment gate is selective or active.
-- Treat mock, delayed, and real-time data differently.
-
-Skills should change how Hermes interprets Aegis Alpha outputs; they should not bypass risk controls.
-
-## Future Binary Packaging
-
-The MVP is a Python package because the contracts are still evolving. Once the MCP interface stabilizes, the server can be distributed as:
-
-- A Docker image for server deployments.
-- A standalone binary built from the Python entrypoint.
-- A managed local service launched by Hermes.
-
-Packaging must preserve the same safety boundary: no real trading unless explicitly enabled by a future risk-controlled module.
+Hermes skills encode user preferences and review lessons. Skills change how Hermes interprets Aegis Alpha outputs; they must not bypass risk controls. The first skill is `.hermes/skills/second-board-radar/SKILL.md`.

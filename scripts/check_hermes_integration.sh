@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-WORKSPACE="${WORKSPACE:-/Users/xietian/Documents/trading}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORKSPACE="${WORKSPACE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 HERMES_CONFIG="${HERMES_CONFIG:-$HOME/.hermes/config.yaml}"
 HERMES_SKILL_DIR="${HERMES_SKILL_DIR:-$HOME/.hermes/skills/second-board-radar}"
 MCP_COMMAND="${MCP_COMMAND:-$WORKSPACE/.venv/bin/aegis-alpha-mcp}"
