@@ -73,3 +73,18 @@ synthetic lv10-like depth
 ```
 
 It is not live market data and must not be used as a trading signal.
+
+## Chat-Based Corrections
+
+Hermes should correct Aegis Alpha agent behavior through MCP tools rather than asking the user to run command-line scripts.
+
+Recommended chat flow:
+
+1. Use `get_recent_agent_reviews(limit)` to find the review the user is correcting.
+2. Use `record_agent_review_correction(...)` to store the correction:
+   - `correction_type`: `DATA_ERROR`, `UNIT_ERROR`, `STRATEGY_ERROR`, `EXPRESSION_RISK`, or `OTHER`.
+   - `expected_grade`: optional `A`, `B`, `C`, or `REJECT`.
+   - `comment`: the user's natural-language correction.
+3. Use `get_agent_correction_summary(limit)` to inspect repeated patterns and decide whether to update Hermes memory, patch the Aegis Alpha skill, or fix an adapter/rule.
+
+Correction storage is deliberately separate from Hermes memory. Aegis Alpha records the structured correction and returns `suggested_memory` / `suggested_skill_patch`, but Hermes should only save memory or modify a skill after confirming the pattern is stable and useful.

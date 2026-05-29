@@ -8,7 +8,15 @@ from pathlib import Path
 from typing import Iterable
 from zoneinfo import ZoneInfo
 
-from aegis_alpha.models import AgentReview, CandidateOutcomeReview, MarketEvent, RunnerStatus, SignalSnapshot
+from aegis_alpha.models import (
+    AgentCorrectionSummary,
+    AgentReview,
+    AgentReviewCorrection,
+    CandidateOutcomeReview,
+    MarketEvent,
+    RunnerStatus,
+    SignalSnapshot,
+)
 
 SH_TZ = ZoneInfo("Asia/Shanghai")
 
@@ -115,6 +123,17 @@ class AegisAlphaStore:
                     model TEXT,
                     payload_json TEXT NOT NULL,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS agent_review_corrections (
+                    correction_id TEXT PRIMARY KEY,
+                    review_id TEXT NOT NULL,
+                    symbol TEXT,
+                    correction_type TEXT NOT NULL,
+                    expected_grade TEXT,
+                    comment TEXT,
+                    created_at TEXT NOT NULL,
+                    payload_json TEXT NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS provider_runs (
@@ -319,6 +338,107 @@ class AegisAlphaStore:
                 (safe_limit,),
             ).fetchall()
         return [AgentReview.model_validate_json(row[0]) for row in rows]
+
+    def save_agent_review_correction(self, correction: AgentReviewCorrection) -> AgentReviewCorrection:
+        if not correction.created_at:
+            correction.created_at = now_iso()
+        if not correction.correction_id:
+            correction.correction_id = (
+                f"{correction.review_id}:{correction.symbol or 'ALL'}:"
+                f"{correction.correction_type}:{correction.created_at}"
+            )
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO agent_review_corrections (
+                    correction_id, review_id, symbol, correction_type,
+                    expected_grade, comment, created_at, payload_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    correction.correction_id,
+                    correction.review_id,
+                    correction.symbol,
+                    correction.correction_type,
+                    correction.expected_grade,
+                    correction.comment,
+                    correction.created_at,
+                    correction.model_dump_json(),
+                ),
+            )
+        return correction
+
+    def recent_agent_review_corrections(
+        self,
+        limit: int = 20,
+        review_id: str | None = None,
+    ) -> list[AgentReviewCorrection]:
+        safe_limit = max(1, min(int(limit or 20), 100))
+        query = "SELECT payload_json FROM agent_review_corrections"
+        params: list[object] = []
+        if review_id:
+            query += " WHERE review_id = ?"
+            params.append(review_id)
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(safe_limit)
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [AgentReviewCorrection.model_validate_json(row[0]) for row in rows]
+
+    def agent_correction_summary(self, limit: int = 100) -> AgentCorrectionSummary:
+        corrections = self.recent_agent_review_corrections(limit=limit)
+        by_type: dict[str, int] = {}
+        by_symbol: dict[str, int] = {}
+        for correction in corrections:
+            by_type[correction.correction_type] = by_type.get(correction.correction_type, 0) + 1
+            if correction.symbol:
+                by_symbol[correction.symbol] = by_symbol.get(correction.symbol, 0) + 1
+
+        suggested_memory = ""
+        suggested_skill_patch = ""
+        recommended_next_action = "No correction pattern yet. Keep collecting chat-based feedback."
+
+        if by_type.get("UNIT_ERROR", 0):
+            suggested_memory = (
+                "Aegis Alpha agent reviews must treat `_pct` fields as already-percent values, "
+                "`_ratio` fields as ratios, `_cny` fields as CNY amounts, and `_score` fields as 0-100 internal scores."
+            )
+            recommended_next_action = "Ask Hermes to save the suggested memory if this correction was valid."
+
+        if by_type.get("DATA_ERROR", 0):
+            suggested_memory = (
+                suggested_memory
+                or "When Aegis Alpha reports stale, unavailable, or synthetic data, agent conclusions must be capped and must not infer missing live metrics."
+            )
+            suggested_skill_patch = (
+                "Before grading an Aegis Alpha candidate, verify data_mode, freshness_status, "
+                "data_timestamp, and provider_timestamp. If data is unavailable or stale, halt or cap the grade."
+            )
+            recommended_next_action = "Review the adapter/data source first, then update Hermes memory or skill only after the data issue is understood."
+
+        if by_type.get("STRATEGY_ERROR", 0) >= 2:
+            suggested_skill_patch = (
+                "When repeated user corrections mark a strategy judgment as too aggressive, lower the grade unless "
+                "fresh speed, big-order inflow, seal amount, orderbook quality, and same-theme linkage all support the conclusion."
+            )
+            recommended_next_action = "Promote this repeated strategy correction into the Aegis Alpha Hermes skill after manual review."
+
+        if by_type.get("EXPRESSION_RISK", 0):
+            suggested_skill_patch = (
+                suggested_skill_patch
+                or "Express Aegis Alpha outputs as observation, rating rationale, trigger conditions, and avoid conditions; do not phrase them as direct buy/sell commands."
+            )
+            recommended_next_action = "Patch the Hermes skill wording if this phrasing issue repeats."
+
+        return AgentCorrectionSummary(
+            total_count=len(corrections),
+            by_type=by_type,
+            by_symbol=by_symbol,
+            recent_corrections=corrections[:10],
+            suggested_memory=suggested_memory,
+            suggested_skill_patch=suggested_skill_patch,
+            recommended_next_action=recommended_next_action,
+        )
 
 
 def write_runner_status(status: RunnerStatus, path: str | Path | None = None) -> Path:

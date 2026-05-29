@@ -4,7 +4,7 @@ from aegis_alpha.agent_context import signal_snapshot_agent_context
 from aegis_alpha.agent_eval import evaluate_agent_replay_response
 from aegis_alpha.adapters.jvquant_websocket import summarize_raw_ab_payload, subscription_codes
 from aegis_alpha.events import EventDetector, SignalWindowBuffer, load_event_scoring_config
-from aegis_alpha.models import AgentReview, CandidateOutcomeReview, SignalSnapshot
+from aegis_alpha.models import AgentReview, AgentReviewCorrection, CandidateOutcomeReview, SignalSnapshot
 from aegis_alpha.replay import run_orderbook_replay_fixture
 from aegis_alpha.signals.orderbook import estimate_orderbook_metrics
 from aegis_alpha.storage import AegisAlphaStore, ParquetSink, refresh_snapshot_freshness
@@ -184,6 +184,38 @@ def test_agent_review_store_roundtrip(tmp_path) -> None:
     assert review.review_id
     assert reviews[0].passed is True
     assert reviews[0].grades == ["C", "REJECT"]
+
+
+def test_agent_review_correction_summary_suggests_skill_patch(tmp_path) -> None:
+    store = AegisAlphaStore(tmp_path / "aegis_alpha.db")
+    store.save_agent_review_correction(
+        AgentReviewCorrection(
+            review_id="review-1",
+            symbol="600519",
+            correction_type="STRATEGY_ERROR",
+            expected_grade="REJECT",
+            comment="盘口质量和同题材联动不足，不应该给 C。",
+        )
+    )
+    store.save_agent_review_correction(
+        AgentReviewCorrection(
+            review_id="review-2",
+            symbol="600519",
+            correction_type="STRATEGY_ERROR",
+            expected_grade="REJECT",
+            comment="又一次偏乐观，需要降低评级。",
+        )
+    )
+
+    corrections = store.recent_agent_review_corrections(limit=5)
+    summary = store.agent_correction_summary(limit=10)
+
+    assert corrections[0].correction_id
+    assert summary.total_count == 2
+    assert summary.by_type["STRATEGY_ERROR"] == 2
+    assert summary.by_symbol["600519"] == 2
+    assert "lower the grade" in summary.suggested_skill_patch
+    assert "skill" in summary.recommended_next_action.lower()
 
 
 def test_refresh_snapshot_freshness_marks_old_data_stale() -> None:

@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 
 CandidateGrade = Literal["A", "B", "C", "REJECT"]
+AgentCorrectionType = Literal["DATA_ERROR", "UNIT_ERROR", "STRATEGY_ERROR", "EXPRESSION_RISK", "OTHER"]
 MarketAction = Literal["active", "selective", "defensive", "avoid"]
 SignalConfidence = Literal["high", "medium", "low", "placeholder", "unavailable"]
 SignalAuthority = Literal["official_doc", "observed_probe", "internal_inference"]
@@ -270,6 +271,26 @@ class AgentReview(BaseModel):
     summary: dict[str, Any] = Field(default_factory=dict)
     payload: dict[str, Any] = Field(default_factory=dict)
     created_at: str = ""
+
+
+class AgentReviewCorrection(BaseModel):
+    correction_id: str = ""
+    review_id: str
+    symbol: str = ""
+    correction_type: AgentCorrectionType = "OTHER"
+    expected_grade: CandidateGrade | None = None
+    comment: str = ""
+    created_at: str = ""
+
+
+class AgentCorrectionSummary(BaseModel):
+    total_count: int = 0
+    by_type: dict[str, int] = Field(default_factory=dict)
+    by_symbol: dict[str, int] = Field(default_factory=dict)
+    recent_corrections: list[AgentReviewCorrection] = Field(default_factory=list)
+    suggested_memory: str = ""
+    suggested_skill_patch: str = ""
+    recommended_next_action: str = ""
 
 
 class LimitUpHistoryStats(BaseModel):

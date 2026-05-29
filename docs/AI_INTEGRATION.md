@@ -60,6 +60,9 @@ The skill expects Aegis Alpha MCP to expose:
 - `explain_market_event`
 - `get_theme_strength`
 - `record_candidate_outcome`
+- `get_recent_agent_reviews`
+- `record_agent_review_correction`
+- `get_agent_correction_summary`
 
 The Hermes MCP configuration example lives in [HERMES.md](HERMES.md).
 
@@ -73,6 +76,7 @@ Hermes should:
 - Treat minute replay as minute-level replay data: useful for recalculated speed windows, but not equivalent to tick-by-tick Level-2.
 - Treat market events as structured context for explanation and re-scoring, not as order instructions.
 - Cap maximum grade at `B` when speed, big-order, or orderbook data is delayed by more than 3 minutes during active trading hours.
+- Record user corrections through Aegis Alpha MCP first; only promote stable repeated patterns into Hermes memory or skills.
 - Stop or downgrade when the gate is `avoid` or `defensive`.
 - Focus on yesterday-limit-up stocks trying to advance to a second board.
 - Explain grades using structured Aegis Alpha data.

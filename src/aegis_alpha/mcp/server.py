@@ -6,8 +6,9 @@ from typing import Any
 from fastmcp import FastMCP
 
 from aegis_alpha.adapters.factory import create_market_data_adapter
-from aegis_alpha.models import CandidateOutcomeReview
+from aegis_alpha.models import AgentReviewCorrection, CandidateOutcomeReview
 from aegis_alpha.runner import status_payload
+from aegis_alpha.storage import AegisAlphaStore
 
 
 mcp = FastMCP("aegis-alpha")
@@ -17,6 +18,18 @@ def _call_tool(callback: Callable[[Any], Any]) -> Any:
     try:
         adapter = create_market_data_adapter()
         return callback(adapter)
+    except Exception as exc:
+        return {
+            "data_mode": "unavailable",
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+            "disclaimer": "Data source unavailable. Research output only; do not infer missing market data.",
+        }
+
+
+def _call_store(callback: Callable[[AegisAlphaStore], Any]) -> Any:
+    try:
+        return callback(AegisAlphaStore())
     except Exception as exc:
         return {
             "data_mode": "unavailable",
@@ -156,6 +169,51 @@ def record_candidate_outcome(
         notes=[item.strip() for item in notes.split("|") if item.strip()],
     )
     return _call_tool(lambda adapter: adapter.record_candidate_outcome(review).model_dump())
+
+
+@mcp.tool
+def get_recent_agent_reviews(limit: int = 10) -> list[dict] | dict:
+    """Return recently stored agent review results for chat-based correction."""
+    safe_limit = max(1, min(int(limit or 10), 50))
+    return _call_store(lambda store: [review.model_dump() for review in store.recent_agent_reviews(safe_limit)])
+
+
+@mcp.tool
+def record_agent_review_correction(
+    review_id: str,
+    symbol: str = "",
+    correction_type: str = "OTHER",
+    expected_grade: str = "",
+    comment: str = "",
+) -> dict:
+    """Store a user correction about an agent review for later memory, skill, or scoring updates."""
+
+    def _record(store: AegisAlphaStore) -> dict:
+        normalized_type = correction_type.strip().upper() or "OTHER"
+        normalized_grade = expected_grade.strip().upper() or None
+        correction = AgentReviewCorrection(
+            review_id=review_id.strip(),
+            symbol=symbol.strip(),
+            correction_type=normalized_type,
+            expected_grade=normalized_grade,
+            comment=comment.strip(),
+        )
+        saved = store.save_agent_review_correction(correction)
+        summary = store.agent_correction_summary(limit=100)
+        return {
+            "correction": saved.model_dump(),
+            "summary": summary.model_dump(exclude={"recent_corrections"}),
+            "disclaimer": "Correction stored locally for review. Hermes memory or skill updates are suggested, not automatically applied.",
+        }
+
+    return _call_store(_record)
+
+
+@mcp.tool
+def get_agent_correction_summary(limit: int = 100) -> dict:
+    """Return correction patterns and suggested Hermes memory or skill updates."""
+    safe_limit = max(1, min(int(limit or 100), 200))
+    return _call_store(lambda store: store.agent_correction_summary(safe_limit).model_dump())
 
 
 @mcp.tool

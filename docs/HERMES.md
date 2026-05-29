@@ -120,6 +120,9 @@ mcp_servers:
         - explain_market_event
         - review_candidate_outcome
         - record_candidate_outcome
+        - get_recent_agent_reviews
+        - record_agent_review_correction
+        - get_agent_correction_summary
         - get_stock_history_limitup_stats
         - get_theme_strength
         - get_second_board_candidates
