@@ -155,6 +155,8 @@ class JvQuantMarketDataAdapter:
         if not risk_flags:
             risk_flags.append("Provider semantic-query data should still be cross-checked during active trading.")
 
+        emotion = self.get_market_emotion(snapshot.trading_day)
+
         return MarketSentimentGate(
             trading_day=snapshot.trading_day,
             timestamp=snapshot.timestamp,
@@ -172,6 +174,11 @@ class JvQuantMarketDataAdapter:
                 "jvQuant read-only market gate is usable for coarse filtering. "
                 "Second-board success rate and intraday seal-time quality are not derived yet."
             ),
+            yesterday_limitup_today_premium_pct=emotion.yesterday_limitup_today_premium_pct,
+            consecutive_boards_alive_rate=emotion.yesterday_consecutive_boards_alive_rate,
+            first_to_second_promotion_rate=emotion.first_to_second_promotion_rate,
+            second_to_third_promotion_rate=emotion.second_to_third_promotion_rate,
+            max_height_today=emotion.max_height_today,
         )
 
     def get_limitup_pool(self) -> list[LimitUpStock]:
