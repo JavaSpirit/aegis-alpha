@@ -40,7 +40,6 @@ from aegis_alpha.storage import AegisAlphaStore
 from aegis_alpha.adapters.jvquant_websocket import JvQuantRealtimeClient
 from aegis_alpha.symbols import daily_limit_pct, normalize_symbol
 from aegis_alpha.themes.auction import AuctionAnalyzer
-from aegis_alpha.themes.emotion import MarketEmotionGauge
 from aegis_alpha.themes.ladder import classify_height
 from aegis_alpha.themes.leader import ThemeLeaderResolver
 
@@ -248,23 +247,30 @@ class JvQuantMarketDataAdapter:
 
     def get_market_emotion(self, trading_day: str = "") -> MarketEmotion:
         day = trading_day or datetime.now(SH_TZ).date().isoformat()
-        candidates = self.get_second_board_candidates()
-        first_board_count = len(self.get_limitup_pool())
-        second_board_count = sum(1 for item in candidates if item.previous_consecutive_boards >= 1)
-        third_board_count = sum(1 for item in candidates if item.previous_consecutive_boards >= 2)
-        return MarketEmotionGauge().calculate(
+        limitup_pool = self.get_limitup_pool()
+        ladder_entries = [
+            self.get_limit_up_ladder(stock.symbol, day) for stock in limitup_pool
+        ]
+        max_height = max(
+            (entry.consecutive_boards for entry in ladder_entries),
+            default=0,
+        )
+        return MarketEmotion(
             trading_day=day,
-            yesterday_limitup_today_premium_pct=(
-                round(sum(item.current_change_pct for item in candidates) / len(candidates), 4)
-                if candidates
-                else 0.0
-            ),
-            yesterday_consecutive_boards_alive_count=len(candidates),
-            yesterday_consecutive_boards_total=max(len(candidates), 1),
-            first_board_count=first_board_count,
-            second_board_count=second_board_count,
-            third_board_count=third_board_count,
-            ladder_entries=[self.get_limit_up_ladder(item.symbol, day) for item in candidates],
+            yesterday_limitup_today_premium_pct=0.0,
+            yesterday_consecutive_boards_alive_count=0,
+            yesterday_consecutive_boards_total=0,
+            yesterday_consecutive_boards_alive_rate=0.0,
+            first_to_second_promotion_rate=0.0,
+            second_to_third_promotion_rate=0.0,
+            first_board_to_consecutive_ratio=0.0,
+            max_height_today=max_height,
+            notes=[
+                "yesterday_limitup_today_premium_pct: requires yesterday limit-up cohort with today's change; not implemented yet.",
+                "yesterday_consecutive_boards_*: requires yesterday session history; not implemented yet.",
+                "first_to_second / second_to_third promotion rates: requires multi-day ladder history; not implemented yet.",
+                "max_height_today computed from ladder of today's limit-up pool.",
+            ],
         )
 
     def get_auction_analysis(self, symbol: str, trading_day: str = "") -> AuctionAnalysis:
