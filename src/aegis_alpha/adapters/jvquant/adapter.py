@@ -428,6 +428,19 @@ class JvQuantMarketDataAdapter:
         theme_counts = Counter(P._theme_from_row(row) for row in rows)
         gate = self.get_market_sentiment_gate()
 
+        trading_day = query_timestamp[:10]
+        ladder_entries: dict[str, LadderEntry] = {}
+        for row in rows[:max_candidates]:
+            row_symbol = P._symbol_from_row(row)
+            if not row_symbol:
+                continue
+            ladder_entries[row_symbol] = self.get_limit_up_ladder(row_symbol, trading_day)
+
+        theme_leaders_list = self.get_theme_leaders(trading_day=trading_day)
+        theme_leaders_by_theme: dict[str, ThemeLeader] = {
+            leader.theme: leader for leader in theme_leaders_list
+        }
+
         candidates: list[SecondBoardCandidate] = []
         for index, row in enumerate(rows[:max_candidates]):
             candidate = build_one_candidate(
@@ -450,6 +463,8 @@ class JvQuantMarketDataAdapter:
                 grading_config=self.grading_config,
                 get_minute_replay=self.get_stock_minute_replay_snapshot,
                 get_orderbook=self.get_stock_orderbook_snapshot,
+                ladder_entries=ladder_entries,
+                theme_leaders_by_theme=theme_leaders_by_theme,
             )
             candidates.append(candidate)
 

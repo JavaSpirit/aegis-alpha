@@ -13,7 +13,15 @@ from aegis_alpha.adapters.jvquant.scoring import (
 )
 from aegis_alpha.clock import SH_TZ
 from aegis_alpha.grading import CandidateGradingConfig
-from aegis_alpha.models import MinuteReplaySnapshot, SecondBoardCandidate, SignalMetadata, StockOrderbookSnapshot
+from aegis_alpha.models import (
+    LadderEntry,
+    MinuteReplaySnapshot,
+    SecondBoardCandidate,
+    SignalMetadata,
+    StockOrderbookSnapshot,
+    ThemeLeader,
+    ThemeLeaderRole,
+)
 from aegis_alpha.symbols import daily_limit_pct
 from aegis_alpha.themes.auction import AuctionAnalyzer
 
@@ -43,6 +51,8 @@ def build_one_candidate(
     grading_config: CandidateGradingConfig,
     get_minute_replay: Callable[[str], MinuteReplaySnapshot],
     get_orderbook: Callable[[str], StockOrderbookSnapshot],
+    ladder_entries: dict[str, LadderEntry],
+    theme_leaders_by_theme: dict[str, ThemeLeader],
 ) -> SecondBoardCandidate:
     symbol = P._symbol_from_row(row)
     seal_row = seal_rows.get(symbol, {})
@@ -147,6 +157,23 @@ def build_one_candidate(
         P._field_value(max_seal_row, "最大封单量", "涨停封单量", "封单量")
     )
     theme = P._theme_from_row(row)
+
+    ladder = ladder_entries.get(symbol)
+    previous_consecutive = ladder.consecutive_boards if ladder else 0
+    previous_height = ladder.height_label if ladder else "unknown"
+
+    leader = theme_leaders_by_theme.get(theme)
+    theme_role: ThemeLeaderRole = "unknown"
+    theme_leader_symbol = ""
+    if leader is not None:
+        theme_leader_symbol = leader.leader_symbol
+        if symbol == leader.leader_symbol:
+            theme_role = "leader"
+        elif symbol in leader.co_leader_symbols:
+            theme_role = "co_leader"
+        else:
+            theme_role = "follower"
+
     orderbook_quality = 50.0
     orderbook_notes: list[str] = []
     orderbook_timestamp = query_timestamp
@@ -238,6 +265,10 @@ def build_one_candidate(
         symbol=symbol,
         name=P._name_from_row(row),
         theme=theme,
+        previous_consecutive_boards=previous_consecutive,
+        previous_height_label=previous_height,
+        theme_role=theme_role,
+        theme_leader_symbol=theme_leader_symbol,
         change_pct=change_pct,
         change_pct_inferred=change_pct_inferred,
         first_limit_up_time=first_limit_up_time,
@@ -291,6 +322,10 @@ def build_second_board_candidate(
     symbol: str,
     name: str,
     theme: str,
+    previous_consecutive_boards: int = 0,
+    previous_height_label: str = "unknown",
+    theme_role: ThemeLeaderRole = "unknown",
+    theme_leader_symbol: str = "",
     change_pct: float,
     change_pct_inferred: bool,
     first_limit_up_time: str,
@@ -400,10 +435,10 @@ def build_second_board_candidate(
         auction_change_pct=auction_change_pct,
         auction_turnover_cny=auction_turnover_cny,
         auction_turnover_rate=auction_turnover_rate,
-        previous_consecutive_boards=1,
-        previous_height_label="first_board",
-        theme_role="unknown",
-        theme_leader_symbol="",
+        previous_consecutive_boards=previous_consecutive_boards,
+        previous_height_label=previous_height_label,
+        theme_role=theme_role,
+        theme_leader_symbol=theme_leader_symbol,
         auction_pattern=auction_pattern,
         five_min_speed_pct=five_min_speed_pct,
         five_min_speed_window=speed_window,
