@@ -6,8 +6,9 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable
-from zoneinfo import ZoneInfo
 
+from aegis_alpha.clock import SH_TZ, now_dt, now_iso
+from aegis_alpha.db_migrations import apply_migrations
 from aegis_alpha.models import (
     AgentCorrectionAction,
     AgentCorrectionSummary,
@@ -16,12 +17,12 @@ from aegis_alpha.models import (
     CandidateOutcomeReview,
     CorrectionActionDecision,
     CorrectionActionProposal,
+    LadderEntry,
     MarketEvent,
     RunnerStatus,
     SignalSnapshot,
+    ThemeLeader,
 )
-
-SH_TZ = ZoneInfo("Asia/Shanghai")
 
 
 def default_data_dir() -> Path:
@@ -38,10 +39,6 @@ def default_runner_status_path() -> Path:
     ).expanduser()
 
 
-def now_iso() -> str:
-    return datetime.now(SH_TZ).isoformat(timespec="seconds")
-
-
 def current_freshness_status(provider_timestamp: str, max_age_seconds: int = 180) -> str:
     if not provider_timestamp:
         return "unknown"
@@ -51,7 +48,7 @@ def current_freshness_status(provider_timestamp: str, max_age_seconds: int = 180
         return "unknown"
     if provider_dt.tzinfo is None:
         provider_dt = provider_dt.replace(tzinfo=SH_TZ)
-    age_seconds = abs((datetime.now(SH_TZ) - provider_dt).total_seconds())
+    age_seconds = abs((now_dt() - provider_dt).total_seconds())
     return "fresh" if age_seconds <= max_age_seconds else "stale"
 
 
@@ -82,107 +79,7 @@ class AegisAlphaStore:
         return conn
 
     def _init_schema(self) -> None:
-        with self._connect() as conn:
-            conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS market_events (
-                    event_id TEXT PRIMARY KEY,
-                    event_type TEXT NOT NULL,
-                    symbol TEXT,
-                    theme TEXT,
-                    score REAL NOT NULL,
-                    confidence TEXT NOT NULL,
-                    provider_timestamp TEXT,
-                    received_at TEXT NOT NULL,
-                    freshness_status TEXT NOT NULL,
-                    payload_json TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS signal_snapshots (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    symbol TEXT NOT NULL,
-                    data_timestamp TEXT NOT NULL,
-                    provider_timestamp TEXT,
-                    received_at TEXT,
-                    freshness_status TEXT,
-                    payload_json TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS candidate_scores (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    symbol TEXT NOT NULL,
-                    trading_day TEXT,
-                    grade TEXT,
-                    score REAL,
-                    payload_json TEXT NOT NULL,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-                );
-
-                CREATE TABLE IF NOT EXISTS agent_reviews (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    event_id TEXT,
-                    symbol TEXT,
-                    provider TEXT,
-                    model TEXT,
-                    payload_json TEXT NOT NULL,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-                );
-
-                CREATE TABLE IF NOT EXISTS agent_review_corrections (
-                    correction_id TEXT PRIMARY KEY,
-                    review_id TEXT NOT NULL,
-                    symbol TEXT,
-                    correction_type TEXT NOT NULL,
-                    expected_grade TEXT,
-                    comment TEXT,
-                    created_at TEXT NOT NULL,
-                    payload_json TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS correction_action_proposals (
-                    proposal_id TEXT PRIMARY KEY,
-                    source TEXT NOT NULL,
-                    target TEXT NOT NULL,
-                    correction_type TEXT NOT NULL,
-                    priority TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    payload_json TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS correction_action_decisions (
-                    decision_id TEXT PRIMARY KEY,
-                    proposal_id TEXT NOT NULL,
-                    decision TEXT NOT NULL,
-                    note TEXT,
-                    decided_by TEXT,
-                    previous_status TEXT,
-                    new_status TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    payload_json TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS provider_runs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    provider TEXT NOT NULL,
-                    run_type TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    started_at TEXT,
-                    ended_at TEXT,
-                    payload_json TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS review_outcomes (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    symbol TEXT NOT NULL,
-                    trading_day TEXT NOT NULL,
-                    payload_json TEXT NOT NULL,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(symbol, trading_day)
-                );
-                """
-            )
+        apply_migrations(self.db_path)
 
     def save_market_events(self, events: Iterable[MarketEvent]) -> None:
         with self._connect() as conn:
@@ -228,6 +125,75 @@ class AegisAlphaStore:
                     snapshot.model_dump_json(),
                 ),
             )
+
+    def save_theme_leaders(self, leaders: Iterable[ThemeLeader]) -> None:
+        with self._connect() as conn:
+            conn.executemany(
+                """
+                INSERT INTO theme_leaders (
+                    theme, trading_day, leader_symbol, payload_json
+                ) VALUES (?, ?, ?, ?)
+                """,
+                [
+                    (
+                        leader.theme,
+                        leader.trading_day,
+                        leader.leader_symbol,
+                        leader.model_dump_json(),
+                    )
+                    for leader in leaders
+                ],
+            )
+
+    def latest_theme_leaders(self, theme: str = "", trading_day: str = "", limit: int = 20) -> list[ThemeLeader]:
+        safe_limit = max(1, min(int(limit or 20), 100))
+        query = "SELECT payload_json FROM theme_leaders"
+        params: list[object] = []
+        clauses = []
+        if theme:
+            clauses.append("theme = ?")
+            params.append(theme)
+        if trading_day:
+            clauses.append("trading_day = ?")
+            params.append(trading_day)
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY trading_day DESC, id DESC LIMIT ?"
+        params.append(safe_limit)
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [ThemeLeader.model_validate_json(row[0]) for row in rows]
+
+    def save_ladder_entries(self, entries: Iterable[LadderEntry]) -> None:
+        with self._connect() as conn:
+            conn.executemany(
+                """
+                INSERT OR REPLACE INTO limit_up_ladder (
+                    symbol, trading_day, consecutive_boards, height_label, payload_json
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        entry.symbol,
+                        entry.trading_day,
+                        entry.consecutive_boards,
+                        entry.height_label,
+                        entry.model_dump_json(),
+                    )
+                    for entry in entries
+                ],
+            )
+
+    def get_ladder_entry(self, symbol: str, trading_day: str) -> LadderEntry | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT payload_json FROM limit_up_ladder
+                WHERE symbol = ? AND trading_day = ?
+                """,
+                (symbol, trading_day),
+            ).fetchone()
+        return LadderEntry.model_validate_json(row[0]) if row else None
 
     def recent_market_events(self, limit: int = 20, event_type: str | None = None) -> list[MarketEvent]:
         safe_limit = max(1, min(int(limit or 20), 100))

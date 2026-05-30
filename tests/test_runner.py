@@ -8,6 +8,7 @@ from aegis_alpha.runner import (
     AegisAlphaRunner,
     is_trading_session_active,
     load_runner_config,
+    reconnect_delay_seconds,
     status_payload,
     subscription_levels,
     subscription_symbols,
@@ -45,6 +46,19 @@ trading_sessions: []
 
     assert payload["state"] == "STOPPED"
     assert payload["notes"]
+
+
+def test_reconnect_delay_uses_exponential_backoff_with_jitter() -> None:
+    config = {
+        "reconnect_interval_seconds": 10,
+        "reconnect_max_interval_seconds": 45,
+        "reconnect_jitter_ratio": 0.2,
+    }
+
+    assert reconnect_delay_seconds(config, 0, jitter=0.0) == 10
+    assert reconnect_delay_seconds(config, 1, jitter=0.0) == 20
+    assert reconnect_delay_seconds(config, 2, jitter=0.1) == 44
+    assert reconnect_delay_seconds(config, 3, jitter=0.0) == 45
 
 
 def test_runner_persists_buffer_outputs(tmp_path) -> None:

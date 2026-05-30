@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from aegis_alpha.adapters.jvquant_market_data import JvQuantMarketDataAdapter, normalize_symbol
+from aegis_alpha.adapters.jvquant_market_data import (
+    JvQuantMarketDataAdapter,
+    _inferred_change_pct_for_limit_up,
+    normalize_symbol,
+)
 
 
 class FakeJvQuantClient:
@@ -372,3 +376,47 @@ def test_jvquant_second_board_candidates_can_fallback_to_semantic_speed(monkeypa
         "observed_probe",
         "internal_inference",
     }
+
+
+def test_inferred_change_pct_sh_main() -> None:
+    assert _inferred_change_pct_for_limit_up("600519") == 10.0
+
+
+def test_inferred_change_pct_sz_main() -> None:
+    assert _inferred_change_pct_for_limit_up("000001") == 10.0
+
+
+def test_inferred_change_pct_star_board() -> None:
+    assert _inferred_change_pct_for_limit_up("688981") == 20.0
+
+
+def test_inferred_change_pct_chinext() -> None:
+    assert _inferred_change_pct_for_limit_up("300750") == 20.0
+
+
+def test_inferred_change_pct_bse() -> None:
+    assert _inferred_change_pct_for_limit_up("830799") == 30.0
+
+
+def test_time_or_unknown_normalizes_short_form() -> None:
+    adapter = JvQuantMarketDataAdapter(token="test-token")
+
+    assert adapter._time_or_unknown("9:45") == "09:45:00"
+    assert adapter._time_or_unknown("9:45:30") == "09:45:30"
+    assert adapter._time_or_unknown("09:45") == "09:45:00"
+    assert adapter._time_or_unknown("09:45:30") == "09:45:30"
+    assert adapter._time_or_unknown("2026-05-29 9:45:30") == "09:45:30"
+    assert adapter._time_or_unknown("2026-05-29T09:45:30+08:00") == "09:45:30"
+    assert adapter._time_or_unknown("") == "unknown"
+    assert adapter._time_or_unknown("None") == "unknown"
+    assert adapter._time_or_unknown("nan") == "unknown"
+    assert adapter._time_or_unknown("garbage") == "unknown"
+
+
+def test_seal_quality_score_uses_normalized_time() -> None:
+    adapter = JvQuantMarketDataAdapter(token="test-token")
+    score_short = adapter._seal_quality_score("09:45:00", 200_000_000, 3.0)
+    score_normalized = adapter._seal_quality_score(adapter._time_or_unknown("9:45"), 200_000_000, 3.0)
+
+    assert score_short > 0
+    assert score_short == score_normalized

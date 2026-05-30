@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from aegis_alpha.adapters.jvquant_market_data import JvQuantMarketDataAdapter
+from aegis_alpha.adapters.jvquant import JvQuantMarketDataAdapter
 from aegis_alpha.adapters.mock_market_data import MockMarketDataAdapter
 from aegis_alpha.config import load_project_env
 

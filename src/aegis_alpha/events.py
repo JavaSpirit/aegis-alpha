@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 from collections import defaultdict, deque
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
 
 import yaml
 
+from aegis_alpha.clock import SH_TZ, now_iso
 from aegis_alpha.models import (
     EventScoringConfig,
     EventScoringRule,
@@ -18,13 +19,6 @@ from aegis_alpha.models import (
     MarketEventType,
     SignalSnapshot,
 )
-
-
-SH_TZ = ZoneInfo("Asia/Shanghai")
-
-
-def now_iso() -> str:
-    return datetime.now(SH_TZ).isoformat(timespec="seconds")
 
 
 def project_root() -> Path:
@@ -60,11 +54,22 @@ def freshness_status(provider_timestamp: str, received_at: str, max_age_seconds:
     return "fresh" if abs((received_dt - provider_dt).total_seconds()) <= max_age_seconds else "stale"
 
 
+def _parse_timestamp(value: str) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=SH_TZ)
+    return parsed
+
+
 class SignalWindowBuffer:
-    """In-memory rolling signal window for realtime handlers and deterministic tests."""
+    """Thread-safe rolling signal window for realtime handlers and deterministic tests."""
 
     def __init__(self, max_points_per_symbol: int = 600) -> None:
         self.max_points_per_symbol = max_points_per_symbol
+        self._lock = threading.RLock()
         self._points: dict[str, deque[tuple[str, float, float]]] = defaultdict(
             lambda: deque(maxlen=max_points_per_symbol)
         )
@@ -87,15 +92,18 @@ class SignalWindowBuffer:
     ) -> None:
         if price <= 0:
             return
-        self._points[symbol].append((timestamp, price, turnover_cny))
-        if change_pct is not None:
-            self._change_pct[symbol] = change_pct
+        with self._lock:
+            self._points[symbol].append((timestamp, price, turnover_cny))
+            if change_pct is not None:
+                self._change_pct[symbol] = change_pct
 
     def add_big_order_flow(self, symbol: str, amount_cny: float) -> None:
-        self._big_order_amount[symbol] += amount_cny
+        with self._lock:
+            self._big_order_amount[symbol] += amount_cny
 
     def set_orderbook_quality(self, symbol: str, quality_score: float) -> None:
-        self._orderbook_quality[symbol] = round(max(0.0, min(100.0, quality_score)), 2)
+        with self._lock:
+            self._orderbook_quality[symbol] = round(max(0.0, min(100.0, quality_score)), 2)
 
     def set_orderbook_metrics(
         self,
@@ -108,24 +116,37 @@ class SignalWindowBuffer:
         sell_wall_amount_cny: float = 0.0,
         notes: list[str] | None = None,
     ) -> None:
-        self.set_orderbook_quality(symbol, quality_score)
-        self._ask_pressure[symbol] = round(max(0.0, min(100.0, ask_pressure_score)), 2)
-        self._seal_amount[symbol] = max(0.0, seal_amount_cny)
-        self._seal_decay[symbol] = max(0.0, seal_decay_pct)
-        self._sell_wall_amount[symbol] = max(0.0, sell_wall_amount_cny)
-        self._notes[symbol] = list(notes or [])
+        with self._lock:
+            self._orderbook_quality[symbol] = round(max(0.0, min(100.0, quality_score)), 2)
+            self._ask_pressure[symbol] = round(max(0.0, min(100.0, ask_pressure_score)), 2)
+            self._seal_amount[symbol] = max(0.0, seal_amount_cny)
+            self._seal_decay[symbol] = max(0.0, seal_decay_pct)
+            self._sell_wall_amount[symbol] = max(0.0, sell_wall_amount_cny)
+            self._notes[symbol] = list(notes or [])
 
     def previous_seal_amount(self, symbol: str) -> float:
-        return self._seal_amount.get(symbol, 0.0)
+        with self._lock:
+            return self._seal_amount.get(symbol, 0.0)
 
     def speed_pct(self, symbol: str, minutes: int) -> float:
-        points = list(self._points.get(symbol, []))
+        """Return percentage change over the last `minutes` minutes by timestamp."""
+        with self._lock:
+            points = list(self._points.get(symbol, []))
         if len(points) < 2:
             return 0.0
-        latest_index = len(points) - 1
-        base_index = max(0, latest_index - minutes)
-        base_price = points[base_index][1]
-        latest_price = points[latest_index][1]
+        latest_timestamp, latest_price, _ = points[-1]
+        latest_dt = _parse_timestamp(latest_timestamp)
+        if latest_dt is None or latest_price <= 0:
+            return 0.0
+        cutoff = latest_dt - timedelta(minutes=minutes)
+        base_price = points[0][1]
+        for timestamp, price, _ in points:
+            point_dt = _parse_timestamp(timestamp)
+            if point_dt is None:
+                continue
+            if point_dt >= cutoff:
+                base_price = price
+                break
         if base_price <= 0:
             return 0.0
         return round((latest_price / base_price - 1.0) * 100.0, 4)
@@ -143,11 +164,20 @@ class SignalWindowBuffer:
         seal_amount_cny: float = 0.0,
         received_at: str | None = None,
     ) -> SignalSnapshot:
-        points = list(self._points.get(symbol, []))
+        with self._lock:
+            points = list(self._points.get(symbol, []))
+            big_order_net = self._big_order_amount.get(symbol, 0.0)
+            change_pct_stored = self._change_pct.get(symbol, 0.0)
+            orderbook_quality_stored = self._orderbook_quality.get(symbol, 50.0)
+            ask_pressure = self._ask_pressure.get(symbol, 50.0)
+            seal_amount_stored = self._seal_amount.get(symbol, 0.0)
+            seal_decay = self._seal_decay.get(symbol, 0.0)
+            sell_wall = self._sell_wall_amount.get(symbol, 0.0)
+            notes_stored = list(self._notes.get(symbol, []))
+
         timestamp = points[-1][0] if points else (received_at or now_iso())
         price = points[-1][1] if points else 0.0
         turnover = points[-1][2] if points else 0.0
-        big_order_net = self._big_order_amount.get(symbol, 0.0)
         received = received_at or now_iso()
         return SignalSnapshot(
             symbol=symbol,
@@ -156,7 +186,7 @@ class SignalWindowBuffer:
             provider=provider,
             data_mode=data_mode,
             price=price,
-            change_pct=change_pct if change_pct != 0.0 else self._change_pct.get(symbol, 0.0),
+            change_pct=change_pct if change_pct != 0.0 else change_pct_stored,
             speed_1m_pct=self.speed_pct(symbol, 1),
             speed_3m_pct=self.speed_pct(symbol, 3),
             speed_5m_pct=self.speed_pct(symbol, 5),
@@ -166,19 +196,19 @@ class SignalWindowBuffer:
             orderbook_quality_score=(
                 orderbook_quality_score
                 if orderbook_quality_score is not None
-                else self._orderbook_quality.get(symbol, 50.0)
+                else orderbook_quality_stored
             ),
-            ask_pressure_score=self._ask_pressure.get(symbol, 50.0),
-            seal_amount_cny=seal_amount_cny or self._seal_amount.get(symbol, 0.0),
-            seal_decay_pct=self._seal_decay.get(symbol, 0.0),
-            sell_wall_amount_cny=self._sell_wall_amount.get(symbol, 0.0),
+            ask_pressure_score=ask_pressure,
+            seal_amount_cny=seal_amount_cny or seal_amount_stored,
+            seal_decay_pct=seal_decay,
+            sell_wall_amount_cny=sell_wall,
             data_timestamp=timestamp,
             provider_timestamp=timestamp,
             received_at=received,
             freshness_status=freshness_status(timestamp, received),
             notes=[
                 "Realtime buffer snapshot; raw WebSocket messages are not exposed to agents.",
-                *self._notes.get(symbol, []),
+                *notes_stored,
             ],
         )
 

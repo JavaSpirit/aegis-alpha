@@ -2,24 +2,22 @@ from __future__ import annotations
 
 import argparse
 import os
+import random
 import signal
 import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, time as day_time
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 import yaml
 
 from aegis_alpha.adapters.jvquant_websocket import JvQuantRealtimeClient
+from aegis_alpha.clock import SH_TZ, now_iso
 from aegis_alpha.config import load_project_env
-from aegis_alpha.events import EventDetector, SignalWindowBuffer, load_event_scoring_config, now_iso
+from aegis_alpha.events import EventDetector, SignalWindowBuffer, load_event_scoring_config
 from aegis_alpha.models import RunnerStatus
 from aegis_alpha.storage import AegisAlphaStore, read_runner_status, write_runner_status
-
-
-SH_TZ = ZoneInfo("Asia/Shanghai")
 
 
 @dataclass(frozen=True)
@@ -76,6 +74,16 @@ def subscription_symbols(config: dict) -> list[str]:
 
 def subscription_levels(config: dict) -> list[str]:
     return [str(item).strip().lower() for item in config.get("subscription", {}).get("levels", ["lv1", "lv2", "lv10"])]
+
+
+def reconnect_delay_seconds(config: dict, failure_count: int, *, jitter: float | None = None) -> float:
+    base = max(1.0, float(config.get("reconnect_interval_seconds") or 30))
+    cap = max(base, float(config.get("reconnect_max_interval_seconds") or 300))
+    exponent = max(0, min(int(failure_count), 10))
+    delay = min(cap, base * (2 ** exponent))
+    jitter_ratio = max(0.0, min(1.0, float(config.get("reconnect_jitter_ratio") or 0.20)))
+    jitter_value = random.uniform(0.0, jitter_ratio) if jitter is None else max(0.0, min(jitter_ratio, jitter))
+    return round(delay * (1.0 + jitter_value), 3)
 
 
 class AegisAlphaRunner:
@@ -184,12 +192,15 @@ class AegisAlphaRunner:
         signal.signal(signal.SIGINT, self.request_stop)
         self.write_status("STARTING", next_action="initial_cycle")
         interval = max(5, int(self.config.get("loop_interval_seconds") or 15))
+        failure_count = 0
         while not self.stop_requested:
             status = self.run_once()
             if status.state == "DEGRADED":
-                interval = max(interval, int(self.config.get("reconnect_interval_seconds") or 30))
+                interval = reconnect_delay_seconds(self.config, failure_count)
+                failure_count += 1
             else:
                 interval = max(5, int(self.config.get("loop_interval_seconds") or 15))
+                failure_count = 0
             time.sleep(interval)
         self.client.disconnect()
         self.write_status("STOPPED", next_action="stopped")

@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
+from aegis_alpha.clock import SH_TZ, now_iso as _now
 from aegis_alpha.models import (
+    AuctionAnalysis,
     BreakBoardStock,
     CandidateExplanation,
     CandidateOutcomeReview,
     EventScoringConfig,
+    LadderEntry,
     LimitUpHistoryStats,
     LimitUpStock,
+    MarketEmotion,
     MarketEvent,
     MarketSentimentGate,
     MarketSnapshot,
@@ -23,16 +26,11 @@ from aegis_alpha.models import (
     RealtimeConnectionStatus,
     StockOrderbookSnapshot,
     StockRealtimeSnapshot,
+    ThemeLeader,
     ThemeStrength,
 )
 from aegis_alpha.events import EventDetector, load_event_scoring_config
-
-
-SH_TZ = ZoneInfo("Asia/Shanghai")
-
-
-def _now() -> str:
-    return datetime.now(SH_TZ).isoformat(timespec="seconds")
+from aegis_alpha.themes.auction import AuctionAnalyzer
 
 
 class MockMarketDataAdapter:
@@ -258,6 +256,73 @@ class MockMarketDataAdapter:
             ],
         )
 
+    def get_theme_leaders(self, theme: str = "", trading_day: str = "") -> list[ThemeLeader]:
+        day = trading_day or datetime.now(SH_TZ).date().isoformat()
+        leaders = [
+            ThemeLeader(
+                theme="AI应用",
+                trading_day=day,
+                leader_symbol="002230.SZ",
+                leader_name="科大讯飞",
+                leader_consecutive_boards=2,
+                leader_first_limit_up_time="09:56:12",
+                leader_seal_amount_cny=168_000_000,
+                leader_status="sealed",
+                co_leader_symbols=["300024.SZ"],
+                member_count=6,
+                notes=["Mock leader resolved from same-theme candidate breadth."],
+            ),
+            ThemeLeader(
+                theme="机器人",
+                trading_day=day,
+                leader_symbol="300024.SZ",
+                leader_name="机器人",
+                leader_consecutive_boards=1,
+                leader_first_limit_up_time="10:22:31",
+                leader_seal_amount_cny=42_000_000,
+                leader_status="reopened",
+                member_count=3,
+                notes=["Mock co-movement leader; use live provider for real ranking."],
+            ),
+        ]
+        return [leader for leader in leaders if not theme or leader.theme == theme]
+
+    def get_limit_up_ladder(self, symbol: str, trading_day: str = "") -> LadderEntry:
+        normalized = symbol.strip().upper()
+        day = trading_day or datetime.now(SH_TZ).date().isoformat()
+        if normalized.startswith("002230"):
+            return LadderEntry(symbol=normalized, trading_day=day, consecutive_boards=2, height_label="second_board")
+        if normalized.startswith("300024"):
+            return LadderEntry(symbol=normalized, trading_day=day, consecutive_boards=1, height_label="first_board")
+        return LadderEntry(symbol=normalized, trading_day=day, consecutive_boards=0, height_label="unknown")
+
+    def get_market_emotion(self, trading_day: str = "") -> MarketEmotion:
+        return MarketEmotion(
+            trading_day=trading_day or datetime.now(SH_TZ).date().isoformat(),
+            yesterday_limitup_today_premium_pct=2.4,
+            yesterday_consecutive_boards_alive_count=7,
+            yesterday_consecutive_boards_total=11,
+            yesterday_consecutive_boards_alive_rate=0.6364,
+            first_to_second_promotion_rate=0.22,
+            second_to_third_promotion_rate=0.18,
+            first_board_to_consecutive_ratio=3.1,
+            max_height_today=4,
+            notes=["Mock emotion gauge for MCP contract development."],
+        )
+
+    def get_auction_analysis(self, symbol: str, trading_day: str = "") -> AuctionAnalysis:
+        normalized = symbol.strip().upper()
+        day = trading_day or datetime.now(SH_TZ).date().isoformat()
+        if normalized.startswith("002230"):
+            return AuctionAnalyzer().analyze(
+                symbol=normalized,
+                trading_day=day,
+                auction_change_pct=3.2,
+                auction_turnover_cny=92_000_000,
+                auction_turnover_rate=1.8,
+            )
+        return AuctionAnalyzer().analyze(symbol=normalized, trading_day=day)
+
     def get_event_scoring_config(self) -> EventScoringConfig:
         return load_event_scoring_config()
 
@@ -387,6 +452,11 @@ class MockMarketDataAdapter:
                 auction_change_pct=3.2,
                 auction_turnover_cny=92_000_000,
                 auction_turnover_rate=1.8,
+                previous_consecutive_boards=1,
+                previous_height_label="first_board",
+                theme_role="leader",
+                theme_leader_symbol="002230.SZ",
+                auction_pattern="strong_open",
                 five_min_speed_pct=4.1,
                 five_min_speed_window="mock_latest_rolling_5m",
                 five_min_speed_timestamp="2026-05-26T10:15:00+08:00",
@@ -437,6 +507,11 @@ class MockMarketDataAdapter:
                 auction_change_pct=1.1,
                 auction_turnover_cny=31_000_000,
                 auction_turnover_rate=0.7,
+                previous_consecutive_boards=1,
+                previous_height_label="first_board",
+                theme_role="leader",
+                theme_leader_symbol="300024.SZ",
+                auction_pattern="stable",
                 five_min_speed_pct=2.7,
                 five_min_speed_window="mock_latest_rolling_5m",
                 five_min_speed_timestamp="2026-05-26T10:15:00+08:00",

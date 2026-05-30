@@ -1,0 +1,53 @@
+version: 1
+
+market:
+  base_score: 35.0
+  limit_up_weight: 0.65
+  limit_up_cap: 35.0
+  hot_theme_weight: 3.0
+  hot_theme_cap: 15.0
+  break_board_penalty: 45.0
+  sentiment_hot: 75.0
+  sentiment_warm: 60.0
+  sentiment_mixed: 45.0
+  avoid_break_board_rate: 0.55
+  avoid_score_below: 40.0
+  defensive_break_board_rate: 0.40
+  defensive_score_below: 55.0
+  active_score_at_least: 75.0
+  active_break_board_below: 0.28
+
+candidate:
+  reject_change_pct_below: 5.0
+  strong_change_pct: 9.5
+  b_change_pct: 7.0
+  a_five_min_speed_pct: 1.5
+  a_big_order_ratio: 0.03
+  a_orderbook_quality: 60.0
+  a_theme_count: 2
+  a_seal_quality: 55.0
+  defensive_orderbook_quality: 55.0
+  defensive_big_order_ratio: 0.03
+  defensive_seal_quality: 60.0
+  b_orderbook_quality: 50.0
+  b_seal_quality: 45.0
+
+seal_quality:
+  early_time: "09:45:00"
+  early_score: 35.0
+  morning_time: "10:30:00"
+  morning_score: 22.0
+  afternoon_time: "14:30:00"
+  afternoon_score: 10.0
+  large_seal_amount_cny: 300000000.0
+  large_seal_score: 30.0
+  medium_seal_amount_cny: 100000000.0
+  medium_seal_score: 20.0
+  small_seal_amount_cny: 30000000.0
+  small_seal_score: 10.0
+  strong_seal_to_turnover_ratio: 5.0
+  strong_ratio_score: 25.0
+  medium_seal_to_turnover_ratio: 2.0
+  medium_ratio_score: 16.0
+  small_seal_to_turnover_ratio: 1.0
+  small_ratio_score: 8.0

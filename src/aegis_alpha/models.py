@@ -16,6 +16,17 @@ MarketAction = Literal["active", "selective", "defensive", "avoid"]
 SignalConfidence = Literal["high", "medium", "low", "placeholder", "unavailable"]
 SignalAuthority = Literal["official_doc", "observed_probe", "internal_inference"]
 FreshnessStatus = Literal["fresh", "stale", "unknown"]
+LadderHeight = Literal[
+    "first_board",
+    "second_board",
+    "third_board",
+    "fourth_board",
+    "high_height",
+    "broken",
+    "unknown",
+]
+ThemeLeaderRole = Literal["leader", "co_leader", "follower", "unknown"]
+AuctionPattern = Literal["strong_open", "exit_liquidity", "weak_open", "stable", "unknown"]
 MarketEventType = Literal[
     "THEME_CLUSTER_RISING",
     "APPROACHING_LIMIT_UP",
@@ -81,6 +92,62 @@ class MarketSentimentGate(BaseModel):
     risk_flags: list[str]
     positive_signals: list[str]
     conclusion: str
+    yesterday_limitup_today_premium_pct: float = 0.0
+    consecutive_boards_alive_rate: float = Field(default=0.0, ge=0, le=1)
+    first_to_second_promotion_rate: float = Field(default=0.0, ge=0, le=1)
+    second_to_third_promotion_rate: float = Field(default=0.0, ge=0, le=1)
+    max_height_today: int = 0
+
+
+class LadderEntry(BaseModel):
+    symbol: str
+    trading_day: str
+    consecutive_boards: int = Field(ge=0)
+    height_label: LadderHeight = "unknown"
+    last_limit_up_day: str = ""
+    history_window_days: int = 10
+    notes: list[str] = Field(default_factory=list)
+
+
+class ThemeLeader(BaseModel):
+    theme: str
+    trading_day: str
+    leader_symbol: str
+    leader_name: str
+    leader_consecutive_boards: int = 0
+    leader_first_limit_up_time: str = "unknown"
+    leader_seal_amount_cny: float = 0.0
+    leader_status: Literal["sealed", "broken", "reopened", "unknown"] = "unknown"
+    co_leader_symbols: list[str] = Field(default_factory=list)
+    member_count: int = 0
+    notes: list[str] = Field(default_factory=list)
+
+
+class AuctionAnalysis(BaseModel):
+    symbol: str
+    trading_day: str
+    auction_change_pct: float = 0.0
+    auction_turnover_cny: float = 0.0
+    auction_turnover_rate: float = 0.0
+    pattern: AuctionPattern = "unknown"
+    pattern_reason: str = ""
+    pre_open_change_pct: float = 0.0
+    final_open_change_pct: float = 0.0
+    cancellation_rate: float = Field(default=0.0, ge=0, le=1)
+    notes: list[str] = Field(default_factory=list)
+
+
+class MarketEmotion(BaseModel):
+    trading_day: str
+    yesterday_limitup_today_premium_pct: float = 0.0
+    yesterday_consecutive_boards_alive_count: int = 0
+    yesterday_consecutive_boards_total: int = 0
+    yesterday_consecutive_boards_alive_rate: float = Field(default=0.0, ge=0, le=1)
+    first_to_second_promotion_rate: float = Field(default=0.0, ge=0, le=1)
+    second_to_third_promotion_rate: float = Field(default=0.0, ge=0, le=1)
+    first_board_to_consecutive_ratio: float = Field(default=0.0, ge=0, le=10)
+    max_height_today: int = 0
+    notes: list[str] = Field(default_factory=list)
 
 
 class LimitUpStock(BaseModel):
@@ -373,6 +440,11 @@ class SecondBoardCandidate(BaseModel):
     auction_change_pct: float = 0.0
     auction_turnover_cny: float = 0.0
     auction_turnover_rate: float = 0.0
+    previous_consecutive_boards: int = 0
+    previous_height_label: LadderHeight = "unknown"
+    theme_role: ThemeLeaderRole = "unknown"
+    theme_leader_symbol: str = ""
+    auction_pattern: AuctionPattern = "unknown"
     five_min_speed_pct: float
     five_min_speed_window: str = "unknown"
     five_min_speed_timestamp: str = ""

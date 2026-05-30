@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import threading
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
 from aegis_alpha.agent_context import signal_snapshot_agent_context
 from aegis_alpha.agent_eval import evaluate_agent_replay_response
 from aegis_alpha.adapters.jvquant_websocket import summarize_raw_ab_payload, subscription_codes
@@ -8,6 +12,13 @@ from aegis_alpha.models import AgentReview, AgentReviewCorrection, CandidateOutc
 from aegis_alpha.replay import run_orderbook_replay_fixture
 from aegis_alpha.signals.orderbook import estimate_orderbook_metrics
 from aegis_alpha.storage import AegisAlphaStore, ParquetSink, refresh_snapshot_freshness
+
+
+SH_TZ = ZoneInfo("Asia/Shanghai")
+
+
+def _ts(base: datetime, offset_seconds: int) -> str:
+    return (base + timedelta(seconds=offset_seconds)).isoformat(timespec="seconds")
 
 
 def test_event_scoring_config_loads() -> None:
@@ -36,6 +47,66 @@ def test_signal_window_buffer_calculates_speed_and_flow() -> None:
     assert snapshot.speed_5m_pct == 9.0
     assert snapshot.big_order_net_inflow_ratio == 0.12
     assert snapshot.freshness_status == "fresh"
+
+
+def test_speed_pct_uses_time_window_not_point_count() -> None:
+    buffer = SignalWindowBuffer()
+    base = datetime(2026, 5, 29, 10, 0, 0, tzinfo=SH_TZ)
+
+    for index in range(50):
+        buffer.add_price("600000", _ts(base, index // 2), 10.0, 1_000_000)
+    buffer.add_price("600000", _ts(base, 5 * 60), 10.5, 1_000_000)
+
+    assert abs(buffer.speed_pct("600000", 5) - 5.0) < 0.01
+
+
+def test_speed_pct_partial_window_when_data_shorter_than_minutes() -> None:
+    buffer = SignalWindowBuffer()
+    base = datetime(2026, 5, 29, 10, 0, 0, tzinfo=SH_TZ)
+
+    buffer.add_price("600000", _ts(base, 0), 10.0, 1_000_000)
+    buffer.add_price("600000", _ts(base, 60), 10.1, 1_000_000)
+
+    assert abs(buffer.speed_pct("600000", 5) - 1.0) < 0.01
+
+
+def test_speed_pct_zero_when_single_point() -> None:
+    buffer = SignalWindowBuffer()
+    buffer.add_price("600000", "2026-05-29T10:00:00+08:00", 10.0, 1_000_000)
+
+    assert buffer.speed_pct("600000", 5) == 0.0
+
+
+def test_signal_window_buffer_concurrent_writes_safe() -> None:
+    buffer = SignalWindowBuffer()
+    iterations = 200
+    threads_per_kind = 4
+
+    def add_prices() -> None:
+        for index in range(iterations):
+            buffer.add_price(
+                "600000",
+                f"2026-05-29T10:{index // 60:02d}:{index % 60:02d}+08:00",
+                10.0 + index * 0.001,
+                1_000_000,
+            )
+
+    def add_flows() -> None:
+        for _ in range(iterations):
+            buffer.add_big_order_flow("600000", 1.0)
+
+    threads = []
+    for _ in range(threads_per_kind):
+        threads.append(threading.Thread(target=add_prices))
+        threads.append(threading.Thread(target=add_flows))
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    snapshot = buffer.latest_snapshot("600000")
+
+    assert snapshot.big_order_net_inflow_cny == iterations * threads_per_kind
 
 
 def test_orderbook_metrics_estimate_quality_and_seal_decay() -> None:

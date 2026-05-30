@@ -5,7 +5,7 @@ from typing import Any
 
 from fastmcp import FastMCP
 
-from aegis_alpha.adapters.factory import create_market_data_adapter
+from aegis_alpha.mcp.dependencies import get_market_data_adapter, get_store
 from aegis_alpha.models import AgentReviewCorrection, CandidateOutcomeReview
 from aegis_alpha.runner import status_payload
 from aegis_alpha.storage import AegisAlphaStore
@@ -16,7 +16,7 @@ mcp = FastMCP("aegis-alpha")
 
 def _call_tool(callback: Callable[[Any], Any]) -> Any:
     try:
-        adapter = create_market_data_adapter()
+        adapter = get_market_data_adapter()
         return callback(adapter)
     except Exception as exc:
         return {
@@ -29,7 +29,7 @@ def _call_tool(callback: Callable[[Any], Any]) -> Any:
 
 def _call_store(callback: Callable[[AegisAlphaStore], Any]) -> Any:
     try:
-        return callback(AegisAlphaStore())
+        return callback(get_store())
     except Exception as exc:
         return {
             "data_mode": "unavailable",
@@ -288,6 +288,35 @@ def get_theme_strength(symbol: str) -> dict:
 
 
 @mcp.tool
+def get_theme_leaders(theme: str = "", trading_day: str = "") -> list[dict]:
+    """Return resolved theme leaders for a theme or the current market."""
+    return _call_tool(
+        lambda adapter: [
+            leader.model_dump()
+            for leader in adapter.get_theme_leaders(theme.strip(), trading_day.strip())
+        ]
+    )
+
+
+@mcp.tool
+def get_limit_up_ladder(symbol: str, trading_day: str = "") -> dict:
+    """Return the latest known limit-up ladder height for one stock."""
+    return _call_tool(lambda adapter: adapter.get_limit_up_ladder(symbol, trading_day.strip()).model_dump())
+
+
+@mcp.tool
+def get_market_emotion(trading_day: str = "") -> dict:
+    """Return the upgraded market emotion gauge."""
+    return _call_tool(lambda adapter: adapter.get_market_emotion(trading_day.strip()).model_dump())
+
+
+@mcp.tool
+def get_auction_analysis(symbol: str, trading_day: str = "") -> dict:
+    """Return auction pattern analysis for one stock."""
+    return _call_tool(lambda adapter: adapter.get_auction_analysis(symbol, trading_day.strip()).model_dump())
+
+
+@mcp.tool
 def get_second_board_candidates() -> list[dict]:
     """Return mock candidates for the second-board radar."""
     return _call_tool(lambda adapter: [item.model_dump() for item in adapter.get_second_board_candidates()])
@@ -312,6 +341,11 @@ def get_second_board_candidates_compact(limit: int = 12) -> list[dict]:
                     "auction_change_pct": candidate.auction_change_pct,
                     "auction_turnover_cny": candidate.auction_turnover_cny,
                     "auction_turnover_rate": candidate.auction_turnover_rate,
+                    "auction_pattern": candidate.auction_pattern,
+                    "previous_consecutive_boards": candidate.previous_consecutive_boards,
+                    "previous_height_label": candidate.previous_height_label,
+                    "theme_role": candidate.theme_role,
+                    "theme_leader_symbol": candidate.theme_leader_symbol,
                     "one_min_speed_pct": candidate.one_min_speed_pct,
                     "three_min_speed_pct": candidate.three_min_speed_pct,
                     "five_min_speed_pct": candidate.five_min_speed_pct,
