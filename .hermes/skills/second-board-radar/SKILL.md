@@ -37,6 +37,10 @@ Prefer Aegis Alpha MCP tools. Hermes may expose them with a server prefix such a
 Core tools:
 
 - `get_market_sentiment_gate`
+- `get_market_emotion`
+- `get_theme_leaders`
+- `get_limit_up_ladder`
+- `get_auction_analysis`
 - `get_second_board_candidates_compact`
 - `get_second_board_candidates`
 - `get_second_board_candidate_data_quality`
@@ -76,14 +80,14 @@ Use `get_runner_status` when the user asks whether realtime monitoring is active
 
 ## Standard Workflow
 
-1. Check the market sentiment gate before analyzing individual candidates.
+1. Check the market sentiment gate before analyzing individual candidates. The gate now exposes `consecutive_boards_alive_rate`, `first_to_second_promotion_rate`, `second_to_third_promotion_rate`, `yesterday_limitup_today_premium_pct`, and `max_height_today` directly — read these before drilling into candidates. If these emotion fields are all zero with a note explaining they are placeholder, treat them as unavailable rather than as a cold-market signal.
 2. If the gate action is `avoid`, say the environment is unsuitable for board-chasing and stop at a defensive market summary.
 3. If the gate action is `defensive`, only discuss why risk is elevated and list what would need to improve.
 4. If Aegis Alpha data is unavailable, stale beyond the freshness rule, or empty, follow the data availability rule before continuing.
-5. If the gate action is `selective` or `active`, fetch second-board candidates with `get_second_board_candidates_compact` first.
+5. If the gate action is `selective` or `active`, call `get_theme_leaders` and `get_market_emotion` for board-level context, then fetch second-board candidates with `get_second_board_candidates_compact`. Use `get_limit_up_ladder(symbol)` when you need to confirm a single stock's connect-board height; the candidate output already carries `previous_consecutive_boards`, `previous_height_label`, `theme_role`, and `theme_leader_symbol` so you usually do not need an extra call per candidate.
 6. If Aegis Alpha returns recent market events, use them as context for re-scoring candidates, but do not treat event suggestions as order instructions.
 7. For each candidate, analyze only the structured signals returned by Aegis Alpha:
-   market gate, auction metrics, 1/3/5/10-minute speed structure, big-order net inflow ratio, concept/topic tags, first/final limit-up time, seal amount, max seal amount, seal-to-turnover ratio, break/reseal count, queue position note, same-theme rising count, orderbook quality, historical touch-limit success rate, and historical gap-up statistics.
+   market gate, auction metrics (including `auction_pattern` from `get_auction_analysis` when needed), connect-board ladder (`previous_consecutive_boards`, `previous_height_label`), theme role (`theme_role`, `theme_leader_symbol`), 1/3/5/10-minute speed structure, big-order net inflow ratio, concept/topic tags, first/final limit-up time, seal amount, max seal amount, seal-to-turnover ratio, break/reseal count, queue position note, same-theme rising count, orderbook quality, historical touch-limit success rate, and historical gap-up statistics. Reject board-chasing on a `follower` when its theme leader has broken board.
 8. Produce a watchlist report with grades `A`, `B`, `C`, or `REJECT`.
 9. Always include structured trigger conditions and avoid conditions.
 10. Always state both model identity and market-data identity. Keep `llm_provider` / `llm_model` separate from `market_data_mode` / `market_data_provider`.

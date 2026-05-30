@@ -129,6 +129,10 @@ When `AEGIS_ALPHA_MARKET_DATA_PROVIDER=jvquant`, Hermes can access jvQuant-backe
 - `get_second_board_candidates`
 - `get_second_board_candidate_data_quality(symbol)`
 - `explain_second_board_candidate(symbol)`
+- `get_theme_leaders(theme, trading_day)`
+- `get_limit_up_ladder(symbol, trading_day)`
+- `get_market_emotion(trading_day)`
+- `get_auction_analysis(symbol, trading_day)`
 - `get_stock_realtime_snapshot(symbol)`
 - `get_stock_orderbook_snapshot(symbol)`
 - `get_stock_minute_replay_snapshot(symbol, end_day, limit_days)`
@@ -333,6 +337,10 @@ The MVP exposes these read-only tools:
 - `get_correction_action_history`
 - `get_stock_history_limitup_stats`
 - `get_theme_strength`
+- `get_theme_leaders`
+- `get_limit_up_ladder`
+- `get_market_emotion`
+- `get_auction_analysis`
 - `get_second_board_candidates`
 - `explain_candidate`
 - `explain_second_board_candidate`

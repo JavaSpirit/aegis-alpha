@@ -31,6 +31,10 @@ mcp_servers:
         - get_correction_action_history
         - get_stock_history_limitup_stats
         - get_theme_strength
+        - get_theme_leaders
+        - get_limit_up_ladder
+        - get_market_emotion
+        - get_auction_analysis
         - get_second_board_candidates
         - get_second_board_candidates_compact
         - get_second_board_candidate_data_quality
