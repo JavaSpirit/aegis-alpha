@@ -437,7 +437,11 @@ class MockMarketDataAdapter:
         return review
 
     def get_second_board_candidates(self) -> list[SecondBoardCandidate]:
-        return [
+        # Step 1: raw candidates without resolver-derived fields.
+        # theme_role / previous_consecutive_boards / previous_height_label /
+        # theme_leader_symbol are intentionally omitted here; they are filled
+        # by the real resolver logic in Step 2 below.
+        raw = [
             SecondBoardCandidate(
                 symbol="002230.SZ",
                 name="科大讯飞",
@@ -452,10 +456,6 @@ class MockMarketDataAdapter:
                 auction_change_pct=3.2,
                 auction_turnover_cny=92_000_000,
                 auction_turnover_rate=1.8,
-                previous_consecutive_boards=1,
-                previous_height_label="first_board",
-                theme_role="leader",
-                theme_leader_symbol="002230.SZ",
                 auction_pattern="strong_open",
                 five_min_speed_pct=4.1,
                 five_min_speed_window="mock_latest_rolling_5m",
@@ -507,10 +507,6 @@ class MockMarketDataAdapter:
                 auction_change_pct=1.1,
                 auction_turnover_cny=31_000_000,
                 auction_turnover_rate=0.7,
-                previous_consecutive_boards=1,
-                previous_height_label="first_board",
-                theme_role="leader",
-                theme_leader_symbol="300024.SZ",
                 auction_pattern="stable",
                 five_min_speed_pct=2.7,
                 five_min_speed_window="mock_latest_rolling_5m",
@@ -549,6 +545,47 @@ class MockMarketDataAdapter:
                 ],
             ),
         ]
+
+        # Step 2: resolve theme_role / previous_consecutive_boards /
+        # previous_height_label / theme_leader_symbol via real resolver
+        # methods, exactly as the jvquant adapter will do in Wave 2.
+        all_leaders = self.get_theme_leaders()
+        leaders_by_theme = {leader.theme: leader for leader in all_leaders}
+
+        resolved: list[SecondBoardCandidate] = []
+        for candidate in raw:
+            # --- LimitUpLadderResolver: fill board-height fields ---
+            ladder_entry = self.get_limit_up_ladder(candidate.symbol)
+            previous_consecutive_boards = ladder_entry.consecutive_boards
+            previous_height_label = ladder_entry.height_label
+
+            # --- ThemeLeaderResolver: fill theme-role fields ---
+            leader = leaders_by_theme.get(candidate.theme)
+            if leader is None:
+                theme_role = "unknown"
+                theme_leader_symbol = ""
+            elif candidate.symbol == leader.leader_symbol:
+                theme_role = "leader"
+                theme_leader_symbol = leader.leader_symbol
+            elif candidate.symbol in (leader.co_leader_symbols or []):
+                theme_role = "co_leader"
+                theme_leader_symbol = leader.leader_symbol
+            else:
+                theme_role = "follower"
+                theme_leader_symbol = leader.leader_symbol
+
+            resolved.append(
+                candidate.model_copy(
+                    update={
+                        "previous_consecutive_boards": previous_consecutive_boards,
+                        "previous_height_label": previous_height_label,
+                        "theme_role": theme_role,
+                        "theme_leader_symbol": theme_leader_symbol,
+                    }
+                )
+            )
+
+        return resolved
 
     def _mock_second_board_data_quality(self) -> dict[str, SignalMetadata]:
         timestamp = "2026-05-26T10:15:00+08:00"
