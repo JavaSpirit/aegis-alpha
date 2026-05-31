@@ -35,6 +35,16 @@ mcp_servers:
         - get_limit_up_ladder
         - get_market_emotion
         - get_auction_analysis
+        - get_seal_timeline
+        - get_top_themes_today
+        - generate_daily_review
+        - generate_weekly_pattern_report
+        - get_pending_alerts
+        - acknowledge_alert
+        - create_watchlist
+        - update_watchlist_state
+        - close_watchlist
+        - list_active_watchlists
         - get_second_board_candidates
         - get_second_board_candidates_compact
         - get_second_board_candidate_data_quality

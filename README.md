@@ -133,6 +133,16 @@ When `AEGIS_ALPHA_MARKET_DATA_PROVIDER=jvquant`, Hermes can access jvQuant-backe
 - `get_limit_up_ladder(symbol, trading_day)`
 - `get_market_emotion(trading_day)`
 - `get_auction_analysis(symbol, trading_day)`
+- `get_seal_timeline(symbol, trading_day)`
+- `get_top_themes_today(trading_day, limit)`
+- `generate_daily_review(trading_day)`
+- `generate_weekly_pattern_report(start_day, end_day)`
+- `get_pending_alerts(limit)`
+- `acknowledge_alert(alert_id, note)`
+- `create_watchlist(owner, label, symbols, expires_at)`
+- `update_watchlist_state(watchlist_id, symbol, new_grade, action, note)`
+- `close_watchlist(watchlist_id, note)`
+- `list_active_watchlists(owner)`
 - `get_stock_realtime_snapshot(symbol)`
 - `get_stock_orderbook_snapshot(symbol)`
 - `get_stock_minute_replay_snapshot(symbol, end_day, limit_days)`
@@ -341,6 +351,16 @@ The MVP exposes these read-only tools:
 - `get_limit_up_ladder`
 - `get_market_emotion`
 - `get_auction_analysis`
+- `get_seal_timeline`
+- `get_top_themes_today`
+- `generate_daily_review`
+- `generate_weekly_pattern_report`
+- `get_pending_alerts`
+- `acknowledge_alert`
+- `create_watchlist`
+- `update_watchlist_state`
+- `close_watchlist`
+- `list_active_watchlists`
 - `get_second_board_candidates`
 - `explain_candidate`
 - `explain_second_board_candidate`

@@ -39,8 +39,10 @@ Core tools:
 - `get_market_sentiment_gate`
 - `get_market_emotion`
 - `get_theme_leaders`
+- `get_top_themes_today`
 - `get_limit_up_ladder`
 - `get_auction_analysis`
+- `get_seal_timeline`
 - `get_second_board_candidates_compact`
 - `get_second_board_candidates`
 - `get_second_board_candidate_data_quality`
@@ -54,6 +56,14 @@ Core tools:
 - `get_runner_status`
 - `explain_market_event`
 - `get_theme_strength`
+- `create_watchlist`
+- `update_watchlist_state`
+- `close_watchlist`
+- `list_active_watchlists`
+- `get_pending_alerts`
+- `acknowledge_alert`
+- `generate_daily_review`
+- `generate_weekly_pattern_report`
 
 Useful supporting tools:
 
@@ -93,6 +103,10 @@ Use `get_runner_status` when the user asks whether realtime monitoring is active
 10. Always state both model identity and market-data identity. Keep `llm_provider` / `llm_model` separate from `market_data_mode` / `market_data_provider`.
 11. After every candidate grade, explain the reason in natural Chinese. Prefer the MCP `grade_reason` field when present; if it is absent, synthesize one from the returned metrics without inventing missing data.
 12. Use the full `get_second_board_candidates` only when the compact output is insufficient. If evidence details are needed, prefer `get_second_board_candidate_data_quality(symbol)` over fetching the full candidate pool again, to avoid tool-output truncation.
+13. For multi-hour monitoring, create a watchlist with `create_watchlist(owner=user, label=YYYY-MM-DD label, symbols=A|B|C)` early in the session. Use `update_watchlist_state(watchlist_id, symbol, new_grade, action, note)` whenever a candidate's grade changes during the day. Use `close_watchlist(watchlist_id, note)` at session end to seal the audit trail. List existing watchlists with `list_active_watchlists(owner)`.
+14. Read `get_pending_alerts(limit)` whenever the user starts a new chat to surface anything the runner detected while away. After acting on an alert call `acknowledge_alert(alert_id, note)`. The runner persists alerts for `SEAL_ORDER_DECAY`, `BIG_ORDER_INFLOW_SPIKE`, and `THEME_DIVERGENCE` events; do not re-run the same analysis if the alert is still pending.
+15. After 15:10, run `generate_daily_review(trading_day=today)` to produce the structured review item used by Phase 3 review-and-correction. For weekly pattern audits use `generate_weekly_pattern_report(start_day, end_day)` (max 14-day window recommended).
+16. Use `get_top_themes_today(trading_day, limit)` to surface the leading themes ranked by member count and leader connect-board height, and `get_seal_timeline(symbol)` to inspect intraday seal/break events when a candidate's `theme_role` shows `co_leader` or `follower`.
 
 ## Candidate Interpretation Rules
 
