@@ -28,6 +28,8 @@ from aegis_alpha.models import (
     MarketEvent,
     MinuteReplaySnapshot,
     OrderbookQueueLevel,
+    SealTimeline,
+    SealTimelineEvent,
     SecondBoardCandidate,
     SignalSnapshot,
     StockOrderbookSnapshot,
@@ -340,6 +342,14 @@ class JvQuantMarketDataAdapter:
         for snapshot in snapshots:
             events.extend(detector.detect_from_snapshot(snapshot))
         events.extend(detector.detect_theme_cluster(snapshots))
+        from aegis_alpha.seal_timeline.divergence import detect_theme_divergence
+        from aegis_alpha.seal_timeline.tracker import SealTimelineTracker
+        tracker = SealTimelineTracker(store)
+        trading_day = datetime.now(SH_TZ).date().isoformat()
+        leaders = self.get_theme_leaders(trading_day=trading_day)
+        divergence_events = detect_theme_divergence(leaders, tracker, trading_day=trading_day)
+        store.save_market_events(divergence_events)
+        events.extend(divergence_events)
         store.save_market_events(events)
         recent = store.recent_market_events(limit, event_type)
         if not recent:
@@ -381,6 +391,16 @@ class JvQuantMarketDataAdapter:
     def record_candidate_outcome(self, review: CandidateOutcomeReview) -> CandidateOutcomeReview:
         review.symbol = normalize_symbol(review.symbol)
         return AegisAlphaStore().save_review_outcome(review)
+
+    def get_seal_timeline(self, symbol: str, trading_day: str = "") -> SealTimeline:
+        from aegis_alpha.seal_timeline.tracker import SealTimelineTracker
+        normalized = normalize_symbol(symbol)
+        day = trading_day or datetime.now(SH_TZ).date().isoformat()
+        return SealTimelineTracker(AegisAlphaStore()).get_timeline(normalized, day)
+
+    def record_seal_timeline_event(self, event: SealTimelineEvent) -> SealTimelineEvent:
+        from aegis_alpha.seal_timeline.tracker import SealTimelineTracker
+        return SealTimelineTracker(AegisAlphaStore()).record(event)
 
     def get_second_board_candidates(self):
         payload = self._query(

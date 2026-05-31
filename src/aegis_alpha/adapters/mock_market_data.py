@@ -19,6 +19,8 @@ from aegis_alpha.models import (
     MinuteReplayBar,
     MinuteReplaySnapshot,
     OrderbookQueueLevel,
+    SealTimeline,
+    SealTimelineEvent,
     SecondBoardCandidate,
     SignalEvidence,
     SignalMetadata,
@@ -774,3 +776,23 @@ class MockMarketDataAdapter:
             data_timestamp=_now(),
             disclaimer="Research and watchlist output only. This is not investment advice or an order instruction.",
         )
+
+    def get_seal_timeline(self, symbol: str, trading_day: str = "") -> SealTimeline:
+        day = trading_day or datetime.now(SH_TZ).date().isoformat()
+        normalized = symbol.strip().upper()
+        if normalized.startswith("002230"):
+            return SealTimeline(
+                symbol=normalized,
+                trading_day=day,
+                events=[
+                    SealTimelineEvent(symbol=normalized, trading_day=day, kind="first_seal", occurred_at=f"{day}T09:56:12+08:00", seal_amount_cny=128_000_000),
+                ],
+                final_status="sealed",
+                break_count=0,
+                reseal_count=0,
+            )
+        return SealTimeline(symbol=normalized, trading_day=day, events=[], final_status="unknown")
+
+    def record_seal_timeline_event(self, event: SealTimelineEvent) -> SealTimelineEvent:
+        # Mock adapter does not persist; return as-is for contract.
+        return event

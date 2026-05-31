@@ -17,6 +17,8 @@ from aegis_alpha.models import (
     MarketSnapshot,
     MinuteReplaySnapshot,
     RealtimeConnectionStatus,
+    SealTimeline,
+    SealTimelineEvent,
     SecondBoardCandidate,
     SignalSnapshot,
     StockOrderbookSnapshot,
@@ -80,3 +82,7 @@ class MarketDataAdapter(Protocol):
     def explain_candidate(self, symbol: str) -> CandidateExplanation: ...
 
     def explain_second_board_candidate(self, symbol: str) -> CandidateExplanation: ...
+
+    def get_seal_timeline(self, symbol: str, trading_day: str = "") -> SealTimeline: ...
+
+    def record_seal_timeline_event(self, event: SealTimelineEvent) -> SealTimelineEvent: ...
