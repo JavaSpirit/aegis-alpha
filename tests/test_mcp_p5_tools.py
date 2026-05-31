@@ -32,3 +32,13 @@ def test_get_st_pool_returns_list():
     assert isinstance(rows, list)
     if rows:
         assert rows[0]["pool_kind"] == "st"
+
+
+def test_compact_candidate_includes_limitup_driver_and_pattern():
+    from aegis_alpha.mcp.server import get_second_board_candidates_compact
+
+    items = get_second_board_candidates_compact(limit=5)
+    assert items
+    for item in items:
+        assert "limitup_driver_type" in item
+        assert "intraday_pattern" in item
