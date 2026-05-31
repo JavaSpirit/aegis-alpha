@@ -918,8 +918,7 @@ class AegisAlphaStore:
                     theme = excluded.theme,
                     theme_role = excluded.theme_role,
                     previous_consecutive_boards = excluded.previous_consecutive_boards,
-                    payload_json = excluded.payload_json,
-                    created_at = excluded.created_at
+                    payload_json = excluded.payload_json
                 """,
                 (
                     snap.symbol,
