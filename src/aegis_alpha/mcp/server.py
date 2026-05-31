@@ -634,6 +634,25 @@ def run_backtest(rule_changes_json: str, start_day: str, end_day: str) -> dict:
 
 
 @mcp.tool
+def get_dragon_tiger(symbol: str, trading_day: str) -> dict:
+    """Return one symbol's dragon-tiger record for the given day (mock or jvquant placeholder)."""
+    safe_symbol = symbol.strip()
+    safe_day = trading_day.strip()
+    if not (safe_symbol and safe_day):
+        return {"data_mode": "unavailable", "error": "symbol and trading_day are required"}
+    return _call_tool(lambda adapter: adapter.get_dragon_tiger(safe_symbol, safe_day).model_dump())
+
+
+@mcp.tool
+def get_active_seats_today(trading_day: str) -> list[dict] | dict:
+    """Aggregate hot-money seats by alias for a single trading day."""
+    safe_day = trading_day.strip()
+    if not safe_day:
+        return {"data_mode": "unavailable", "error": "trading_day is required"}
+    return _call_tool(lambda adapter: adapter.get_active_seats_today(safe_day))
+
+
+@mcp.tool
 def get_recent_backtests(limit: int = 10) -> list[dict] | dict:
     """List recent backtest runs."""
     safe_limit = max(1, min(int(limit or 10), 50))

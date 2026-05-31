@@ -50,6 +50,8 @@ mcp_servers:
         - get_history_stats
         - run_backtest
         - get_recent_backtests
+        - get_dragon_tiger
+        - get_active_seats_today
         - get_second_board_candidates
         - get_second_board_candidates_compact
         - get_second_board_candidate_data_quality
