@@ -423,6 +423,136 @@ def explain_second_board_candidate(symbol: str) -> dict:
     return _call_tool(lambda adapter: adapter.explain_second_board_candidate(symbol).model_dump())
 
 
+@mcp.tool
+def get_seal_timeline(symbol: str, trading_day: str = "") -> dict:
+    """Return the intraday seal/break timeline for one stock."""
+    return _call_tool(lambda adapter: adapter.get_seal_timeline(symbol, trading_day.strip()).model_dump())
+
+
+@mcp.tool
+def generate_daily_review(trading_day: str) -> dict:
+    """Generate today's review aggregating candidates and outcomes."""
+    from aegis_alpha.reviews.daily import generate_daily_review as _gen
+
+    safe_day = trading_day.strip()
+    if not safe_day:
+        return {"data_mode": "unavailable", "error": "trading_day is required"}
+
+    def _build(adapter: Any) -> dict:
+        return _gen(adapter, get_store(), trading_day=safe_day).model_dump()
+
+    return _call_tool(_build)
+
+
+@mcp.tool
+def generate_weekly_pattern_report(start_day: str, end_day: str) -> dict:
+    """Generate grade x outcome report between start_day and end_day (inclusive)."""
+    from aegis_alpha.reviews.weekly import generate_weekly_pattern_report as _gen
+
+    safe_start = start_day.strip()
+    safe_end = end_day.strip()
+    if not (safe_start and safe_end):
+        return {"data_mode": "unavailable", "error": "start_day and end_day are required"}
+    return _call_store(lambda store: _gen(store, start_day=safe_start, end_day=safe_end).model_dump())
+
+
+@mcp.tool
+def get_pending_alerts(limit: int = 20) -> list[dict] | dict:
+    """Return pending alerts that have not been acknowledged."""
+    from aegis_alpha.alerts.store import AlertStore
+
+    safe_limit = max(1, min(int(limit or 20), 100))
+    return _call_store(lambda store: [a.model_dump() for a in AlertStore(store).list_pending(limit=safe_limit)])
+
+
+@mcp.tool
+def acknowledge_alert(alert_id: str, note: str = "") -> dict:
+    """Acknowledge a pending alert."""
+    from aegis_alpha.alerts.store import AlertStore
+
+    safe_id = alert_id.strip()
+    if not safe_id:
+        return {"data_mode": "unavailable", "error": "alert_id is required"}
+    return _call_store(lambda store: AlertStore(store).acknowledge(safe_id, note=note.strip()).model_dump())
+
+
+@mcp.tool
+def create_watchlist(owner: str, label: str, symbols: str = "", expires_at: str = "") -> dict:
+    """Create a new watchlist for `owner` with optional pipe-separated `symbols`."""
+    from aegis_alpha.watchlists.manager import WatchlistManager
+
+    safe_symbols = [item.strip() for item in symbols.split("|") if item.strip()]
+    return _call_store(
+        lambda store: WatchlistManager(store)
+        .create(
+            owner=owner.strip(),
+            label=label.strip(),
+            symbols=safe_symbols,
+            expires_at=expires_at.strip(),
+        )
+        .model_dump()
+    )
+
+
+@mcp.tool
+def update_watchlist_state(
+    watchlist_id: str,
+    symbol: str,
+    new_grade: str,
+    action: str,
+    note: str = "",
+) -> dict:
+    """Update one entry's grade and action history in a watchlist."""
+    from aegis_alpha.watchlists.manager import WatchlistManager
+
+    return _call_store(
+        lambda store: WatchlistManager(store)
+        .update_state(
+            watchlist_id.strip(),
+            symbol.strip(),
+            new_grade=new_grade.strip().upper(),
+            action=action.strip().lower(),
+            note=note.strip(),
+        )
+        .model_dump()
+    )
+
+
+@mcp.tool
+def close_watchlist(watchlist_id: str, note: str = "") -> dict:
+    """Close an active watchlist."""
+    from aegis_alpha.watchlists.manager import WatchlistManager
+
+    return _call_store(
+        lambda store: WatchlistManager(store).close(watchlist_id.strip(), note=note.strip()).model_dump()
+    )
+
+
+@mcp.tool
+def list_active_watchlists(owner: str = "") -> list[dict] | dict:
+    """List active watchlists for an owner (or all owners if blank)."""
+    from aegis_alpha.watchlists.manager import WatchlistManager
+
+    return _call_store(
+        lambda store: [item.model_dump() for item in WatchlistManager(store).list_active(owner=owner.strip())]
+    )
+
+
+@mcp.tool
+def get_top_themes_today(trading_day: str = "", limit: int = 10) -> list[dict]:
+    """Return today's top themes ranked by member count and leader height."""
+    from aegis_alpha.themes.ranking import compute_top_themes
+
+    safe_day = trading_day.strip()
+    safe_limit = max(1, min(int(limit or 10), 50))
+
+    def _build(adapter: Any) -> list[dict]:
+        leaders = adapter.get_theme_leaders(trading_day=safe_day)
+        return [r.model_dump() for r in compute_top_themes(leaders, trading_day=safe_day or "", limit=safe_limit)]
+
+    return _call_tool(_build)
+
+
 def main() -> None:
     mcp.run()
 
