@@ -20,6 +20,7 @@ from aegis_alpha.models import (
     CandidateExplanation,
     CandidateOutcomeReview,
     EventScoringConfig,
+    HistoryStats,
     LadderEntry,
     LimitUpStock,
     MarketEmotion,
@@ -200,6 +201,20 @@ class JvQuantMarketDataAdapter:
 
     def get_stock_history_limitup_stats(self, symbol: str):
         return self._fallback.get_stock_history_limitup_stats(symbol)
+
+    def get_history_stats(self, symbol: str) -> HistoryStats:
+        from datetime import timedelta
+        from aegis_alpha.feedback.history_stats import compute_history_stats
+
+        normalized = normalize_symbol(symbol)
+        end = datetime.now(SH_TZ).date()
+        start = end - timedelta(days=365 * 3)
+        return compute_history_stats(
+            store=AegisAlphaStore(),
+            symbol=normalized,
+            start_day=start.isoformat(),
+            end_day=end.isoformat(),
+        )
 
     def get_theme_strength(self, symbol: str):
         return self._fallback.get_theme_strength(symbol)
@@ -474,6 +489,13 @@ class JvQuantMarketDataAdapter:
             leader.theme: leader for leader in theme_leaders_list
         }
 
+        history_stats_by_symbol: dict[str, HistoryStats] = {}
+        for row in rows[:max_candidates]:
+            row_symbol = P._symbol_from_row(row)
+            if not row_symbol:
+                continue
+            history_stats_by_symbol[row_symbol] = self.get_history_stats(row_symbol)
+
         candidates: list[SecondBoardCandidate] = []
         for index, row in enumerate(rows[:max_candidates]):
             candidate = build_one_candidate(
@@ -498,6 +520,7 @@ class JvQuantMarketDataAdapter:
                 get_orderbook=self.get_stock_orderbook_snapshot,
                 ladder_entries=ladder_entries,
                 theme_leaders_by_theme=theme_leaders_by_theme,
+                history_stats_by_symbol=history_stats_by_symbol,
             )
             candidates.append(candidate)
 

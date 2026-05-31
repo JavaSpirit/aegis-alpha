@@ -8,6 +8,7 @@ from aegis_alpha.models import (
     CandidateExplanation,
     CandidateOutcomeReview,
     EventScoringConfig,
+    HistoryStats,
     LadderEntry,
     LimitUpHistoryStats,
     LimitUpStock,
@@ -78,6 +79,8 @@ class MarketDataAdapter(Protocol):
     def get_auction_analysis(self, symbol: str, trading_day: str = "") -> AuctionAnalysis: ...
 
     def get_second_board_candidates(self) -> list[SecondBoardCandidate]: ...
+
+    def get_history_stats(self, symbol: str) -> HistoryStats: ...
 
     def explain_candidate(self, symbol: str) -> CandidateExplanation: ...
 

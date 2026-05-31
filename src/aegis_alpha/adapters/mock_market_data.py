@@ -9,6 +9,7 @@ from aegis_alpha.models import (
     CandidateExplanation,
     CandidateOutcomeReview,
     EventScoringConfig,
+    HistoryStats,
     LadderEntry,
     LimitUpHistoryStats,
     LimitUpStock,
@@ -796,3 +797,25 @@ class MockMarketDataAdapter:
     def record_seal_timeline_event(self, event: SealTimelineEvent) -> SealTimelineEvent:
         # Mock adapter does not persist; return as-is for contract.
         return event
+
+    def get_history_stats(self, symbol: str) -> HistoryStats:
+        normalized = symbol.strip().upper()
+        if normalized.startswith("002230"):
+            return HistoryStats(
+                symbol=normalized,
+                sample_size=18,
+                sample_window_start="2023-05-31",
+                sample_window_end="2026-05-31",
+                touch_limit_up_success_rate=0.72,
+                sealed_next_day_gap_up_rate=0.61,
+                median_next_day_premium_pct=2.4,
+                avg_next_day_premium_pct=3.1,
+                confidence="high",
+                notes=["Mock historical stats for contract tests."],
+            )
+        return HistoryStats(
+            symbol=normalized,
+            sample_size=0,
+            confidence="insufficient_sample",
+            notes=["Mock has no history for this symbol."],
+        )

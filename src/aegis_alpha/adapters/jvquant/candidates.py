@@ -14,6 +14,7 @@ from aegis_alpha.adapters.jvquant.scoring import (
 from aegis_alpha.clock import SH_TZ
 from aegis_alpha.grading import CandidateGradingConfig
 from aegis_alpha.models import (
+    HistoryStats,
     LadderEntry,
     MinuteReplaySnapshot,
     SecondBoardCandidate,
@@ -53,6 +54,7 @@ def build_one_candidate(
     get_orderbook: Callable[[str], StockOrderbookSnapshot],
     ladder_entries: dict[str, LadderEntry],
     theme_leaders_by_theme: dict[str, ThemeLeader],
+    history_stats_by_symbol: dict[str, HistoryStats],
 ) -> SecondBoardCandidate:
     symbol = P._symbol_from_row(row)
     seal_row = seal_rows.get(symbol, {})
@@ -261,6 +263,10 @@ def build_one_candidate(
         minute_replay_timestamp=minute_replay_timestamp,
         minute_replay_bar_count=minute_replay_bar_count,
     )
+    _stats = history_stats_by_symbol.get(symbol)
+    three_year_touch_rate = _stats.touch_limit_up_success_rate if _stats is not None else 0.0
+    three_year_gap_up_rate = _stats.sealed_next_day_gap_up_rate if _stats is not None else 0.0
+
     return build_second_board_candidate(
         symbol=symbol,
         name=P._name_from_row(row),
@@ -306,6 +312,8 @@ def build_one_candidate(
         max_seal_volume_shares=max_seal_volume_shares,
         same_theme_rising_count=theme_counts[theme],
         orderbook_quality=orderbook_quality,
+        three_year_touch_limit_success_rate=three_year_touch_rate,
+        three_year_sealed_next_day_gap_up_rate=three_year_gap_up_rate,
         estimated=estimated,
         grade=grade,
         grade_reason=grade_reason,
@@ -363,6 +371,8 @@ def build_second_board_candidate(
     max_seal_volume_shares: float,
     same_theme_rising_count: int,
     orderbook_quality: float,
+    three_year_touch_limit_success_rate: float,
+    three_year_sealed_next_day_gap_up_rate: float,
     estimated: float,
     grade: str,
     grade_reason: str,
@@ -465,8 +475,8 @@ def build_second_board_candidate(
         max_seal_volume_shares=max_seal_volume_shares,
         same_theme_rising_count=same_theme_rising_count,
         orderbook_quality_score=orderbook_quality,
-        three_year_touch_limit_success_rate=0.0,
-        three_year_sealed_next_day_gap_up_rate=0.0,
+        three_year_touch_limit_success_rate=three_year_touch_limit_success_rate,
+        three_year_sealed_next_day_gap_up_rate=three_year_sealed_next_day_gap_up_rate,
         estimated_seal_probability=estimated,
         grade=grade,
         grade_reason=grade_reason,
