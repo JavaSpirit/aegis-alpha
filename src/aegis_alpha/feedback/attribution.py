@@ -5,6 +5,7 @@ import json
 from dataclasses import dataclass
 
 from aegis_alpha.clock import now_iso
+from aegis_alpha.logging_setup import get_logger
 from aegis_alpha.models import (
     MarketAction,
     OutcomeAttribution,
@@ -13,6 +14,8 @@ from aegis_alpha.models import (
 )
 from aegis_alpha.protocols import MarketDataAdapter
 from aegis_alpha.storage import AegisAlphaStore
+
+_LOGGER = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -123,6 +126,15 @@ def attribute_outcome(inputs: AttributionInputs) -> OutcomeAttribution:
     )
 
 
+def _safe_float(value: object, default: float = 0.0) -> float:
+    if value is None or value == "":
+        return default
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+
+
 def attribute_from_stored_data(
     *,
     adapter: MarketDataAdapter,
@@ -133,7 +145,8 @@ def attribute_from_stored_data(
     """Resolve attribution by joining historical snapshot + outcome + theme leader.
 
     Returns None when no outcome row exists for (symbol, trading_day) — there is
-    nothing to attribute.
+    nothing to attribute. Also returns None when no historical snapshot exists
+    for (symbol, trading_day) — there is no payload to derive inputs from.
     """
     outcome = store.get_review_outcome(symbol, trading_day)
     # get_review_outcome returns a placeholder when missing; sealed_second_board is
@@ -156,14 +169,22 @@ def attribute_from_stored_data(
     try:
         timeline = adapter.get_seal_timeline(leader_symbol, trading_day)
         leader_status = timeline.final_status
-    except Exception:
+    except Exception as exc:
+        _LOGGER.warning(
+            "event=attribute_seal_timeline_failed symbol=%s trading_day=%s error=%s",
+            symbol, trading_day, type(exc).__name__,
+        )
         leader_status = "unknown"
 
     market_action = "selective"
     try:
         gate = adapter.get_market_sentiment_gate()
         market_action = gate.action
-    except Exception:
+    except Exception as exc:
+        _LOGGER.warning(
+            "event=attribute_sentiment_gate_failed symbol=%s trading_day=%s error=%s",
+            symbol, trading_day, type(exc).__name__,
+        )
         market_action = "selective"
 
     inputs = AttributionInputs(
@@ -175,9 +196,9 @@ def attribute_from_stored_data(
         theme_leader_symbol=leader_symbol,
         theme_leader_final_status=leader_status,
         market_action=market_action,
-        auction_change_pct=float(raw.get("auction_change_pct") or 0.0),
+        auction_change_pct=_safe_float(raw.get("auction_change_pct")),
         first_limit_up_time=str(raw.get("first_limit_up_time") or "unknown"),
-        seal_decay_pct=float(raw.get("seal_decay_pct") or 0.0),
+        seal_decay_pct=_safe_float(raw.get("seal_decay_pct")),
         previous_consecutive_boards=snap.previous_consecutive_boards,
     )
     attribution = attribute_outcome(inputs)
