@@ -52,6 +52,8 @@ def compute_history_stats(
     avg_premium = round(sum(premiums) / sample_size, 4) if sample_size else 0.0
     median_premium = round(statistics.median(premiums), 4) if premiums else 0.0
 
+    # Rates use 6 decimal places (not 4) so common fractions like 2/3 remain
+    # within the 1e-6 tolerance downstream comparisons rely on.
     return HistoryStats(
         symbol=symbol,
         sample_size=sample_size,
