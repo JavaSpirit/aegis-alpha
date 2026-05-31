@@ -278,6 +278,28 @@ class AegisAlphaStore:
             notes=["No stored review outcome yet."],
         )
 
+    def list_review_outcomes(
+        self, *, symbol: str = "", start_day: str = "", end_day: str = ""
+    ) -> list[CandidateOutcomeReview]:
+        clauses: list[str] = []
+        params: list[object] = []
+        if symbol:
+            clauses.append("symbol = ?")
+            params.append(symbol)
+        if start_day:
+            clauses.append("trading_day >= ?")
+            params.append(start_day)
+        if end_day:
+            clauses.append("trading_day <= ?")
+            params.append(end_day)
+        query = "SELECT payload_json FROM review_outcomes"
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY trading_day ASC"
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [CandidateOutcomeReview.model_validate_json(row[0]) for row in rows]
+
     def save_provider_run(
         self,
         *,
