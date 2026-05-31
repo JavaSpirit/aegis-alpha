@@ -107,3 +107,17 @@ def backtest_grading_rule(inputs: BacktestInputs) -> BacktestRun:
             f"Rule changes: {sorted(inputs.rule_changes.items())}.",
         ],
     )
+
+
+def run_backtest_and_advise(inputs: BacktestInputs) -> tuple[BacktestRun, "ThresholdAdviceReport"]:
+    """Run a backtest, persist the run, generate threshold advice from window attributions."""
+    from aegis_alpha.feedback.threshold_advice import propose_threshold_changes
+
+    run = backtest_grading_rule(inputs)
+    inputs.store.save_backtest_run(run)
+    attributions = inputs.store.list_attributions(
+        start_day=inputs.start_day,
+        end_day=inputs.end_day,
+    )
+    advice = propose_threshold_changes(run=run, attributions=attributions)
+    return run, advice
