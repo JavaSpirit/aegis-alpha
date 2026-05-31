@@ -68,3 +68,29 @@ def test_list_active_seats_today_aggregates_known_aliases(tmp_path):
     assert "章盟主" in aliases
     assert aliases["章盟主"]["symbol_count"] == 2
     assert aliases["章盟主"]["total_net_buy_cny"] == 15_000_000.0
+
+
+def test_save_and_list_contrarian_pool(tmp_path):
+    from aegis_alpha.models import ContrarianPoolEntry
+    from aegis_alpha.storage import AegisAlphaStore
+
+    store = AegisAlphaStore(str(tmp_path / "cp.db"))
+    store.init_db()
+
+    entry_a = ContrarianPoolEntry(
+        symbol="000001", name="A", pool_kind="limit_down", trading_day="2026-05-30",
+        consecutive_days=2, change_pct=-9.95, notes=["跌停"],
+    )
+    entry_b = ContrarianPoolEntry(
+        symbol="000002", name="B", pool_kind="st", trading_day="2026-05-30",
+        consecutive_days=0, change_pct=4.95, notes=["ST 涨停"],
+    )
+    store.save_contrarian_pool_entry(entry_a, created_at="t1")
+    store.save_contrarian_pool_entry(entry_b, created_at="t2")
+
+    limit_down = store.list_contrarian_pool("2026-05-30", pool_kind="limit_down")
+    assert len(limit_down) == 1
+    assert limit_down[0].symbol == "000001"
+
+    everything = store.list_contrarian_pool("2026-05-30")
+    assert {e.symbol for e in everything} == {"000001", "000002"}

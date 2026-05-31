@@ -17,6 +17,7 @@ from aegis_alpha.models import (
     AgentReviewCorrection,
     BacktestRun,
     CandidateOutcomeReview,
+    ContrarianPoolEntry,
     CorrectionActionDecision,
     CorrectionActionProposal,
     DragonTigerRecord,
@@ -1166,6 +1167,44 @@ class AegisAlphaStore:
             key=lambda x: x["total_net_buy_cny"],
             reverse=True,
         )
+
+    def save_contrarian_pool_entry(
+        self, entry: ContrarianPoolEntry, *, created_at: str
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO contrarian_pool_snapshots (
+                    trading_day, pool_kind, symbol, payload_json, created_at
+                ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(trading_day, pool_kind, symbol) DO UPDATE SET
+                    payload_json = excluded.payload_json
+                """,
+                (
+                    entry.trading_day,
+                    entry.pool_kind,
+                    entry.symbol,
+                    entry.model_dump_json(),
+                    created_at,
+                ),
+            )
+
+    def list_contrarian_pool(
+        self, trading_day: str, *, pool_kind: str = ""
+    ) -> list[ContrarianPoolEntry]:
+        clauses = ["trading_day = ?"]
+        params: list[object] = [trading_day]
+        if pool_kind:
+            clauses.append("pool_kind = ?")
+            params.append(pool_kind)
+        query = (
+            "SELECT payload_json FROM contrarian_pool_snapshots WHERE "
+            + " AND ".join(clauses)
+            + " ORDER BY symbol ASC"
+        )
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [ContrarianPoolEntry.model_validate_json(row[0]) for row in rows]
 
 
 def write_runner_status(status: RunnerStatus, path: str | Path | None = None) -> Path:
