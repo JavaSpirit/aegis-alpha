@@ -20,6 +20,7 @@ from aegis_alpha.models import (
     LadderEntry,
     MarketEvent,
     RunnerStatus,
+    SealTimelineEvent,
     SignalSnapshot,
     ThemeLeader,
 )
@@ -725,6 +726,35 @@ class AegisAlphaStore:
             )
         proposal.decisions = self._decision_history_for_proposal(proposal_id)
         return proposal
+
+    def save_seal_timeline_event(self, event: SealTimelineEvent) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO seal_timeline_events (
+                    symbol, trading_day, kind, occurred_at, payload_json
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    event.symbol,
+                    event.trading_day,
+                    event.kind,
+                    event.occurred_at,
+                    event.model_dump_json(),
+                ),
+            )
+
+    def list_seal_timeline_events(self, symbol: str, trading_day: str) -> list[SealTimelineEvent]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT payload_json FROM seal_timeline_events
+                WHERE symbol = ? AND trading_day = ?
+                ORDER BY occurred_at ASC
+                """,
+                (symbol, trading_day),
+            ).fetchall()
+        return [SealTimelineEvent.model_validate_json(row[0]) for row in rows]
 
 
 def write_runner_status(status: RunnerStatus, path: str | Path | None = None) -> Path:
