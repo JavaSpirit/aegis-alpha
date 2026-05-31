@@ -996,13 +996,16 @@ class AegisAlphaStore:
         return OutcomeAttribution.model_validate_json(row[0]) if row else None
 
     def list_attributions(
-        self, *, primary_tag: str = "", start_day: str = "", end_day: str = ""
+        self, *, primary_tag: str = "", start_day: str = "", end_day: str = "", symbol: str = ""
     ) -> list[OutcomeAttribution]:
         clauses: list[str] = []
         params: list[object] = []
         if primary_tag:
             clauses.append("primary_tag = ?")
             params.append(primary_tag)
+        if symbol:
+            clauses.append("symbol = ?")
+            params.append(symbol)
         if start_day:
             clauses.append("trading_day >= ?")
             params.append(start_day)
