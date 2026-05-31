@@ -15,11 +15,14 @@ from aegis_alpha.models import (
     AgentCorrectionSummary,
     AgentReview,
     AgentReviewCorrection,
+    BacktestRun,
     CandidateOutcomeReview,
     CorrectionActionDecision,
     CorrectionActionProposal,
+    HistoricalCandidateSnapshot,
     LadderEntry,
     MarketEvent,
+    OutcomeAttribution,
     RunnerStatus,
     SealTimelineEvent,
     SignalSnapshot,
@@ -901,6 +904,63 @@ class AegisAlphaStore:
         with self._connect() as conn:
             rows = conn.execute(query, params).fetchall()
         return [AgentAlert.model_validate_json(row[0]) for row in rows]
+
+    def save_historical_snapshot(self, snap: HistoricalCandidateSnapshot) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO historical_candidate_snapshots (
+                    symbol, trading_day, grade_at_pick, theme, theme_role,
+                    previous_consecutive_boards, payload_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(symbol, trading_day) DO UPDATE SET
+                    grade_at_pick = excluded.grade_at_pick,
+                    theme = excluded.theme,
+                    theme_role = excluded.theme_role,
+                    previous_consecutive_boards = excluded.previous_consecutive_boards,
+                    payload_json = excluded.payload_json,
+                    created_at = excluded.created_at
+                """,
+                (
+                    snap.symbol,
+                    snap.trading_day,
+                    snap.grade_at_pick,
+                    snap.theme,
+                    snap.theme_role,
+                    snap.previous_consecutive_boards,
+                    snap.model_dump_json(),
+                    snap.created_at,
+                ),
+            )
+
+    def get_historical_snapshot(
+        self, symbol: str, trading_day: str
+    ) -> HistoricalCandidateSnapshot | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT payload_json FROM historical_candidate_snapshots
+                WHERE symbol = ? AND trading_day = ?
+                """,
+                (symbol, trading_day),
+            ).fetchone()
+        return HistoricalCandidateSnapshot.model_validate_json(row[0]) if row else None
+
+    def list_historical_snapshots_between(
+        self, *, start_day: str, end_day: str, symbol: str = ""
+    ) -> list[HistoricalCandidateSnapshot]:
+        clauses = ["trading_day BETWEEN ? AND ?"]
+        params: list[object] = [start_day, end_day]
+        if symbol:
+            clauses.append("symbol = ?")
+            params.append(symbol)
+        query = (
+            "SELECT payload_json FROM historical_candidate_snapshots "
+            "WHERE " + " AND ".join(clauses) + " ORDER BY trading_day ASC, symbol ASC"
+        )
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [HistoricalCandidateSnapshot.model_validate_json(row[0]) for row in rows]
 
 
 def write_runner_status(status: RunnerStatus, path: str | Path | None = None) -> Path:
