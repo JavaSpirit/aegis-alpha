@@ -8,6 +8,7 @@ from aegis_alpha.models import (
     BreakBoardStock,
     CandidateExplanation,
     CandidateOutcomeReview,
+    ContrarianPoolEntry,
     DragonTigerRecord,
     DragonTigerSeat,
     EventScoringConfig,
@@ -853,4 +854,29 @@ class MockMarketDataAdapter:
                 "total_net_buy_cny": 10_000_000.0,
                 "symbols": ["600519"],
             }
+        ]
+
+    def get_limit_down_pool(self, trading_day: str = "") -> list[ContrarianPoolEntry]:
+        day = trading_day or "2026-05-30"
+        return [
+            ContrarianPoolEntry(
+                symbol="000099", name="mock-跌停-1", pool_kind="limit_down",
+                trading_day=day, consecutive_days=2, change_pct=-9.95,
+                notes=["mock 数据"],
+            ),
+            ContrarianPoolEntry(
+                symbol="000100", name="mock-跌停-2", pool_kind="limit_down",
+                trading_day=day, consecutive_days=1, change_pct=-9.97,
+                notes=["mock 数据"],
+            ),
+        ]
+
+    def get_st_pool(self, trading_day: str = "") -> list[ContrarianPoolEntry]:
+        day = trading_day or "2026-05-30"
+        return [
+            ContrarianPoolEntry(
+                symbol="900998", name="mock-ST-1", pool_kind="st",
+                trading_day=day, consecutive_days=0, change_pct=4.92,
+                notes=["mock ST"],
+            ),
         ]

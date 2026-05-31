@@ -19,6 +19,7 @@ from aegis_alpha.models import (
     BreakBoardStock,
     CandidateExplanation,
     CandidateOutcomeReview,
+    ContrarianPoolEntry,
     DragonTigerRecord,
     EventScoringConfig,
     HistoryStats,
@@ -796,6 +797,14 @@ class JvQuantMarketDataAdapter:
         )
 
     def get_active_seats_today(self, trading_day: str) -> list[dict]:
+        return []
+
+    def get_limit_down_pool(self, trading_day: str = "") -> list[ContrarianPoolEntry]:
+        # P5 starter: 跌停池 semantic query 尚未确定字段映射，先返回空列表。
+        return []
+
+    def get_st_pool(self, trading_day: str = "") -> list[ContrarianPoolEntry]:
+        # P5 starter: ST 池接入待 jvQuant 字段确认。
         return []
 
     def _candidate_note_float(self, candidate: SecondBoardCandidate, key: str) -> float:
