@@ -94,3 +94,34 @@ def test_save_and_list_contrarian_pool(tmp_path):
 
     everything = store.list_contrarian_pool("2026-05-30")
     assert {e.symbol for e in everything} == {"000001", "000002"}
+
+
+def test_save_and_get_capital_flow_slices(tmp_path):
+    from aegis_alpha.models import CapitalFlowSlice
+    from aegis_alpha.storage import AegisAlphaStore
+
+    store = AegisAlphaStore(str(tmp_path / "cf.db"))
+    store.init_db()
+
+    slice_a = CapitalFlowSlice(
+        symbol="600519", trading_day="2026-05-30", window="pre_first_seal_5m",
+        big_order_net_inflow_cny=12_000_000.0,
+        main_capital_net_inflow_cny=15_000_000.0,
+        retail_capital_net_inflow_cny=-3_000_000.0,
+        provider="mock", data_mode="mock",
+        created_at="2026-05-30T09:35:00+08:00",
+    )
+    slice_b = CapitalFlowSlice(
+        symbol="600519", trading_day="2026-05-30", window="tail_30m",
+        big_order_net_inflow_cny=-5_000_000.0,
+        main_capital_net_inflow_cny=-7_000_000.0,
+        retail_capital_net_inflow_cny=2_000_000.0,
+        provider="mock", data_mode="mock",
+        created_at="2026-05-30T15:00:00+08:00",
+    )
+    store.save_capital_flow_slice(slice_a)
+    store.save_capital_flow_slice(slice_b)
+
+    slices = store.list_capital_flow_slices("600519", "2026-05-30")
+    windows = {s.window for s in slices}
+    assert windows == {"pre_first_seal_5m", "tail_30m"}

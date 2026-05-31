@@ -17,6 +17,7 @@ from aegis_alpha.models import (
     AgentReviewCorrection,
     BacktestRun,
     CandidateOutcomeReview,
+    CapitalFlowSlice,
     ContrarianPoolEntry,
     CorrectionActionDecision,
     CorrectionActionProposal,
@@ -1205,6 +1206,44 @@ class AegisAlphaStore:
         with self._connect() as conn:
             rows = conn.execute(query, params).fetchall()
         return [ContrarianPoolEntry.model_validate_json(row[0]) for row in rows]
+
+    def save_capital_flow_slice(self, slice_: CapitalFlowSlice) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO capital_flow_slices (
+                    symbol, trading_day, window,
+                    big_order_net_inflow_cny, main_capital_net_inflow_cny,
+                    retail_capital_net_inflow_cny, payload_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(symbol, trading_day, window) DO UPDATE SET
+                    big_order_net_inflow_cny = excluded.big_order_net_inflow_cny,
+                    main_capital_net_inflow_cny = excluded.main_capital_net_inflow_cny,
+                    retail_capital_net_inflow_cny = excluded.retail_capital_net_inflow_cny,
+                    payload_json = excluded.payload_json
+                """,
+                (
+                    slice_.symbol,
+                    slice_.trading_day,
+                    slice_.window,
+                    slice_.big_order_net_inflow_cny,
+                    slice_.main_capital_net_inflow_cny,
+                    slice_.retail_capital_net_inflow_cny,
+                    slice_.model_dump_json(),
+                    slice_.created_at,
+                ),
+            )
+
+    def list_capital_flow_slices(
+        self, symbol: str, trading_day: str
+    ) -> list[CapitalFlowSlice]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT payload_json FROM capital_flow_slices "
+                "WHERE symbol = ? AND trading_day = ? ORDER BY window ASC",
+                (symbol, trading_day),
+            ).fetchall()
+        return [CapitalFlowSlice.model_validate_json(row[0]) for row in rows]
 
 
 def write_runner_status(status: RunnerStatus, path: str | Path | None = None) -> Path:
