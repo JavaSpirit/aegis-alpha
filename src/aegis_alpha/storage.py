@@ -10,6 +10,7 @@ from typing import Iterable
 from aegis_alpha.clock import SH_TZ, now_dt, now_iso
 from aegis_alpha.db_migrations import apply_migrations
 from aegis_alpha.models import (
+    AgentAlert,
     AgentCorrectionAction,
     AgentCorrectionSummary,
     AgentReview,
@@ -23,6 +24,8 @@ from aegis_alpha.models import (
     SealTimelineEvent,
     SignalSnapshot,
     ThemeLeader,
+    Watchlist,
+    WatchlistEntry,
 )
 
 
@@ -771,6 +774,133 @@ class AegisAlphaStore:
                 (symbol, trading_day),
             ).fetchall()
         return [SealTimelineEvent.model_validate_json(row[0]) for row in rows]
+
+    def save_watchlist(self, watchlist: Watchlist) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO watchlists (
+                    watchlist_id, owner, label, status, created_at,
+                    expires_at, closed_at, payload_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(watchlist_id) DO UPDATE SET
+                    status = excluded.status,
+                    closed_at = excluded.closed_at,
+                    payload_json = excluded.payload_json
+                """,
+                (
+                    watchlist.watchlist_id,
+                    watchlist.owner,
+                    watchlist.label,
+                    watchlist.status,
+                    watchlist.created_at,
+                    watchlist.expires_at,
+                    watchlist.closed_at,
+                    watchlist.model_dump_json(),
+                ),
+            )
+            conn.execute("DELETE FROM watchlist_entries WHERE watchlist_id = ?", (watchlist.watchlist_id,))
+            conn.executemany(
+                """
+                INSERT INTO watchlist_entries (
+                    watchlist_id, symbol, added_at, last_action, last_action_at, payload_json
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        watchlist.watchlist_id,
+                        entry.symbol,
+                        entry.added_at,
+                        entry.last_action,
+                        entry.last_action_at,
+                        entry.model_dump_json(),
+                    )
+                    for entry in watchlist.entries
+                ],
+            )
+
+    def get_watchlist(self, watchlist_id: str) -> Watchlist | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload_json FROM watchlists WHERE watchlist_id = ?",
+                (watchlist_id,),
+            ).fetchone()
+        return Watchlist.model_validate_json(row[0]) if row else None
+
+    def list_watchlists(self, *, owner: str = "", status: str = "") -> list[Watchlist]:
+        clauses = []
+        params: list[object] = []
+        if owner:
+            clauses.append("owner = ?")
+            params.append(owner)
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        query = "SELECT payload_json FROM watchlists"
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY created_at DESC"
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [Watchlist.model_validate_json(row[0]) for row in rows]
+
+    def save_alert(self, alert: AgentAlert) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO agent_alerts (
+                    alert_id, event_id, symbol, theme, severity, status,
+                    created_at, acknowledged_at, payload_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(alert_id) DO UPDATE SET
+                    status = excluded.status,
+                    acknowledged_at = excluded.acknowledged_at,
+                    payload_json = excluded.payload_json
+                """,
+                (
+                    alert.alert_id,
+                    alert.event_id,
+                    alert.symbol,
+                    alert.theme,
+                    alert.severity,
+                    alert.status,
+                    alert.created_at,
+                    alert.acknowledged_at,
+                    alert.model_dump_json(),
+                ),
+            )
+
+    def get_alert(self, alert_id: str) -> AgentAlert | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload_json FROM agent_alerts WHERE alert_id = ?",
+                (alert_id,),
+            ).fetchone()
+        return AgentAlert.model_validate_json(row[0]) if row else None
+
+    def get_alert_by_event(self, event_id: str) -> AgentAlert | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload_json FROM agent_alerts WHERE event_id = ? LIMIT 1",
+                (event_id,),
+            ).fetchone()
+        return AgentAlert.model_validate_json(row[0]) if row else None
+
+    def list_alerts(self, *, status: str = "", limit: int = 50) -> list[AgentAlert]:
+        safe_limit = max(1, min(int(limit or 50), 200))
+        clauses: list[str] = []
+        params: list[object] = []
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        query = "SELECT payload_json FROM agent_alerts"
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(safe_limit)
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [AgentAlert.model_validate_json(row[0]) for row in rows]
 
 
 def write_runner_status(status: RunnerStatus, path: str | Path | None = None) -> Path:
