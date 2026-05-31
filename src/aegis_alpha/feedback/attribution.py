@@ -38,6 +38,10 @@ def _attribution_id(symbol: str, trading_day: str) -> str:
     return hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16]
 
 
+# Note: the OutcomeAttributionTag literal includes "theme_breadth_collapsed",
+# but it is not yet wired into the rule chain below. Reserved for a future rule
+# that detects board-wide breadth collapse during the trading day. Until then,
+# this tag is unreachable.
 def attribute_outcome(inputs: AttributionInputs) -> OutcomeAttribution:
     evidence: list[str] = []
     secondary: list[OutcomeAttributionTag] = []
