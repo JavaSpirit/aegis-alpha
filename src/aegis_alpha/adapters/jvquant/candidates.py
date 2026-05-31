@@ -400,7 +400,7 @@ def build_second_board_candidate(
             else "minute replay was unavailable or disabled; speed fields use jvQuant semantic query values."
         ),
         "capital-flow ratio comes from jvQuant semantic fields, not tick-by-tick trade classification.",
-        "Historical limit-up rates are not derived yet.",
+        "three_year_* rates derived from compute_history_stats over stored review_outcomes.",
         f"five_min_speed_window={speed_window}",
         f"five_min_speed_timestamp={speed_timestamp}",
         f"minute_replay_timestamp={minute_replay_timestamp}",
