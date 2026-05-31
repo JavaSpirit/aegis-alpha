@@ -137,42 +137,48 @@ def candidate_grade_reason(
     seal_amount_cny: float,
     seal_to_turnover_ratio: float,
     queue_position_note: str,
+    limitup_driver_type: str = "unknown",
 ) -> str:
     seal_text = (
         f"首次封板时间为 {first_limit_up_time}，封单额约 {seal_amount_cny / 100_000_000:.2f} 亿元，"
         f"封成比为 {seal_to_turnover_ratio:.2f}"
     )
     if grade == "REJECT":
-        return (
+        reason = (
             "评级为 REJECT，因为当前市场闸门或个股强度不满足二板候选的最低观察条件，"
             "不应按打板候选处理。"
         )
-    if grade == "C":
+    elif grade == "C":
         if action == "defensive":
-            return (
+            reason = (
                 f"评级为 C，主要因为市场闸门为 defensive，说明炸板率或市场风险偏高；"
                 f"虽然个股当前涨幅为 {change_pct:.2f}%，五分钟涨速为 {five_min_speed_pct:.2f}%，"
                 f"资金净流入占比为 {big_order_net_inflow_ratio:.2%}，但盘口质量评分为 {orderbook_quality:.1f}，"
                 f"同题材候选数为 {theme_count}；{seal_text}。{queue_position_note}"
             )
-        return (
-            f"评级为 C，因为个股当前涨幅为 {change_pct:.2f}%，五分钟涨速为 {five_min_speed_pct:.2f}%，"
-            f"资金净流入占比为 {big_order_net_inflow_ratio:.2%}，但盘口质量、题材联动或数据完整性不足，"
-            f"暂时只能作为观察对象；{seal_text}。"
-        )
-    if grade == "B":
-        return (
+        else:
+            reason = (
+                f"评级为 C，因为个股当前涨幅为 {change_pct:.2f}%，五分钟涨速为 {five_min_speed_pct:.2f}%，"
+                f"资金净流入占比为 {big_order_net_inflow_ratio:.2%}，但盘口质量、题材联动或数据完整性不足，"
+                f"暂时只能作为观察对象；{seal_text}。"
+            )
+    elif grade == "B":
+        reason = (
             f"评级为 B，因为个股当前涨幅达到 {change_pct:.2f}%，五分钟涨速为 {five_min_speed_pct:.2f}%，"
             f"资金净流入占比为 {big_order_net_inflow_ratio:.2%}，同题材候选数为 {theme_count}，具备观察价值；"
             f"盘口质量评分为 {orderbook_quality:.1f}，{seal_text}；但真实委托排队位置和历史溢价数据仍未接入，"
             "不能提高到 A。"
         )
-    return (
-        f"评级为 A，因为市场闸门允许进攻，个股涨幅为 {change_pct:.2f}%，五分钟涨速为 "
-        f"{five_min_speed_pct:.2f}%，资金净流入占比为 {big_order_net_inflow_ratio:.2%}，"
-        f"盘口质量评分为 {orderbook_quality:.1f}，同题材候选数为 {theme_count}，且{seal_text}；"
-        "仍需在实盘时继续核验数据时效和封单稳定性。"
-    )
+    else:
+        reason = (
+            f"评级为 A，因为市场闸门允许进攻，个股涨幅为 {change_pct:.2f}%，五分钟涨速为 "
+            f"{five_min_speed_pct:.2f}%，资金净流入占比为 {big_order_net_inflow_ratio:.2%}，"
+            f"盘口质量评分为 {orderbook_quality:.1f}，同题材候选数为 {theme_count}，且{seal_text}；"
+            "仍需在实盘时继续核验数据时效和封单稳定性。"
+        )
+    if limitup_driver_type != "unknown":
+        reason += f" (driver={limitup_driver_type})"
+    return reason
 
 
 def estimated_seal_probability(

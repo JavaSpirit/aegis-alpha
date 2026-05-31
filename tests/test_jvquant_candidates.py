@@ -139,3 +139,12 @@ def test_jvquant_candidate_has_limitup_driver_type_in_allowed_set():
     assert candidates, "fake client should produce at least one candidate"
     for cand in candidates:
         assert cand.limitup_driver_type in allowed
+
+
+def test_grade_reason_mentions_driver_when_classified():
+    """When candidate has a non-unknown limitup_driver_type, grade_reason should hint it."""
+    candidates = _build_candidates_with_minimal_patches()
+    classified = [c for c in candidates if c.limitup_driver_type != "unknown"]
+    assert classified, "fake client should yield at least one classified driver"
+    for cand in classified:
+        assert cand.limitup_driver_type in cand.grade_reason or f"driver={cand.limitup_driver_type}" in cand.grade_reason

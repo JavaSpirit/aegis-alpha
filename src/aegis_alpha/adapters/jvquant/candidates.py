@@ -259,6 +259,7 @@ def build_one_candidate(
         seal_amount_cny=seal_amount_cny,
         seal_to_turnover_ratio=seal_to_turnover_ratio,
         queue_position_note=queue_position_note,
+        limitup_driver_type=limitup_driver_type,
     )
     data_quality = build_second_board_data_quality(
         speed_timestamp=speed_timestamp,
