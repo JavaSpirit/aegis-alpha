@@ -16,7 +16,7 @@ from aegis_alpha.adapters.jvquant_websocket import JvQuantRealtimeClient
 from aegis_alpha.clock import SH_TZ, now_iso
 from aegis_alpha.config import load_project_env
 from aegis_alpha.events import EventDetector, SignalWindowBuffer, load_event_scoring_config
-from aegis_alpha.models import RunnerStatus
+from aegis_alpha.models import MarketEvent, RunnerStatus
 from aegis_alpha.storage import AegisAlphaStore, read_runner_status, write_runner_status
 
 
@@ -185,7 +185,34 @@ class AegisAlphaRunner:
             events.extend(self.detector.detect_from_snapshot(snapshot))
         if events:
             self.store.save_market_events(events)
+            self._maybe_alert_from_events(events)
         self._last_persist_counts = {"snapshots": snapshot_count, "events": len(events)}
+
+    def _maybe_alert_from_events(self, events: list[MarketEvent]) -> None:
+        try:
+            from aegis_alpha.alerts.notifier import notify_macos
+            from aegis_alpha.alerts.store import AlertStore
+        except Exception:
+            return
+        alert_store = AlertStore(self.store)
+        critical_types = {
+            "SEAL_ORDER_DECAY",
+            "BIG_ORDER_INFLOW_SPIKE",
+            "THEME_DIVERGENCE",
+        }
+        for event in events:
+            if event.event_type not in critical_types:
+                continue
+            severity = "critical" if event.event_type == "SEAL_ORDER_DECAY" else "warning"
+            alert = alert_store.create(
+                title=f"{event.event_type} {event.symbol}",
+                body="; ".join(event.evidence)[:512],
+                severity=severity,
+                event_id=event.event_id,
+                symbol=event.symbol,
+                theme=event.theme,
+            )
+            notify_macos(alert)
 
     def run_forever(self) -> None:
         signal.signal(signal.SIGTERM, self.request_stop)
