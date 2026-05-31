@@ -63,3 +63,12 @@ def test_no_slices_when_inputs_empty():
         CapitalFlowSliceInputs(symbol="X", trading_day="2026-05-30", bars=[])
     )
     assert out == []
+
+
+def test_mock_adapter_get_capital_flow_slices_returns_three_windows():
+    from aegis_alpha.adapters.mock_market_data import MockMarketDataAdapter
+
+    adapter = MockMarketDataAdapter()
+    slices = adapter.get_capital_flow_slices("600519", "2026-05-30")
+    windows = {s.window for s in slices}
+    assert windows == {"pre_first_seal_5m", "post_break_1m", "tail_30m"}

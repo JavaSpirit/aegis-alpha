@@ -7,6 +7,7 @@ from aegis_alpha.models import (
     BreakBoardStock,
     CandidateExplanation,
     CandidateOutcomeReview,
+    CapitalFlowSlice,
     ContrarianPoolEntry,
     DragonTigerRecord,
     EventScoringConfig,
@@ -99,3 +100,7 @@ class MarketDataAdapter(Protocol):
     def get_limit_down_pool(self, trading_day: str = "") -> list[ContrarianPoolEntry]: ...
 
     def get_st_pool(self, trading_day: str = "") -> list[ContrarianPoolEntry]: ...
+
+    def get_capital_flow_slices(
+        self, symbol: str, trading_day: str
+    ) -> list[CapitalFlowSlice]: ...

@@ -8,6 +8,7 @@ from aegis_alpha.models import (
     BreakBoardStock,
     CandidateExplanation,
     CandidateOutcomeReview,
+    CapitalFlowSlice,
     ContrarianPoolEntry,
     DragonTigerRecord,
     DragonTigerSeat,
@@ -882,5 +883,36 @@ class MockMarketDataAdapter:
                 symbol="900998", name="mock-ST-1", pool_kind="st",
                 trading_day=day, consecutive_days=0, change_pct=4.92,
                 notes=["mock ST"],
+            ),
+        ]
+
+    def get_capital_flow_slices(
+        self, symbol: str, trading_day: str
+    ) -> list[CapitalFlowSlice]:
+        timestamp = "2026-05-30T15:00:00+08:00"
+        return [
+            CapitalFlowSlice(
+                symbol=symbol, trading_day=trading_day, window="pre_first_seal_5m",
+                big_order_net_inflow_cny=8_000_000.0,
+                main_capital_net_inflow_cny=12_000_000.0,
+                retail_capital_net_inflow_cny=-3_000_000.0,
+                provider="mock", data_mode="mock",
+                created_at=timestamp,
+            ),
+            CapitalFlowSlice(
+                symbol=symbol, trading_day=trading_day, window="post_break_1m",
+                big_order_net_inflow_cny=-2_000_000.0,
+                main_capital_net_inflow_cny=-1_500_000.0,
+                retail_capital_net_inflow_cny=500_000.0,
+                provider="mock", data_mode="mock",
+                created_at=timestamp,
+            ),
+            CapitalFlowSlice(
+                symbol=symbol, trading_day=trading_day, window="tail_30m",
+                big_order_net_inflow_cny=3_000_000.0,
+                main_capital_net_inflow_cny=4_500_000.0,
+                retail_capital_net_inflow_cny=-1_000_000.0,
+                provider="mock", data_mode="mock",
+                created_at=timestamp,
             ),
         ]

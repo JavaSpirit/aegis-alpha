@@ -19,6 +19,7 @@ from aegis_alpha.models import (
     BreakBoardStock,
     CandidateExplanation,
     CandidateOutcomeReview,
+    CapitalFlowSlice,
     ContrarianPoolEntry,
     DragonTigerRecord,
     EventScoringConfig,
@@ -805,6 +806,13 @@ class JvQuantMarketDataAdapter:
 
     def get_st_pool(self, trading_day: str = "") -> list[ContrarianPoolEntry]:
         # P5 starter: ST 池接入待 jvQuant 字段确认。
+        return []
+
+    def get_capital_flow_slices(
+        self, symbol: str, trading_day: str
+    ) -> list[CapitalFlowSlice]:
+        # P5 starter: minute-level capital flow detail not yet exposed by jvQuant
+        # semantic queries; return [] until dedicated probe lands.
         return []
 
     def _candidate_note_float(self, candidate: SecondBoardCandidate, key: str) -> float:
