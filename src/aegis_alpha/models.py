@@ -33,7 +33,13 @@ MarketEventType = Literal[
     "SEAL_ORDER_DECAY",
     "BIG_ORDER_INFLOW_SPIKE",
     "SECOND_BOARD_CANDIDATE_REPRICE",
+    "THEME_DIVERGENCE",
 ]
+WatchlistStatus = Literal["active", "closed", "expired"]
+WatchlistEntryAction = Literal["added", "promoted", "downgraded", "dropped", "noted"]
+SealTimelineKind = Literal["first_seal", "break", "reseal", "final_break"]
+AlertSeverity = Literal["info", "warning", "critical"]
+AlertStatus = Literal["pending", "acknowledged", "expired"]
 RunnerState = Literal[
     "STOPPED",
     "STARTING",
@@ -489,3 +495,117 @@ class CandidateExplanation(BaseModel):
     avoid_conditions: list[str]
     data_timestamp: str
     disclaimer: str
+
+
+class WatchlistEntry(BaseModel):
+    symbol: str
+    added_at: str
+    initial_grade: CandidateGrade = "C"
+    last_grade: CandidateGrade = "C"
+    last_action: WatchlistEntryAction = "added"
+    last_action_at: str = ""
+    notes: list[str] = Field(default_factory=list)
+
+
+class Watchlist(BaseModel):
+    watchlist_id: str
+    owner: str
+    label: str
+    status: WatchlistStatus = "active"
+    created_at: str
+    expires_at: str = ""
+    closed_at: str = ""
+    entries: list[WatchlistEntry] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
+class WatchlistDiff(BaseModel):
+    watchlist_id: str
+    from_timestamp: str
+    to_timestamp: str
+    added_symbols: list[str] = Field(default_factory=list)
+    dropped_symbols: list[str] = Field(default_factory=list)
+    grade_changes: dict[str, dict[str, str]] = Field(default_factory=dict)
+    notes: list[str] = Field(default_factory=list)
+
+
+class SealTimelineEvent(BaseModel):
+    symbol: str
+    trading_day: str
+    kind: SealTimelineKind
+    occurred_at: str
+    seal_amount_cny: float = 0.0
+    notes: list[str] = Field(default_factory=list)
+
+
+class SealTimeline(BaseModel):
+    symbol: str
+    trading_day: str
+    events: list[SealTimelineEvent] = Field(default_factory=list)
+    final_status: Literal["sealed", "broken", "reopened", "unknown"] = "unknown"
+    break_count: int = 0
+    reseal_count: int = 0
+
+
+class DailyReviewItem(BaseModel):
+    symbol: str
+    grade_at_pick: CandidateGrade
+    theme: str = ""
+    theme_role: ThemeLeaderRole = "unknown"
+    previous_consecutive_boards: int = 0
+    touched_limit_up: bool | None = None
+    sealed_second_board: bool | None = None
+    next_day_open_pct: float | None = None
+    notes: list[str] = Field(default_factory=list)
+
+
+class DailyReview(BaseModel):
+    trading_day: str
+    generated_at: str
+    candidate_count: int = 0
+    grade_distribution: dict[str, int] = Field(default_factory=dict)
+    sealed_count: int = 0
+    items: list[DailyReviewItem] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
+class WeeklyPatternReport(BaseModel):
+    start_day: str
+    end_day: str
+    generated_at: str
+    grade_outcome_matrix: dict[str, dict[str, int]] = Field(default_factory=dict)
+    top_themes: list[str] = Field(default_factory=list)
+    sample_size: int = 0
+    notes: list[str] = Field(default_factory=list)
+
+
+class AgentAlert(BaseModel):
+    alert_id: str
+    event_id: str = ""
+    symbol: str = ""
+    theme: str = ""
+    severity: AlertSeverity = "info"
+    status: AlertStatus = "pending"
+    title: str
+    body: str = ""
+    created_at: str
+    acknowledged_at: str = ""
+    notes: list[str] = Field(default_factory=list)
+
+
+class ThemeRanking(BaseModel):
+    theme: str
+    trading_day: str
+    rank: int
+    member_count: int
+    leader_symbol: str = ""
+    leader_consecutive_boards: int = 0
+    score: float = Field(ge=0, le=100)
+    notes: list[str] = Field(default_factory=list)
+
+
+class ThemeRotationEntry(BaseModel):
+    trading_day: str
+    top_themes: list[str] = Field(default_factory=list)
+    new_themes: list[str] = Field(default_factory=list)
+    fading_themes: list[str] = Field(default_factory=list)
