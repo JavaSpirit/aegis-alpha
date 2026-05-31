@@ -33,3 +33,10 @@ def test_p4_indexes_exist(tmp_path: Path) -> None:
     assert "idx_outcome_attributions_symbol_day" in names
     assert "idx_historical_snapshots_symbol_day" in names
     assert "idx_backtest_runs_status" in names
+
+
+def test_p4_migration_is_idempotent(tmp_path: Path) -> None:
+    db = tmp_path / "test.db"
+    first = apply_migrations(db)
+    second = apply_migrations(db)
+    assert second == first
