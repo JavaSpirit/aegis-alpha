@@ -42,3 +42,14 @@ def test_compact_candidate_includes_limitup_driver_and_pattern():
     for item in items:
         assert "limitup_driver_type" in item
         assert "intraday_pattern" in item
+
+
+def test_get_capital_flow_slices_returns_three_dicts():
+    from aegis_alpha.mcp.server import get_capital_flow_slices
+
+    rows = get_capital_flow_slices("600519", "2026-05-30")
+    assert isinstance(rows, list)
+    assert len(rows) == 3
+    assert {r["window"] for r in rows} == {
+        "pre_first_seal_5m", "post_break_1m", "tail_30m"
+    }

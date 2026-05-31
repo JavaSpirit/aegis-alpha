@@ -59,5 +59,6 @@ mcp_servers:
         - get_second_board_candidate_data_quality
         - explain_candidate
         - explain_second_board_candidate
+        - get_capital_flow_slices
       prompts: false
       resources: false

@@ -673,6 +673,20 @@ def get_st_pool(trading_day: str = "") -> list[dict]:
 
 
 @mcp.tool
+def get_capital_flow_slices(symbol: str, trading_day: str) -> list[dict] | dict:
+    """Return per-symbol per-day capital flow slices: pre_first_seal_5m / post_break_1m / tail_30m."""
+    safe_symbol = symbol.strip()
+    safe_day = trading_day.strip()
+    if not (safe_symbol and safe_day):
+        return {"data_mode": "unavailable", "error": "symbol and trading_day are required"}
+    return _call_tool(
+        lambda adapter: [
+            s.model_dump() for s in adapter.get_capital_flow_slices(safe_symbol, safe_day)
+        ]
+    )
+
+
+@mcp.tool
 def get_recent_backtests(limit: int = 10) -> list[dict] | dict:
     """List recent backtest runs."""
     safe_limit = max(1, min(int(limit or 10), 50))
