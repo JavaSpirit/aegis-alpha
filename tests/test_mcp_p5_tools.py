@@ -14,3 +14,21 @@ def test_get_active_seats_today_tool_returns_list():
     assert isinstance(result, list)
     if result:
         assert "hot_money_alias" in result[0]
+
+
+def test_get_limit_down_pool_returns_list():
+    from aegis_alpha.mcp.server import get_limit_down_pool
+
+    rows = get_limit_down_pool("2026-05-30")
+    assert isinstance(rows, list)
+    if rows:
+        assert rows[0]["pool_kind"] == "limit_down"
+
+
+def test_get_st_pool_returns_list():
+    from aegis_alpha.mcp.server import get_st_pool
+
+    rows = get_st_pool("2026-05-30")
+    assert isinstance(rows, list)
+    if rows:
+        assert rows[0]["pool_kind"] == "st"

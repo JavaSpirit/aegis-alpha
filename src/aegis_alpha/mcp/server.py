@@ -653,6 +653,24 @@ def get_active_seats_today(trading_day: str) -> list[dict] | dict:
 
 
 @mcp.tool
+def get_limit_down_pool(trading_day: str = "") -> list[dict]:
+    """Return today's limit-down stocks (contrarian pool)."""
+    safe_day = trading_day.strip()
+    return _call_tool(
+        lambda adapter: [e.model_dump() for e in adapter.get_limit_down_pool(safe_day)]
+    )
+
+
+@mcp.tool
+def get_st_pool(trading_day: str = "") -> list[dict]:
+    """Return today's ST stocks active today."""
+    safe_day = trading_day.strip()
+    return _call_tool(
+        lambda adapter: [e.model_dump() for e in adapter.get_st_pool(safe_day)]
+    )
+
+
+@mcp.tool
 def get_recent_backtests(limit: int = 10) -> list[dict] | dict:
     """List recent backtest runs."""
     safe_limit = max(1, min(int(limit or 10), 50))
