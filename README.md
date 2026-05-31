@@ -143,6 +143,11 @@ When `AEGIS_ALPHA_MARKET_DATA_PROVIDER=jvquant`, Hermes can access jvQuant-backe
 - `update_watchlist_state(watchlist_id, symbol, new_grade, action, note)`
 - `close_watchlist(watchlist_id, note)`
 - `list_active_watchlists(owner)`
+- `backfill_candidates(trading_days)`
+- `attribute_outcome(symbol, trading_day)`
+- `get_history_stats(symbol)`
+- `run_backtest(rule_changes_json, start_day, end_day)`
+- `get_recent_backtests(limit)`
 - `get_stock_realtime_snapshot(symbol)`
 - `get_stock_orderbook_snapshot(symbol)`
 - `get_stock_minute_replay_snapshot(symbol, end_day, limit_days)`
@@ -361,6 +366,11 @@ The MVP exposes these read-only tools:
 - `update_watchlist_state`
 - `close_watchlist`
 - `list_active_watchlists`
+- `backfill_candidates`
+- `attribute_outcome`
+- `get_history_stats`
+- `run_backtest`
+- `get_recent_backtests`
 - `get_second_board_candidates`
 - `explain_candidate`
 - `explain_second_board_candidate`

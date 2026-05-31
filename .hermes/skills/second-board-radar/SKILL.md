@@ -64,6 +64,11 @@ Core tools:
 - `acknowledge_alert`
 - `generate_daily_review`
 - `generate_weekly_pattern_report`
+- `attribute_outcome`
+- `get_history_stats`
+- `run_backtest`
+- `get_recent_backtests`
+- `backfill_candidates`
 
 Useful supporting tools:
 
@@ -107,6 +112,9 @@ Use `get_runner_status` when the user asks whether realtime monitoring is active
 14. Read `get_pending_alerts(limit)` whenever the user starts a new chat to surface anything the runner detected while away. After acting on an alert call `acknowledge_alert(alert_id, note)`. The runner persists alerts for `SEAL_ORDER_DECAY`, `BIG_ORDER_INFLOW_SPIKE`, and `THEME_DIVERGENCE` events; do not re-run the same analysis if the alert is still pending.
 15. After 15:10, run `generate_daily_review(trading_day=today)` to produce the structured review item used by Phase 3 review-and-correction. For weekly pattern audits use `generate_weekly_pattern_report(start_day, end_day)` (max 14-day window recommended).
 16. Use `get_top_themes_today(trading_day, limit)` to surface the leading themes ranked by member count and leader connect-board height, and `get_seal_timeline(symbol)` to inspect intraday seal/break events when a candidate's `theme_role` shows `co_leader` or `follower`.
+17. After collecting at least 5 trading days of outcomes, run `attribute_outcome(symbol, trading_day)` for failed candidates to identify recurring failure patterns. Surface the top primary_tag from recent attributions as a Hermes memory candidate after 3+ similar tags accumulate.
+18. Use `get_history_stats(symbol)` instead of relying on the placeholder three_year_* fields when available. If `confidence` is `insufficient_sample`, treat the historical signal as unavailable and do not narrate a probability.
+19. When the user asks "would tightening rule X improve hit rate?", call `run_backtest(rule_changes_json='{"flip_a_to_b": true}', start_day, end_day)` and report the sealed_rate delta + advice. Never apply a threshold proposal automatically — they always require the human-confirmation flow defined by `record_correction_action_decision`.
 
 ## Candidate Interpretation Rules
 

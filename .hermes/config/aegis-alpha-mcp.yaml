@@ -45,6 +45,11 @@ mcp_servers:
         - update_watchlist_state
         - close_watchlist
         - list_active_watchlists
+        - backfill_candidates
+        - attribute_outcome
+        - get_history_stats
+        - run_backtest
+        - get_recent_backtests
         - get_second_board_candidates
         - get_second_board_candidates_compact
         - get_second_board_candidate_data_quality
