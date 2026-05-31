@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass
 
 from aegis_alpha.clock import now_iso
@@ -10,6 +11,8 @@ from aegis_alpha.models import (
     OutcomeAttributionTag,
     ThemeLeaderRole,
 )
+from aegis_alpha.protocols import MarketDataAdapter
+from aegis_alpha.storage import AegisAlphaStore
 
 
 @dataclass(frozen=True)
@@ -118,3 +121,65 @@ def attribute_outcome(inputs: AttributionInputs) -> OutcomeAttribution:
         evidence=evidence,
         created_at=now_iso(),
     )
+
+
+def attribute_from_stored_data(
+    *,
+    adapter: MarketDataAdapter,
+    store: AegisAlphaStore,
+    symbol: str,
+    trading_day: str,
+) -> OutcomeAttribution | None:
+    """Resolve attribution by joining historical snapshot + outcome + theme leader.
+
+    Returns None when no outcome row exists for (symbol, trading_day) — there is
+    nothing to attribute.
+    """
+    outcome = store.get_review_outcome(symbol, trading_day)
+    # get_review_outcome returns a placeholder when missing; sealed_second_board is
+    # only meaningful when actually recorded
+    if outcome.touched_limit_up is None and outcome.sealed_second_board is None:
+        return None
+
+    snap = store.get_historical_snapshot(symbol, trading_day)
+    if snap is None:
+        return None
+
+    raw: dict = {}
+    try:
+        raw = json.loads(snap.payload_json or "{}")
+    except json.JSONDecodeError:
+        raw = {}
+
+    leader_symbol = raw.get("theme_leader_symbol", "") or symbol
+    leader_status = "unknown"
+    try:
+        timeline = adapter.get_seal_timeline(leader_symbol, trading_day)
+        leader_status = timeline.final_status
+    except Exception:
+        leader_status = "unknown"
+
+    market_action = "selective"
+    try:
+        gate = adapter.get_market_sentiment_gate()
+        market_action = gate.action
+    except Exception:
+        market_action = "selective"
+
+    inputs = AttributionInputs(
+        symbol=symbol,
+        trading_day=trading_day,
+        sealed_second_board=bool(outcome.sealed_second_board),
+        theme=snap.theme,
+        theme_role=snap.theme_role,
+        theme_leader_symbol=leader_symbol,
+        theme_leader_final_status=leader_status,
+        market_action=market_action,
+        auction_change_pct=float(raw.get("auction_change_pct") or 0.0),
+        first_limit_up_time=str(raw.get("first_limit_up_time") or "unknown"),
+        seal_decay_pct=float(raw.get("seal_decay_pct") or 0.0),
+        previous_consecutive_boards=snap.previous_consecutive_boards,
+    )
+    attribution = attribute_outcome(inputs)
+    store.save_attribution(attribution)
+    return attribution
