@@ -961,6 +961,62 @@ class AegisAlphaStore:
             rows = conn.execute(query, params).fetchall()
         return [HistoricalCandidateSnapshot.model_validate_json(row[0]) for row in rows]
 
+    def save_attribution(self, attribution: OutcomeAttribution) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO outcome_attributions (
+                    attribution_id, symbol, trading_day, primary_tag,
+                    payload_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(attribution_id) DO UPDATE SET
+                    primary_tag = excluded.primary_tag,
+                    payload_json = excluded.payload_json
+                """,
+                (
+                    attribution.attribution_id,
+                    attribution.symbol,
+                    attribution.trading_day,
+                    attribution.primary_tag,
+                    attribution.model_dump_json(),
+                    attribution.created_at,
+                ),
+            )
+
+    def get_attribution(self, symbol: str, trading_day: str) -> OutcomeAttribution | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT payload_json FROM outcome_attributions
+                WHERE symbol = ? AND trading_day = ?
+                ORDER BY created_at DESC LIMIT 1
+                """,
+                (symbol, trading_day),
+            ).fetchone()
+        return OutcomeAttribution.model_validate_json(row[0]) if row else None
+
+    def list_attributions(
+        self, *, primary_tag: str = "", start_day: str = "", end_day: str = ""
+    ) -> list[OutcomeAttribution]:
+        clauses: list[str] = []
+        params: list[object] = []
+        if primary_tag:
+            clauses.append("primary_tag = ?")
+            params.append(primary_tag)
+        if start_day:
+            clauses.append("trading_day >= ?")
+            params.append(start_day)
+        if end_day:
+            clauses.append("trading_day <= ?")
+            params.append(end_day)
+        query = "SELECT payload_json FROM outcome_attributions"
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY trading_day DESC, created_at DESC"
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [OutcomeAttribution.model_validate_json(row[0]) for row in rows]
+
 
 def write_runner_status(status: RunnerStatus, path: str | Path | None = None) -> Path:
     status_path = Path(path).expanduser() if path else default_runner_status_path()
