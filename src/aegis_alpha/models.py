@@ -40,6 +40,17 @@ WatchlistEntryAction = Literal["added", "promoted", "downgraded", "dropped", "no
 SealTimelineKind = Literal["first_seal", "break", "reseal", "final_break"]
 AlertSeverity = Literal["info", "warning", "critical"]
 AlertStatus = Literal["pending", "acknowledged", "expired"]
+OutcomeAttributionTag = Literal[
+    "leader_break_down",
+    "market_gate_turned_avoid",
+    "auction_high_open_too_far",
+    "first_seal_too_late",
+    "seal_amount_decay",
+    "theme_breadth_collapsed",
+    "no_clear_attribution",
+]
+BacktestStatus = Literal["pending", "running", "completed", "failed"]
+HistoryStatsConfidence = Literal["high", "medium", "low", "insufficient_sample"]
 RunnerState = Literal[
     "STOPPED",
     "STARTING",
@@ -609,3 +620,85 @@ class ThemeRotationEntry(BaseModel):
     top_themes: list[str] = Field(default_factory=list)
     new_themes: list[str] = Field(default_factory=list)
     fading_themes: list[str] = Field(default_factory=list)
+
+
+class OutcomeAttribution(BaseModel):
+    attribution_id: str
+    symbol: str
+    trading_day: str
+    primary_tag: OutcomeAttributionTag = "no_clear_attribution"
+    secondary_tags: list[OutcomeAttributionTag] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
+    created_at: str = ""
+    notes: list[str] = Field(default_factory=list)
+
+
+class HistoryStats(BaseModel):
+    symbol: str
+    sample_size: int = 0
+    sample_window_start: str = ""
+    sample_window_end: str = ""
+    touch_limit_up_success_rate: float = Field(default=0.0, ge=0, le=1)
+    sealed_next_day_gap_up_rate: float = Field(default=0.0, ge=0, le=1)
+    median_next_day_premium_pct: float = 0.0
+    avg_next_day_premium_pct: float = 0.0
+    confidence: HistoryStatsConfidence = "insufficient_sample"
+    notes: list[str] = Field(default_factory=list)
+
+
+class HistoricalCandidateSnapshot(BaseModel):
+    symbol: str
+    trading_day: str
+    grade_at_pick: CandidateGrade
+    grade_reason: str = ""
+    theme: str = ""
+    theme_role: ThemeLeaderRole = "unknown"
+    previous_consecutive_boards: int = 0
+    payload_json: str = ""
+    created_at: str = ""
+
+
+class BacktestCandidateRow(BaseModel):
+    symbol: str
+    trading_day: str
+    original_grade: CandidateGrade
+    new_grade: CandidateGrade
+    sealed_second_board: bool | None = None
+    next_day_open_pct: float | None = None
+
+
+class BacktestRun(BaseModel):
+    run_id: str
+    rule_changes: dict = Field(default_factory=dict)
+    start_day: str
+    end_day: str
+    status: BacktestStatus = "pending"
+    sample_size: int = 0
+    grade_distribution_before: dict[str, int] = Field(default_factory=dict)
+    grade_distribution_after: dict[str, int] = Field(default_factory=dict)
+    sealed_rate_before: float = 0.0
+    sealed_rate_after: float = 0.0
+    rows: list[BacktestCandidateRow] = Field(default_factory=list)
+    started_at: str = ""
+    completed_at: str = ""
+    notes: list[str] = Field(default_factory=list)
+
+
+class ThresholdProposal(BaseModel):
+    proposal_id: str
+    field_path: str
+    current_value: float
+    suggested_value: float
+    rationale: str = ""
+    backtest_run_id: str = ""
+    sample_size: int = 0
+    sealed_rate_delta: float = 0.0
+    confidence: HistoryStatsConfidence = "low"
+    created_at: str = ""
+
+
+class ThresholdAdviceReport(BaseModel):
+    backtest_run_id: str
+    generated_at: str
+    proposals: list[ThresholdProposal] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
