@@ -14,7 +14,7 @@ def backfill_candidates(
     *,
     trading_days: Iterable[str],
 ) -> int:
-    """Take a snapshot of today's candidate pool for each requested trading day.
+    """Snapshot the current adapter candidate pool for each requested trading_day label.
 
     The mock adapter returns the same pool regardless of trading_day so this
     is deterministic for tests. The jvquant adapter returns whatever its

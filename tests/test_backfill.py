@@ -44,3 +44,14 @@ def test_backfill_multiple_days(tmp_path: Path) -> None:
     assert len(rows_30) == 2
     assert len(rows_31) == 2
     assert persisted == 4
+
+
+def test_backfill_empty_trading_days_is_noop(tmp_path: Path) -> None:
+    store = AegisAlphaStore(tmp_path / "test.db")
+    adapter = MockMarketDataAdapter()
+
+    persisted = backfill_candidates(adapter, store, trading_days=[])
+
+    assert persisted == 0
+    rows = store.list_historical_snapshots_between(start_day="2026-01-01", end_day="2026-12-31")
+    assert rows == []
