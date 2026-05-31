@@ -19,6 +19,7 @@ from aegis_alpha.models import (
     CandidateOutcomeReview,
     CorrectionActionDecision,
     CorrectionActionProposal,
+    DragonTigerRecord,
     HistoricalCandidateSnapshot,
     LadderEntry,
     MarketEvent,
@@ -87,6 +88,10 @@ class AegisAlphaStore:
 
     def _init_schema(self) -> None:
         apply_migrations(self.db_path)
+
+    def init_db(self) -> None:
+        """Public alias for _init_schema; useful in tests that need explicit init."""
+        self._init_schema()
 
     def save_market_events(self, events: Iterable[MarketEvent]) -> None:
         with self._connect() as conn:
@@ -1091,6 +1096,76 @@ class AegisAlphaStore:
         with self._connect() as conn:
             rows = conn.execute(query, params).fetchall()
         return [BacktestRun.model_validate_json(row[0]) for row in rows]
+
+    def save_dragon_tiger(self, record: DragonTigerRecord) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO dragon_tiger_records (
+                    symbol, trading_day, list_reason,
+                    total_buy_cny, total_sell_cny, net_amount_cny,
+                    payload_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(symbol, trading_day) DO UPDATE SET
+                    list_reason = excluded.list_reason,
+                    total_buy_cny = excluded.total_buy_cny,
+                    total_sell_cny = excluded.total_sell_cny,
+                    net_amount_cny = excluded.net_amount_cny,
+                    payload_json = excluded.payload_json
+                """,
+                (
+                    record.symbol,
+                    record.trading_day,
+                    record.list_reason,
+                    record.total_buy_cny,
+                    record.total_sell_cny,
+                    record.net_amount_cny,
+                    record.model_dump_json(),
+                    record.created_at,
+                ),
+            )
+
+    def get_dragon_tiger(self, symbol: str, trading_day: str) -> DragonTigerRecord | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload_json FROM dragon_tiger_records "
+                "WHERE symbol = ? AND trading_day = ?",
+                (symbol, trading_day),
+            ).fetchone()
+        return DragonTigerRecord.model_validate_json(row[0]) if row else None
+
+    def list_active_seats_today(self, trading_day: str) -> list[dict]:
+        """Aggregate net buy by hot_money_alias for one trading day."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT payload_json FROM dragon_tiger_records WHERE trading_day = ?",
+                (trading_day,),
+            ).fetchall()
+
+        aggregated: dict[str, dict] = {}
+        for row in rows:
+            record = DragonTigerRecord.model_validate_json(row[0])
+            for seat in record.seats:
+                if seat.seat_type != "hot_money_known" or not seat.hot_money_alias:
+                    continue
+                entry = aggregated.setdefault(
+                    seat.hot_money_alias,
+                    {
+                        "hot_money_alias": seat.hot_money_alias,
+                        "symbol_count": 0,
+                        "total_net_buy_cny": 0.0,
+                        "symbols": [],
+                    },
+                )
+                if record.symbol not in entry["symbols"]:
+                    entry["symbols"].append(record.symbol)
+                    entry["symbol_count"] += 1
+                entry["total_net_buy_cny"] += seat.net_amount_cny
+        return sorted(
+            aggregated.values(),
+            key=lambda x: x["total_net_buy_cny"],
+            reverse=True,
+        )
 
 
 def write_runner_status(status: RunnerStatus, path: str | Path | None = None) -> Path:

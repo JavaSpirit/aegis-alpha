@@ -19,6 +19,7 @@ from aegis_alpha.models import (
     BreakBoardStock,
     CandidateExplanation,
     CandidateOutcomeReview,
+    DragonTigerRecord,
     EventScoringConfig,
     HistoryStats,
     LadderEntry,
@@ -776,6 +777,26 @@ class JvQuantMarketDataAdapter:
                 "Use data_quality on the candidate for source-level evidence before high-confidence analysis.",
             ],
         )
+
+    def get_dragon_tiger(self, symbol: str, trading_day: str) -> DragonTigerRecord:
+        # P5 starter: jvQuant 龙虎榜端点尚未对齐契约，先返回 placeholder 记录。
+        # 真实接入在 P5 Wave 2 单独 issue 内完成（参考 docs/JVQUANT_OFFICIAL_INDEX.md）。
+        return DragonTigerRecord(
+            symbol=symbol,
+            name="",
+            trading_day=trading_day,
+            list_reason="placeholder: jvQuant dragon-tiger endpoint not wired",
+            total_buy_cny=0.0,
+            total_sell_cny=0.0,
+            net_amount_cny=0.0,
+            seats=[],
+            provider="jvquant",
+            data_mode="placeholder",
+            created_at=_now(),
+        )
+
+    def get_active_seats_today(self, trading_day: str) -> list[dict]:
+        return []
 
     def _candidate_note_float(self, candidate: SecondBoardCandidate, key: str) -> float:
         prefix = f"{key}="

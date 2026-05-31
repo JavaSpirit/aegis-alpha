@@ -7,6 +7,7 @@ from aegis_alpha.models import (
     BreakBoardStock,
     CandidateExplanation,
     CandidateOutcomeReview,
+    DragonTigerRecord,
     EventScoringConfig,
     HistoryStats,
     LadderEntry,
@@ -89,3 +90,7 @@ class MarketDataAdapter(Protocol):
     def get_seal_timeline(self, symbol: str, trading_day: str = "") -> SealTimeline: ...
 
     def record_seal_timeline_event(self, event: SealTimelineEvent) -> SealTimelineEvent: ...
+
+    def get_dragon_tiger(self, symbol: str, trading_day: str) -> DragonTigerRecord: ...
+
+    def get_active_seats_today(self, trading_day: str) -> list[dict[str, Any]]: ...

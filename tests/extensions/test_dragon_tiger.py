@@ -75,3 +75,23 @@ def test_classify_hk_connect_zhuanyong_classifies_as_institution():
     seat_type, alias = classify_seat("沪股通专用", whitelist)
     assert seat_type == "institution"
     assert alias == ""
+
+
+def test_mock_adapter_returns_deterministic_dragon_tiger():
+    from aegis_alpha.adapters.mock_market_data import MockMarketDataAdapter
+
+    adapter = MockMarketDataAdapter()
+    record = adapter.get_dragon_tiger("600519", "2026-05-30")
+    assert record.symbol == "600519"
+    assert record.trading_day == "2026-05-30"
+    assert record.data_mode == "mock"
+    assert len(record.seats) >= 1
+
+
+def test_mock_adapter_active_seats_today_non_empty():
+    from aegis_alpha.adapters.mock_market_data import MockMarketDataAdapter
+
+    adapter = MockMarketDataAdapter()
+    rows = adapter.get_active_seats_today("2026-05-30")
+    assert isinstance(rows, list)
+    assert all("hot_money_alias" in r for r in rows)
