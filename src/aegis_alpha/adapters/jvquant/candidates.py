@@ -27,6 +27,10 @@ from aegis_alpha.extensions.limitup_driver import (
     LimitupDriverInputs,
     classify_limitup_driver,
 )
+from aegis_alpha.extensions.intraday_pattern import (
+    PatternInputs,
+    classify_intraday_pattern,
+)
 from aegis_alpha.symbols import daily_limit_pct
 from aegis_alpha.themes.auction import AuctionAnalyzer
 
@@ -283,6 +287,51 @@ def build_one_candidate(
     three_year_touch_rate = _stats.touch_limit_up_success_rate if _stats is not None else 0.0
     three_year_gap_up_rate = _stats.sealed_next_day_gap_up_rate if _stats is not None else 0.0
 
+    intraday_pattern_value = "unknown"
+    if minute_replay_used and minute_replay.previous_close > 0:
+        daily_limit_value = daily_limit_pct(symbol)
+        limit_price_threshold = minute_replay.previous_close * (1.0 + daily_limit_value / 100.0)
+        pattern_bars: list[dict] = []
+        for bar in minute_replay.bars:
+            try:
+                hh, mm, *_ = bar.time.split(":")
+                minute_offset = max(0, (int(hh) - 9) * 60 + int(mm) - 30)
+            except Exception:
+                continue
+            change_pct_local = (
+                (bar.last_price - minute_replay.previous_close)
+                / minute_replay.previous_close
+                * 100.0
+            )
+            at_limit = bar.last_price >= limit_price_threshold - 0.005
+            pattern_bars.append({
+                "minute": minute_offset,
+                "change_pct": float(change_pct_local),
+                "at_limit": bool(at_limit),
+            })
+
+        first_seal_minute = 0
+        if first_limit_up_time and first_limit_up_time != "unknown":
+            try:
+                hh, mm = first_limit_up_time.split(":")[:2]
+                first_seal_minute = max(0, (int(hh) - 9) * 60 + int(mm) - 30)
+            except Exception:
+                first_seal_minute = 0
+        sealed_at_open = first_seal_minute <= 1
+        closed_at_limit = abs(float(change_pct) - daily_limit_value) < 0.05
+        features = classify_intraday_pattern(
+            PatternInputs(
+                bars=pattern_bars,
+                daily_limit_pct=daily_limit_value,
+                break_count=int(break_board_count or 0),
+                reseal_count=int(reseal_count or 0),
+                first_seal_minute=first_seal_minute,
+                sealed_at_open=sealed_at_open,
+                closed_at_limit=closed_at_limit,
+            )
+        )
+        intraday_pattern_value = features.pattern
+
     return build_second_board_candidate(
         symbol=symbol,
         name=P._name_from_row(row),
@@ -334,6 +383,7 @@ def build_one_candidate(
         grade=grade,
         limitup_driver_type=limitup_driver_type,
         grade_reason=grade_reason,
+        intraday_pattern=intraday_pattern_value,
         data_quality=data_quality,
         orderbook_notes=orderbook_notes,
         minute_replay_notes=minute_replay_notes,
@@ -393,6 +443,7 @@ def build_second_board_candidate(
     estimated: float,
     grade: str,
     limitup_driver_type: str = "unknown",
+    intraday_pattern: str = "unknown",
     grade_reason: str = "",
     data_quality: dict[str, SignalMetadata] | None = None,
     orderbook_notes: list[str] | None = None,
@@ -504,7 +555,7 @@ def build_second_board_candidate(
         estimated_seal_probability=estimated,
         grade=grade,
         limitup_driver_type=limitup_driver_type,
-        intraday_pattern="unknown",
+        intraday_pattern=intraday_pattern,
         grade_reason=grade_reason,
         data_quality=data_quality,
         notes=notes,

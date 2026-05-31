@@ -58,3 +58,23 @@ def test_mock_candidate_driver_inferred_from_concept_tags():
     drivers = {c.limitup_driver_type for c in candidates}
     # mock 至少给出一个非 unknown 的样本，便于 Hermes 演示该字段
     assert drivers - {"unknown"}, f"mock should include at least one non-unknown driver, got: {drivers}"
+
+
+def test_mock_candidate_intraday_pattern_in_allowed_set():
+    from aegis_alpha.adapters.mock_market_data import MockMarketDataAdapter
+
+    adapter = MockMarketDataAdapter()
+    candidates = adapter.get_second_board_candidates()
+    allowed = {"one_word_board", "t_shape_board", "messy_board",
+               "platform_breakout", "false_breakout", "normal", "unknown"}
+    for cand in candidates:
+        assert cand.intraday_pattern in allowed
+
+
+def test_mock_candidate_at_least_one_non_unknown_intraday_pattern():
+    from aegis_alpha.adapters.mock_market_data import MockMarketDataAdapter
+
+    adapter = MockMarketDataAdapter()
+    candidates = adapter.get_second_board_candidates()
+    patterns = {c.intraday_pattern for c in candidates}
+    assert patterns - {"unknown"}, f"mock should expose at least one real pattern, got: {patterns}"
