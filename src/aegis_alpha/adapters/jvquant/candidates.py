@@ -227,62 +227,6 @@ def build_one_candidate(
             )
             orderbook_notes.append(f"Orderbook unavailable for candidate scoring: {type(exc).__name__}.")
 
-    grade = candidate_grade(
-        action=gate_action,
-        change_pct=change_pct,
-        five_min_speed_pct=five_min_speed_pct,
-        big_order_net_inflow_ratio=big_order_net_inflow_ratio,
-        orderbook_quality=orderbook_quality,
-        theme_count=theme_counts[theme],
-        first_limit_up_time=first_limit_up_time,
-        seal_amount_cny=seal_amount_cny,
-        seal_to_turnover_ratio=seal_to_turnover_ratio,
-        config=grading_config,
-    )
-    estimated = estimated_seal_probability(
-        action=gate_action,
-        change_pct=change_pct,
-        five_min_speed_pct=five_min_speed_pct,
-        big_order_net_inflow_ratio=big_order_net_inflow_ratio,
-        orderbook_quality=orderbook_quality,
-        theme_count=theme_counts[theme],
-        first_limit_up_time=first_limit_up_time,
-        seal_amount_cny=seal_amount_cny,
-        seal_to_turnover_ratio=seal_to_turnover_ratio,
-        config=grading_config,
-    )
-    grade_reason = candidate_grade_reason(
-        action=gate_action,
-        grade=grade,
-        change_pct=change_pct,
-        five_min_speed_pct=five_min_speed_pct,
-        big_order_net_inflow_ratio=big_order_net_inflow_ratio,
-        orderbook_quality=orderbook_quality,
-        theme_count=theme_counts[theme],
-        first_limit_up_time=first_limit_up_time,
-        seal_amount_cny=seal_amount_cny,
-        seal_to_turnover_ratio=seal_to_turnover_ratio,
-        queue_position_note=queue_position_note,
-        limitup_driver_type=limitup_driver_type,
-    )
-    data_quality = build_second_board_data_quality(
-        speed_timestamp=speed_timestamp,
-        speed_window=speed_window,
-        has_exact_speed_window=has_exact_speed_window,
-        has_exact_multi_speed_windows=has_exact_1m_window or has_exact_3m_window or has_exact_10m_window,
-        query_timestamp=query_timestamp,
-        has_capital_flow=main_net_inflow_cny != 0,
-        has_auction_data=bool(auction_row),
-        has_theme_tags=bool(concept_tags or topic_tags),
-        has_break_reseal_data=bool(break_reseal_row),
-        has_max_seal_data=max_seal_amount_cny > 0 or max_seal_volume_shares > 0,
-        has_seal_data=first_limit_up_time != "unknown" or seal_amount_cny > 0 or seal_volume_shares > 0,
-        has_orderbook_rows=orderbook_has_rows,
-        orderbook_timestamp=orderbook_timestamp,
-        minute_replay_used=minute_replay_used,
-        minute_replay_timestamp=minute_replay_timestamp,
-        minute_replay_bar_count=minute_replay_bar_count,
-    )
     _stats = history_stats_by_symbol.get(symbol)
     three_year_touch_rate = _stats.touch_limit_up_success_rate if _stats is not None else 0.0
     three_year_gap_up_rate = _stats.sealed_next_day_gap_up_rate if _stats is not None else 0.0
@@ -331,6 +275,64 @@ def build_one_candidate(
             )
         )
         intraday_pattern_value = features.pattern
+
+    grade = candidate_grade(
+        action=gate_action,
+        change_pct=change_pct,
+        five_min_speed_pct=five_min_speed_pct,
+        big_order_net_inflow_ratio=big_order_net_inflow_ratio,
+        orderbook_quality=orderbook_quality,
+        theme_count=theme_counts[theme],
+        first_limit_up_time=first_limit_up_time,
+        seal_amount_cny=seal_amount_cny,
+        seal_to_turnover_ratio=seal_to_turnover_ratio,
+        config=grading_config,
+    )
+    estimated = estimated_seal_probability(
+        action=gate_action,
+        change_pct=change_pct,
+        five_min_speed_pct=five_min_speed_pct,
+        big_order_net_inflow_ratio=big_order_net_inflow_ratio,
+        orderbook_quality=orderbook_quality,
+        theme_count=theme_counts[theme],
+        first_limit_up_time=first_limit_up_time,
+        seal_amount_cny=seal_amount_cny,
+        seal_to_turnover_ratio=seal_to_turnover_ratio,
+        config=grading_config,
+    )
+    grade_reason = candidate_grade_reason(
+        action=gate_action,
+        grade=grade,
+        change_pct=change_pct,
+        five_min_speed_pct=five_min_speed_pct,
+        big_order_net_inflow_ratio=big_order_net_inflow_ratio,
+        orderbook_quality=orderbook_quality,
+        theme_count=theme_counts[theme],
+        first_limit_up_time=first_limit_up_time,
+        seal_amount_cny=seal_amount_cny,
+        seal_to_turnover_ratio=seal_to_turnover_ratio,
+        queue_position_note=queue_position_note,
+        limitup_driver_type=limitup_driver_type,
+        intraday_pattern=intraday_pattern_value,
+    )
+    data_quality = build_second_board_data_quality(
+        speed_timestamp=speed_timestamp,
+        speed_window=speed_window,
+        has_exact_speed_window=has_exact_speed_window,
+        has_exact_multi_speed_windows=has_exact_1m_window or has_exact_3m_window or has_exact_10m_window,
+        query_timestamp=query_timestamp,
+        has_capital_flow=main_net_inflow_cny != 0,
+        has_auction_data=bool(auction_row),
+        has_theme_tags=bool(concept_tags or topic_tags),
+        has_break_reseal_data=bool(break_reseal_row),
+        has_max_seal_data=max_seal_amount_cny > 0 or max_seal_volume_shares > 0,
+        has_seal_data=first_limit_up_time != "unknown" or seal_amount_cny > 0 or seal_volume_shares > 0,
+        has_orderbook_rows=orderbook_has_rows,
+        orderbook_timestamp=orderbook_timestamp,
+        minute_replay_used=minute_replay_used,
+        minute_replay_timestamp=minute_replay_timestamp,
+        minute_replay_bar_count=minute_replay_bar_count,
+    )
 
     return build_second_board_candidate(
         symbol=symbol,

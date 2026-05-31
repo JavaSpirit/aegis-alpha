@@ -138,6 +138,7 @@ def candidate_grade_reason(
     seal_to_turnover_ratio: float,
     queue_position_note: str,
     limitup_driver_type: str = "unknown",
+    intraday_pattern: str = "unknown",
 ) -> str:
     seal_text = (
         f"首次封板时间为 {first_limit_up_time}，封单额约 {seal_amount_cny / 100_000_000:.2f} 亿元，"
@@ -178,6 +179,8 @@ def candidate_grade_reason(
         )
     if limitup_driver_type != "unknown":
         reason += f" (driver={limitup_driver_type})"
+    if intraday_pattern not in {"unknown", "normal"}:
+        reason += f" (pattern={intraday_pattern})"
     return reason
 
 

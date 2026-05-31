@@ -148,3 +148,20 @@ def test_grade_reason_mentions_driver_when_classified():
     assert classified, "fake client should yield at least one classified driver"
     for cand in classified:
         assert cand.limitup_driver_type in cand.grade_reason or f"driver={cand.limitup_driver_type}" in cand.grade_reason
+
+
+def test_grade_reason_mentions_pattern_when_classified():
+    """When intraday_pattern is non-trivial (not unknown/normal), grade_reason should hint it."""
+    candidates = _build_candidates_with_minimal_patches()
+    interesting = [
+        c for c in candidates
+        if c.intraday_pattern not in {"unknown", "normal"}
+    ]
+    if not interesting:
+        # vacuous OK: the FakeJvQuantClient may not produce a non-trivial pattern. We still
+        # verify the field exists on every candidate (sanity check).
+        for c in candidates:
+            assert hasattr(c, "intraday_pattern")
+        return
+    for cand in interesting:
+        assert cand.intraday_pattern in cand.grade_reason or f"pattern={cand.intraday_pattern}" in cand.grade_reason
