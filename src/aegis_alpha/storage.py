@@ -333,6 +333,22 @@ class AegisAlphaStore:
             ).fetchall()
         return [AgentReview.model_validate_json(row[0]) for row in rows]
 
+    def list_agent_reviews_between(self, start_day: str, end_day: str) -> list[AgentReview]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT payload_json FROM agent_reviews
+                ORDER BY id DESC
+                """,
+            ).fetchall()
+        results: list[AgentReview] = []
+        for row in rows:
+            review = AgentReview.model_validate_json(row[0])
+            target_day = review.target_time[:10] if review.target_time else ""
+            if start_day <= target_day <= end_day:
+                results.append(review)
+        return results
+
     def save_agent_review_correction(self, correction: AgentReviewCorrection) -> AgentReviewCorrection:
         if not correction.created_at:
             correction.created_at = now_iso()
