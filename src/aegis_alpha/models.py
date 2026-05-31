@@ -62,6 +62,36 @@ RunnerState = Literal[
     "RECONNECTING",
     "STOPPING",
 ]
+DragonTigerSeatType = Literal[
+    "hot_money_known",
+    "hot_money_unknown",
+    "institution",
+    "hk_connect",
+    "retail_proxy",
+    "unknown",
+]
+LimitupDriverType = Literal[
+    "earnings",
+    "policy",
+    "theme",
+    "hot_money",
+    "unknown",
+]
+IntradayPattern = Literal[
+    "one_word_board",
+    "t_shape_board",
+    "messy_board",
+    "platform_breakout",
+    "false_breakout",
+    "normal",
+    "unknown",
+]
+ContrarianPoolKind = Literal["limit_down", "st"]
+CapitalFlowSliceWindow = Literal[
+    "pre_first_seal_5m",
+    "post_break_1m",
+    "tail_30m",
+]
 
 
 class SignalEvidence(BaseModel):
@@ -709,4 +739,61 @@ class ThresholdAdviceReport(BaseModel):
     backtest_run_id: str
     generated_at: str
     proposals: list[ThresholdProposal] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
+class DragonTigerSeat(BaseModel):
+    seat_name: str
+    seat_type: DragonTigerSeatType = "unknown"
+    hot_money_alias: str = ""
+    buy_amount_cny: float = 0.0
+    sell_amount_cny: float = 0.0
+    net_amount_cny: float = 0.0
+
+
+class DragonTigerRecord(BaseModel):
+    symbol: str
+    name: str
+    trading_day: str
+    list_reason: str = ""
+    total_buy_cny: float = 0.0
+    total_sell_cny: float = 0.0
+    net_amount_cny: float = 0.0
+    seats: list[DragonTigerSeat] = Field(default_factory=list)
+    provider: str = "mock"
+    data_mode: str = "mock"
+    created_at: str = ""
+
+
+class ContrarianPoolEntry(BaseModel):
+    symbol: str
+    name: str
+    pool_kind: ContrarianPoolKind
+    trading_day: str
+    consecutive_days: int = 0
+    change_pct: float = 0.0
+    notes: list[str] = Field(default_factory=list)
+
+
+class CapitalFlowSlice(BaseModel):
+    symbol: str
+    trading_day: str
+    window: CapitalFlowSliceWindow
+    big_order_net_inflow_cny: float = 0.0
+    main_capital_net_inflow_cny: float = 0.0
+    retail_capital_net_inflow_cny: float = 0.0
+    notes: list[str] = Field(default_factory=list)
+    provider: str = "mock"
+    data_mode: str = "mock"
+    created_at: str = ""
+
+
+class IntradayPatternFeatures(BaseModel):
+    """形态识别中间产物，调试用，不直接暴露 MCP。"""
+    pattern: IntradayPattern = "unknown"
+    open_to_first_seal_minutes: int = 0
+    break_count: int = 0
+    sealed_at_open: bool = False
+    closing_at_limit: bool = False
+    high_to_close_drawdown_pct: float = 0.0
     notes: list[str] = Field(default_factory=list)
