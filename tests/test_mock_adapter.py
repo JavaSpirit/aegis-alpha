@@ -37,3 +37,24 @@ def test_second_board_explanation_contract() -> None:
     assert explanation["trigger_conditions"]
     assert explanation["avoid_conditions"]
     assert "not investment advice" in explanation["disclaimer"].lower()
+
+
+def test_mock_second_board_candidate_includes_limitup_driver_type():
+    from aegis_alpha.adapters.mock_market_data import MockMarketDataAdapter
+
+    adapter = MockMarketDataAdapter()
+    candidates = adapter.get_second_board_candidates()
+    assert candidates, "mock should return at least one candidate"
+    for cand in candidates:
+        assert hasattr(cand, "limitup_driver_type")
+        assert cand.limitup_driver_type in {"earnings", "policy", "theme", "hot_money", "unknown"}
+
+
+def test_mock_candidate_driver_inferred_from_concept_tags():
+    from aegis_alpha.adapters.mock_market_data import MockMarketDataAdapter
+
+    adapter = MockMarketDataAdapter()
+    candidates = adapter.get_second_board_candidates()
+    drivers = {c.limitup_driver_type for c in candidates}
+    # mock 至少给出一个非 unknown 的样本，便于 Hermes 演示该字段
+    assert drivers - {"unknown"}, f"mock should include at least one non-unknown driver, got: {drivers}"

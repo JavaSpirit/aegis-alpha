@@ -524,6 +524,8 @@ class SecondBoardCandidate(BaseModel):
     three_year_sealed_next_day_gap_up_rate: float = Field(ge=0, le=1)
     estimated_seal_probability: float = Field(ge=0, le=1)
     grade: CandidateGrade
+    limitup_driver_type: LimitupDriverType = "unknown"
+    intraday_pattern: IntradayPattern = "unknown"
     grade_reason: str = ""
     data_quality: dict[str, SignalMetadata] = Field(default_factory=dict)
     notes: list[str]

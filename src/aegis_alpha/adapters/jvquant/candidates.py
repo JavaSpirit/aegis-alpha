@@ -23,6 +23,10 @@ from aegis_alpha.models import (
     ThemeLeader,
     ThemeLeaderRole,
 )
+from aegis_alpha.extensions.limitup_driver import (
+    LimitupDriverInputs,
+    classify_limitup_driver,
+)
 from aegis_alpha.symbols import daily_limit_pct
 from aegis_alpha.themes.auction import AuctionAnalyzer
 
@@ -163,6 +167,17 @@ def build_one_candidate(
     ladder = ladder_entries.get(symbol)
     previous_consecutive = ladder.consecutive_boards if ladder else 0
     previous_height = ladder.height_label if ladder else "unknown"
+
+    limitup_driver_type = classify_limitup_driver(
+        LimitupDriverInputs(
+            symbol=symbol,
+            concept_tags=list(concept_tags),
+            topic_tags=list(topic_tags),
+            list_reason="",
+            net_amount_cny=0.0,
+            previous_consecutive_boards=int(previous_consecutive or 0),
+        )
+    )
 
     leader = theme_leaders_by_theme.get(theme)
     theme_role: ThemeLeaderRole = "unknown"
@@ -316,6 +331,7 @@ def build_one_candidate(
         three_year_sealed_next_day_gap_up_rate=three_year_gap_up_rate,
         estimated=estimated,
         grade=grade,
+        limitup_driver_type=limitup_driver_type,
         grade_reason=grade_reason,
         data_quality=data_quality,
         orderbook_notes=orderbook_notes,
@@ -375,13 +391,20 @@ def build_second_board_candidate(
     three_year_sealed_next_day_gap_up_rate: float,
     estimated: float,
     grade: str,
-    grade_reason: str,
-    data_quality: dict[str, SignalMetadata],
-    orderbook_notes: list[str],
-    minute_replay_notes: list[str],
-    turnover_cny: float,
-    main_net_inflow_cny: float,
+    limitup_driver_type: str = "unknown",
+    grade_reason: str = "",
+    data_quality: dict[str, SignalMetadata] | None = None,
+    orderbook_notes: list[str] | None = None,
+    minute_replay_notes: list[str] | None = None,
+    turnover_cny: float = 0.0,
+    main_net_inflow_cny: float = 0.0,
 ) -> SecondBoardCandidate:
+    if data_quality is None:
+        data_quality = {}
+    if orderbook_notes is None:
+        orderbook_notes = []
+    if minute_replay_notes is None:
+        minute_replay_notes = []
     notes: list[str] = [
         "jvQuant live-provider candidate: yesterday limit-up and today gain above 5%.",
         (
@@ -479,6 +502,8 @@ def build_second_board_candidate(
         three_year_sealed_next_day_gap_up_rate=three_year_sealed_next_day_gap_up_rate,
         estimated_seal_probability=estimated,
         grade=grade,
+        limitup_driver_type=limitup_driver_type,
+        intraday_pattern="unknown",
         grade_reason=grade_reason,
         data_quality=data_quality,
         notes=notes,
