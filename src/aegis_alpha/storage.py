@@ -1042,6 +1042,56 @@ class AegisAlphaStore:
             rows = conn.execute(query, params).fetchall()
         return [OutcomeAttribution.model_validate_json(row[0]) for row in rows]
 
+    def save_backtest_run(self, run: BacktestRun) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO backtest_runs (
+                    run_id, status, start_day, end_day, sample_size,
+                    payload_json, started_at, completed_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(run_id) DO UPDATE SET
+                    status = excluded.status,
+                    sample_size = excluded.sample_size,
+                    payload_json = excluded.payload_json,
+                    completed_at = excluded.completed_at
+                """,
+                (
+                    run.run_id,
+                    run.status,
+                    run.start_day,
+                    run.end_day,
+                    run.sample_size,
+                    run.model_dump_json(),
+                    run.started_at,
+                    run.completed_at,
+                ),
+            )
+
+    def get_backtest_run(self, run_id: str) -> BacktestRun | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload_json FROM backtest_runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+        return BacktestRun.model_validate_json(row[0]) if row else None
+
+    def list_backtest_runs(self, *, status: str = "", limit: int = 50) -> list[BacktestRun]:
+        safe_limit = max(1, min(int(limit or 50), 200))
+        clauses: list[str] = []
+        params: list[object] = []
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        query = "SELECT payload_json FROM backtest_runs"
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY started_at DESC LIMIT ?"
+        params.append(safe_limit)
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [BacktestRun.model_validate_json(row[0]) for row in rows]
+
 
 def write_runner_status(status: RunnerStatus, path: str | Path | None = None) -> Path:
     status_path = Path(path).expanduser() if path else default_runner_status_path()
