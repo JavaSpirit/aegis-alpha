@@ -553,6 +553,93 @@ def get_top_themes_today(trading_day: str = "", limit: int = 10) -> list[dict]:
     return _call_tool(_build)
 
 
+@mcp.tool
+def backfill_candidates(trading_days: str) -> dict:
+    """Capture today's candidate pool snapshot for each given trading day (pipe-separated)."""
+    from aegis_alpha.feedback.backfill import backfill_candidates as _backfill
+
+    safe_days = [d.strip() for d in trading_days.split("|") if d.strip()]
+    if not safe_days:
+        return {"data_mode": "unavailable", "error": "trading_days is required (pipe-separated)"}
+
+    def _run(adapter: Any) -> dict:
+        store = get_store()
+        persisted = _backfill(adapter, store, trading_days=safe_days)
+        return {"persisted": persisted, "trading_days": safe_days}
+
+    return _call_tool(_run)
+
+
+@mcp.tool
+def attribute_outcome(symbol: str, trading_day: str) -> dict:
+    """Attribute a failed candidate outcome from stored data."""
+    from aegis_alpha.feedback.attribution import attribute_from_stored_data
+
+    safe_symbol = symbol.strip()
+    safe_day = trading_day.strip()
+    if not (safe_symbol and safe_day):
+        return {"data_mode": "unavailable", "error": "symbol and trading_day are required"}
+
+    def _run(adapter: Any) -> dict:
+        attribution = attribute_from_stored_data(
+            adapter=adapter,
+            store=get_store(),
+            symbol=safe_symbol,
+            trading_day=safe_day,
+        )
+        if attribution is None:
+            return {
+                "data_mode": "unavailable",
+                "error": "No outcome record or historical snapshot for this symbol/day.",
+            }
+        return attribution.model_dump()
+
+    return _call_tool(_run)
+
+
+@mcp.tool
+def get_history_stats(symbol: str) -> dict:
+    """Return three-year historical limit-up stats for one stock."""
+    return _call_tool(lambda adapter: adapter.get_history_stats(symbol).model_dump())
+
+
+@mcp.tool
+def run_backtest(rule_changes_json: str, start_day: str, end_day: str) -> dict:
+    """Run a backtest with rule_changes (JSON string) over historical snapshots."""
+    import json
+
+    from aegis_alpha.feedback.backtest import BacktestInputs, run_backtest_and_advise
+
+    safe_start = start_day.strip()
+    safe_end = end_day.strip()
+    if not (safe_start and safe_end):
+        return {"data_mode": "unavailable", "error": "start_day and end_day are required"}
+    try:
+        rule_changes = json.loads(rule_changes_json or "{}")
+    except json.JSONDecodeError as exc:
+        return {"data_mode": "unavailable", "error": f"rule_changes_json invalid: {exc}"}
+
+    def _run(_store: AegisAlphaStore) -> dict:
+        run, advice = run_backtest_and_advise(
+            BacktestInputs(
+                store=_store,
+                rule_changes=rule_changes,
+                start_day=safe_start,
+                end_day=safe_end,
+            )
+        )
+        return {"run": run.model_dump(), "advice": advice.model_dump()}
+
+    return _call_store(_run)
+
+
+@mcp.tool
+def get_recent_backtests(limit: int = 10) -> list[dict] | dict:
+    """List recent backtest runs."""
+    safe_limit = max(1, min(int(limit or 10), 50))
+    return _call_store(lambda store: [r.model_dump() for r in store.list_backtest_runs(limit=safe_limit)])
+
+
 def main() -> None:
     mcp.run()
 
