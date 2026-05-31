@@ -1,5 +1,19 @@
 {
   "worktree": {
     "baseRef": "head"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(python *)",
+      "Bash(python3 *)",
+      "Bash(python3.11 *)",
+      "Bash(python3.12 *)",
+      "Bash(python3.13 *)",
+      "Bash(pytest *)",
+      "Bash(.venv/bin/python *)",
+      "Bash(.venv/bin/pytest *)",
+      "Bash(PYTHONPATH=* python*)",
+      "Bash(PYTHONPATH=* pytest*)"
+    ]
   }
 }
