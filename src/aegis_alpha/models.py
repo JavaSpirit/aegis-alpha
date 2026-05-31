@@ -422,6 +422,8 @@ class CorrectionActionProposal(BaseModel):
 
 
 class LimitUpHistoryStats(BaseModel):
+    """Provider-shaped per-symbol historical stats. See HistoryStats for the
+    P4 computed counterpart sourced from review_outcomes."""
     symbol: str
     sample_size: int
     seal_success_rate: float = Field(ge=0, le=1)
@@ -634,6 +636,12 @@ class OutcomeAttribution(BaseModel):
 
 
 class HistoryStats(BaseModel):
+    """Per-symbol historical limit-up statistics computed from review_outcomes.
+
+    Distinct from LimitUpHistoryStats: that one is the read-only Protocol return
+    type for get_stock_history_limitup_stats (provider-shaped); this one is the
+    computed P4 contract that aggregates stored CandidateOutcomeReview rows.
+    """
     symbol: str
     sample_size: int = 0
     sample_window_start: str = ""
@@ -669,15 +677,15 @@ class BacktestCandidateRow(BaseModel):
 
 class BacktestRun(BaseModel):
     run_id: str
-    rule_changes: dict = Field(default_factory=dict)
+    rule_changes: dict[str, Any] = Field(default_factory=dict)
     start_day: str
     end_day: str
     status: BacktestStatus = "pending"
     sample_size: int = 0
     grade_distribution_before: dict[str, int] = Field(default_factory=dict)
     grade_distribution_after: dict[str, int] = Field(default_factory=dict)
-    sealed_rate_before: float = 0.0
-    sealed_rate_after: float = 0.0
+    sealed_rate_before: float = Field(default=0.0, ge=0, le=1)
+    sealed_rate_after: float = Field(default=0.0, ge=0, le=1)
     rows: list[BacktestCandidateRow] = Field(default_factory=list)
     started_at: str = ""
     completed_at: str = ""
@@ -692,7 +700,7 @@ class ThresholdProposal(BaseModel):
     rationale: str = ""
     backtest_run_id: str = ""
     sample_size: int = 0
-    sealed_rate_delta: float = 0.0
+    sealed_rate_delta: float = Field(default=0.0, ge=-1, le=1)
     confidence: HistoryStatsConfidence = "low"
     created_at: str = ""
 
