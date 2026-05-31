@@ -61,12 +61,12 @@ def classify_seat(
         for match in entry.seat_match:
             if match and match in name:
                 return "hot_money_known", entry.alias
-    for keyword in whitelist.hk_connect_keywords:
-        if keyword and keyword in name:
-            return "hk_connect", ""
     for keyword in whitelist.institution_keywords:
         if keyword and keyword in name:
             return "institution", ""
+    for keyword in whitelist.hk_connect_keywords:
+        if keyword and keyword in name:
+            return "hk_connect", ""
     return "hot_money_unknown", ""
 
 

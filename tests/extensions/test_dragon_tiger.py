@@ -61,3 +61,17 @@ def test_parse_dragon_tiger_payload_extracts_top_seats():
     }
     aliases = {s.hot_money_alias for s in record.seats if s.hot_money_alias}
     assert "章盟主" in aliases
+
+
+def test_classify_hk_connect_plain_seat():
+    whitelist = load_seat_whitelist(str(CONFIG_PATH))
+    seat_type, alias = classify_seat("沪股通", whitelist)
+    assert seat_type == "hk_connect"
+    assert alias == ""
+
+
+def test_classify_hk_connect_zhuanyong_classifies_as_institution():
+    whitelist = load_seat_whitelist(str(CONFIG_PATH))
+    seat_type, alias = classify_seat("沪股通专用", whitelist)
+    assert seat_type == "institution"
+    assert alias == ""
