@@ -34,6 +34,7 @@ MarketEventType = Literal[
     "BIG_ORDER_INFLOW_SPIKE",
     "SECOND_BOARD_CANDIDATE_REPRICE",
     "THEME_DIVERGENCE",
+    "MARKET_BOTTOM_REVERSAL",
 ]
 WatchlistStatus = Literal["active", "closed", "expired"]
 WatchlistEntryAction = Literal["added", "promoted", "downgraded", "dropped", "noted"]
