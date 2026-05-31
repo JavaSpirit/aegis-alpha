@@ -36,6 +36,14 @@ def test_mock_adapter_exposes_p2_theme_ladder_emotion_auction_contracts() -> Non
     assert jqr.theme_role == "leader"  # 机器人 theme leader is 300024.SZ itself
     assert jqr.theme_leader_symbol == "300024.SZ"
 
+    # P4: three_year_* fields stay in [0, 1] range. Mock candidates retain their
+    # hardcoded literals (mock does not call get_history_stats during candidate
+    # build), but this guard prevents regressions if someone later changes the
+    # mock to compute the rates and accidentally returns out-of-range values.
+    for cand in candidates:
+        assert 0.0 <= cand.three_year_touch_limit_success_rate <= 1.0
+        assert 0.0 <= cand.three_year_sealed_next_day_gap_up_rate <= 1.0
+
 
 def test_mock_candidate_theme_role_responds_to_resolver_output() -> None:
     """If resolver returns no leader for a theme, candidate's theme_role must be unknown."""
