@@ -1,11 +1,23 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from aegis_alpha.clock import SH_TZ
-from aegis_alpha.models import MinuteReplayBar, OrderbookQueueLevel, StockOrderbookSnapshot
+from aegis_alpha.models import (
+    CapitalFlowSlice,
+    ContrarianPoolEntry,
+    DragonTigerRecord,
+    DragonTigerSeat,
+    MinuteReplayBar,
+    NewStockCandidate,
+    OrderbookQueueLevel,
+    StockOrderbookSnapshot,
+    SuspendedStock,
+    WeeklyPosition,
+)
+from aegis_alpha.symbols import normalize_symbol
 
 
 def float_or_zero(value: Any) -> float:
@@ -222,6 +234,350 @@ def _parse_cny_amount(value: Any) -> float:
         text = text[:-1]
     amount = float_or_zero(text) * multiplier
     return -amount if negative else amount
+
+
+def _parse_date(value: Any) -> date | None:
+    text = str(value or "").strip()
+    if not text or text == "-":
+        return None
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
+def _latest_date_from_fields(row: dict[str, Any], fallback: str = "") -> str:
+    for key in row:
+        match = re.search(r"(\d{4}-\d{2}-\d{2})", key)
+        if match:
+            return match.group(1)
+    return fallback
+
+
+def _kline_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    data = payload.get("data", {}) if isinstance(payload, dict) else {}
+    fields = data.get("fields", []) if isinstance(data, dict) else []
+    rows = data.get("list", []) if isinstance(data, dict) else []
+    mapped: list[dict[str, Any]] = []
+    for row in rows:
+        if isinstance(row, list):
+            mapped.append({str(field): row[index] for index, field in enumerate(fields) if index < len(row)})
+    return sorted(mapped, key=lambda item: str(item.get("日期") or ""))
+
+
+def _close_values(rows: list[dict[str, Any]]) -> list[float]:
+    return [float_or_zero(row.get("收盘")) for row in rows if float_or_zero(row.get("收盘")) > 0]
+
+
+def parse_weekly_position_payload(
+    week_payload: dict[str, Any],
+    day_payload: dict[str, Any],
+    *,
+    symbol: str,
+) -> WeeklyPosition:
+    week_rows = _kline_rows(week_payload)
+    if not week_rows:
+        return WeeklyPosition(
+            symbol=normalize_symbol(symbol),
+            trading_day="",
+            notes=["jvQuant weekly kline returned no rows."],
+            provider="jvQuant",
+            data_mode="live_provider_empty",
+        )
+
+    latest_window = week_rows[-8:]
+    latest = latest_window[-1]
+    highs = [float_or_zero(row.get("最高")) for row in latest_window]
+    lows = [float_or_zero(row.get("最低")) for row in latest_window if float_or_zero(row.get("最低")) > 0]
+    weekly_high = max(highs, default=0.0)
+    weekly_low = min(lows, default=0.0)
+    weekly_close = float_or_zero(latest.get("收盘"))
+    denominator = weekly_high - weekly_low
+    position_pct = 0.0 if denominator <= 0 else max(0.0, min(1.0, (weekly_close - weekly_low) / denominator))
+
+    closes = _close_values(week_rows)
+    weeks_in_uptrend = 0
+    for index in range(len(closes) - 1, 0, -1):
+        if closes[index] <= closes[index - 1]:
+            break
+        weeks_in_uptrend += 1
+
+    day_closes = _close_values(_kline_rows(day_payload))
+    ma20_above_ma60 = False
+    if len(day_closes) >= 60:
+        ma20 = sum(day_closes[-20:]) / 20.0
+        ma60 = sum(day_closes[-60:]) / 60.0
+        ma20_above_ma60 = ma20 > ma60
+
+    return WeeklyPosition(
+        symbol=normalize_symbol(symbol),
+        trading_day=str(latest.get("日期") or ""),
+        weekly_high=weekly_high,
+        weekly_low=weekly_low,
+        weekly_close=weekly_close,
+        position_pct=round(position_pct, 4),
+        weeks_in_uptrend=weeks_in_uptrend,
+        ma20_above_ma60=ma20_above_ma60,
+        notes=[
+            "Derived from jvQuant week/day K-line payloads.",
+            f"weekly_window_rows={len(latest_window)}",
+            f"daily_ma_rows={len(day_closes)}",
+        ],
+        provider="jvQuant",
+        data_mode="live_provider",
+    )
+
+
+def parse_limit_down_pool_payload(
+    payload: dict[str, Any],
+    *,
+    trading_day: str,
+) -> list[ContrarianPoolEntry]:
+    rows = _query_rows(payload)
+    entries: list[ContrarianPoolEntry] = []
+    for row in rows:
+        symbol = _symbol_from_row(row)
+        if not symbol:
+            continue
+        day = trading_day or _latest_date_from_fields(row)
+        entries.append(
+            ContrarianPoolEntry(
+                symbol=symbol,
+                name=_name_from_row(row),
+                pool_kind="limit_down",
+                trading_day=day,
+                consecutive_days=int_or_zero(_field_value(row, "连续跌停天数")),
+                change_pct=float_or_zero(_field_value(row, "涨跌幅")),
+                notes=[
+                    "jvQuant semantic query: limit-down pool.",
+                    f"status={_field_value(row, '是否跌停') or ''}",
+                    f"turnover_cny={_parse_cny_amount(_field_value(row, '成交额')):.0f}",
+                ],
+            )
+        )
+    return entries
+
+
+def parse_st_pool_payload(
+    payload: dict[str, Any],
+    *,
+    trading_day: str,
+) -> list[ContrarianPoolEntry]:
+    rows = _query_rows(payload)
+    entries: list[ContrarianPoolEntry] = []
+    for row in rows:
+        symbol = _symbol_from_row(row)
+        if not symbol:
+            continue
+        price = _field_value(row, "收盘价", "价格", "最新价")
+        amount = _field_value(row, "成交额")
+        entries.append(
+            ContrarianPoolEntry(
+                symbol=symbol,
+                name=_name_from_row(row),
+                pool_kind="st",
+                trading_day=trading_day or _latest_date_from_fields(row),
+                consecutive_days=0,
+                change_pct=float_or_zero(_field_value(row, "涨跌幅")),
+                notes=[
+                    "jvQuant semantic query: ST pool.",
+                    f"st_flag={_field_value(row, '是否ST') or ''}",
+                    "price_missing=true" if str(price).strip() == "-" else f"price={price}",
+                    "turnover_missing=true" if str(amount).strip() == "-" else f"turnover_cny={_parse_cny_amount(amount):.0f}",
+                ],
+            )
+        )
+    return entries
+
+
+def parse_new_stock_candidates_payload(
+    payload: dict[str, Any],
+    *,
+    today: str,
+) -> list[NewStockCandidate]:
+    from aegis_alpha.extensions.new_stocks import classify_new_stock_tier
+
+    today_date = _parse_date(today)
+    rows = _query_rows(payload)
+    candidates: list[NewStockCandidate] = []
+    for row in rows:
+        symbol = _symbol_from_row(row)
+        if not symbol:
+            continue
+        listing_date = str(_field_value(row, "上市日期") or "").strip()
+        days = int_or_zero(_field_value(row, "上市天数"))
+        if days == 0 and today_date is not None and (listed := _parse_date(listing_date)) is not None:
+            days = max(0, (today_date - listed).days)
+        free_float = _parse_cny_amount(_field_value(row, "流通市值"))
+        candidates.append(
+            NewStockCandidate(
+                symbol=symbol,
+                name=_name_from_row(row),
+                listing_date=listing_date,
+                days_since_listing=days,
+                free_float_market_cap_cny=free_float,
+                current_change_pct=float_or_zero(_field_value(row, "涨跌幅")),
+                tier=classify_new_stock_tier(days_since_listing=days, free_float_cny=free_float),
+                notes=[
+                    "jvQuant semantic query: new-stock candidate.",
+                    f"industry={_theme_from_row(row)}",
+                ],
+                provider="jvQuant",
+                data_mode="live_provider",
+            )
+        )
+    return candidates
+
+
+def parse_suspended_stocks_payload(
+    payload: dict[str, Any],
+    *,
+    trading_day: str,
+) -> list[SuspendedStock]:
+    rows = _query_rows(payload)
+    suspended: list[SuspendedStock] = []
+    for row in rows:
+        symbol = _symbol_from_row(row)
+        if not symbol:
+            continue
+        start_day = str(_field_value(row, "停牌起始日期", "停牌起始日") or trading_day).strip()
+        end_day = str(_field_value(row, "复牌日", "复牌") or "").strip()
+        suspended.append(
+            SuspendedStock(
+                symbol=symbol,
+                name=_name_from_row(row),
+                suspension_start_day=start_day if start_day != "-" else trading_day,
+                suspension_end_day="" if end_day == "-" else end_day,
+                reason=str(_field_value(row, "停牌原因") or "").strip(),
+                notes=[
+                    "jvQuant semantic query: suspended stock fields confirmed.",
+                    f"raw_status={_field_value(row, '停牌') or ''}",
+                ],
+                provider="jvQuant",
+                data_mode="live_provider",
+            )
+        )
+    return suspended
+
+
+def _dragon_tiger_items(value: Any) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    if not isinstance(value, list):
+        return items
+    for block in value:
+        if not isinstance(block, dict):
+            continue
+        for item in block.get("list") or []:
+            if isinstance(item, dict):
+                merged = dict(item)
+                merged.setdefault("date", block.get("date"))
+                merged.setdefault("filter", block.get("filter"))
+                items.append(merged)
+    return items
+
+
+def parse_jvquant_dragon_tiger_payload(
+    payload: dict[str, Any],
+    *,
+    symbol: str,
+    trading_day: str,
+) -> DragonTigerRecord:
+    target = normalize_symbol(symbol)
+    rows = _query_rows(payload)
+    matched = [row for row in rows if normalize_symbol(_symbol_from_row(row)) == target]
+    row = matched[0] if matched else {}
+    if not row:
+        return DragonTigerRecord(
+            symbol=target,
+            name="",
+            trading_day=trading_day,
+            list_reason="not present in jvQuant dragon-tiger semantic-query result",
+            provider="jvQuant",
+            data_mode="live_provider_empty",
+            created_at=datetime.now(SH_TZ).isoformat(timespec="seconds"),
+        )
+
+    _key, tiger_value = _field_entry(row, "龙虎榜")
+    items = _dragon_tiger_items(tiger_value)
+    seats: list[DragonTigerSeat] = []
+    total_buy = 0.0
+    total_sell = 0.0
+    reasons: list[str] = []
+    for item in items:
+        buy = _parse_cny_amount(item.get("买入额(元)") or item.get("买入金额"))
+        sell = _parse_cny_amount(item.get("卖出额(元)") or item.get("卖出金额"))
+        net = _parse_cny_amount(item.get("净买额(元)") or item.get("净买入额"))
+        if net == 0.0 and (buy or sell):
+            net = buy - sell
+        total_buy += buy
+        total_sell += sell
+        reason = str(item.get("上榜原因") or item.get("filter") or "").strip()
+        if reason and reason not in reasons:
+            reasons.append(reason)
+        seat_label = str(item.get("龙虎榜榜单类型") or item.get("上榜原因解读") or "龙虎榜汇总").strip()
+        seats.append(
+            DragonTigerSeat(
+                seat_name=seat_label,
+                seat_type="unknown",
+                buy_amount_cny=buy,
+                sell_amount_cny=sell,
+                net_amount_cny=net,
+            )
+        )
+
+    return DragonTigerRecord(
+        symbol=target,
+        name=_name_from_row(row),
+        trading_day=trading_day or _latest_date_from_fields(row),
+        list_reason="; ".join(reasons[:3]),
+        total_buy_cny=total_buy,
+        total_sell_cny=total_sell,
+        net_amount_cny=total_buy - total_sell,
+        seats=seats,
+        provider="jvQuant",
+        data_mode="live_provider",
+        created_at=datetime.now(SH_TZ).isoformat(timespec="seconds"),
+    )
+
+
+def parse_daily_capital_flow_payload(
+    payload: dict[str, Any],
+    *,
+    symbol: str,
+    trading_day: str,
+) -> list[CapitalFlowSlice]:
+    rows = _query_rows(payload)
+    target = normalize_symbol(symbol)
+    row = next((item for item in rows if normalize_symbol(_symbol_from_row(item)) == target), None)
+    if row is None:
+        return []
+    main = _parse_cny_amount(_field_value(row, "主力净额"))
+    super_big = _parse_cny_amount(_field_value(row, "超大单净额"))
+    big = _parse_cny_amount(_field_value(row, "大单净额"))
+    mid = _parse_cny_amount(_field_value(row, "中单净额"))
+    small = _parse_cny_amount(_field_value(row, "小单净额"))
+    day = trading_day or _latest_date_from_fields(row)
+    return [
+        CapitalFlowSlice(
+            symbol=target,
+            trading_day=day,
+            window="daily",
+            big_order_net_inflow_cny=super_big + big if (super_big or big) else main,
+            main_capital_net_inflow_cny=main,
+            retail_capital_net_inflow_cny=mid + small,
+            notes=[
+                "jvQuant semantic daily capital-flow fields.",
+                "Not minute-level Level2 order classification.",
+                f"super_big_net_cny={super_big:.0f}",
+                f"big_net_cny={big:.0f}",
+                f"mid_net_cny={mid:.0f}",
+                f"small_net_cny={small:.0f}",
+            ],
+            provider="jvQuant",
+            data_mode="live_provider",
+            created_at=datetime.now(SH_TZ).isoformat(timespec="seconds"),
+        )
+    ]
 
 
 def _parse_share_amount(value: Any) -> float:

@@ -72,3 +72,33 @@ def test_mock_adapter_get_capital_flow_slices_returns_three_windows():
     slices = adapter.get_capital_flow_slices("600519", "2026-05-30")
     windows = {s.window for s in slices}
     assert windows == {"pre_first_seal_5m", "post_break_1m", "tail_30m"}
+
+
+def test_jvquant_adapter_get_capital_flow_slices_returns_daily_scope():
+    pytest = __import__("pytest")
+    try:
+        from aegis_alpha.adapters.jvquant.adapter import JvQuantMarketDataAdapter
+    except ImportError:
+        pytest.skip("jvquant adapter unavailable")
+    adapter = JvQuantMarketDataAdapter(token="fake")
+
+    class FakeClient:
+        def query(self, query, page, sort_type, sort_key):
+            fields = [
+                "代码", "名称", "涨跌幅2026-06-01", "成交额2026-06-01",
+                "主力净额2026-06-01", "超大单净额2026-06-01",
+                "大单净额2026-06-01", "中单净额2026-06-01",
+                "小单净额2026-06-01",
+            ]
+            rows = [["600519", "贵州茅台", "-1.24", "57.41亿", "-2.07亿", "-2004.75万", "-1.87亿", "2.07亿", "-34.55万"]]
+            return {"code": 0, "data": {"count": len(rows), "fields": fields, "list": rows}}
+
+    adapter._client = FakeClient()
+    slices = adapter.get_capital_flow_slices("600519", "2026-06-01")
+    assert len(slices) == 1
+    daily = slices[0]
+    assert daily.window == "daily"
+    assert round(daily.main_capital_net_inflow_cny, 2) == -207_000_000.0
+    assert round(daily.big_order_net_inflow_cny, 2) == -207_047_500.0
+    assert round(daily.retail_capital_net_inflow_cny, 2) == 206_654_500.0
+    assert "Not minute-level Level2 order classification." in daily.notes

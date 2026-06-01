@@ -181,21 +181,21 @@ The second-board candidate pool is currently derived from jvQuant semantic queri
 
 P5 数据扩展（自 2026-05 起）增加了 5 个外部数据维度：
 
-- 龙虎榜适配器 — `get_dragon_tiger` / `get_active_seats_today` 暴露知名游资席位（章盟主、孙哥、欢乐海岸、炒股养家等，白名单可在 `config/dragon_tiger_seats.yaml` 维护）；jvQuant 端尚未对齐契约，目前以 placeholder 起步，mock 端给出确定性样本。
-- 跌停池 / ST 池 — `get_limit_down_pool` / `get_st_pool` 给出今日跌停股与 ST 板成员；连续多只昨日跌停股今日反弹涨停时触发 `MARKET_BOTTOM_REVERSAL` 反向情绪事件。
+- 龙虎榜适配器 — `get_dragon_tiger` 已接入 jvQuant 原始语义查询的嵌套 `龙虎榜YYYY-MM-DD` 记录并汇总买入/卖出/净买额；`get_active_seats_today` 仍保持 `data_mode=placeholder`，因为真实 probe 尚未暴露稳定的营业部/席位名称供游资别名聚合。mock 端继续给出确定性席位样本，白名单可在 `config/dragon_tiger_seats.yaml` 维护。
+- 跌停池 / ST 池 — `get_limit_down_pool` / `get_st_pool` 已接入 jvQuant 语义查询，给出今日跌停股与 ST 板成员；连续多只昨日跌停股今日反弹涨停时触发 `MARKET_BOTTOM_REVERSAL` 反向情绪事件。
 - 涨停原因细分 — 候选契约新增 `limitup_driver_type ∈ {earnings, policy, theme, hot_money, unknown}`。
 - 分时形态识别 — 候选契约新增 `intraday_pattern ∈ {one_word_board, t_shape_board, messy_board, platform_breakout, false_breakout, normal, unknown}`。
-- 资金分时切片 — `get_capital_flow_slices` 返回 `pre_first_seal_5m` / `post_break_1m` / `tail_30m` 三个窗口的大单 / 主力 / 散户净流入。
+- 资金切片 — mock 端仍返回 `pre_first_seal_5m` / `post_break_1m` / `tail_30m` 三个窗口；jvQuant 真实端已降级接入 `"daily"` 日级语义资金流（主力/超大单/大单/中单/小单净额），不会声称提供分钟级真实主力/散户切片。
 
-P5 字段在 jvQuant 真实端尚未完全接入时会以 placeholder 模式返回；agent 应在 SKILL 工作流中检查 `data_mode == "placeholder"` 并据此降级置信。
+P5 字段在 jvQuant 真实端无法证明时会以 placeholder 或 scope-reduced 模式返回；agent 应在 SKILL 工作流中检查 `data_mode == "placeholder"` 与 notes，并据此降级置信。
 
 P6 进阶事件与生态（自 2026-06 起）增加了 7 个能力：
 
 - 板块事件 — `THEME_LEADER_BREAK_BOARD` / `SECTOR_ROTATION` 加入 `MarketEventType`；检测器在 `extensions/sector_events.py`，runner 在 P6 起步阶段不会自动调用，由后续 issue 接入。
-- 跨周期校验 — adapter 增 `get_weekly_position(symbol)`（mock 完整 / jvquant placeholder）；候选契约新增 `weekly_health_score ∈ [0, 100]`，由 jvquant `build_one_candidate` 通过 `compute_weekly_health_score` 自动注入。
+- 跨周期校验 — adapter 增 `get_weekly_position(symbol)`（mock 完整 / jvQuant 端已接 week/day K-line 派生）；候选契约新增 `weekly_health_score ∈ [0, 100]`，由 jvquant `build_one_candidate` 通过 `compute_weekly_health_score` 自动注入。
 - 相似形态搜索 — `find_similar_setups(symbol, lookback_days, similarity_threshold)` 在 P4 历史快照上做 5 维余弦匹配（连板高度 / 同题材数 / 封单 / 涨速 / 竞价）。
-- 次新股专用通道 — `get_new_stock_candidates()` 返回按上市天数与流通市值分层（`tier_a_smallcap_recent` / `tier_b_midcap_recent` / `tier_c_largecap` / `tier_aged_out`）的次新股候选。
-- 停牌处理 — `suspended_stocks` 表 + `get_suspended_stocks(trading_day)`；候选拉取链路可在 P6 后续接 `is_symbol_suspended` 过滤掉停牌股。
+- 次新股专用通道 — `get_new_stock_candidates()` 已接 jvQuant `上市天数/上市日期/流通市值` 语义字段，返回按上市天数与流通市值分层（`tier_a_smallcap_recent` / `tier_b_midcap_recent` / `tier_c_largecap` / `tier_aged_out`）的次新股候选。
+- 停牌处理 — `suspended_stocks` 表 + `get_suspended_stocks(trading_day)`；jvQuant 端已接确认字段，若 provider 当日返回空列表则按 confirmed-empty 处理，候选拉取链路通过 `is_symbol_suspended` 过滤掉停牌股。
 - Parquet 历史层（可选 extras） — `pip install '.[history-store]'` 启用 pyarrow + duckdb；`MinuteBarWriter` 写入按 `{symbol}/{trading_day}.parquet` 分区，`MinuteBarReader` 通过 DuckDB 跨分区查询；MCP 工具 `query_minute_bars` 在依赖缺失时优雅降级返回 `data_mode=unavailable`。
 - 假设分析 — `simulate_outcome(symbol, trading_day, hypothesis_json)` 在历史快照上做单股假设回测，返回结构化的 `payload_diff`。
 
@@ -219,6 +219,7 @@ P8 runner alerts + hypothesis 真重算（自 2026-06 起完成）：
 - runner 缓存 `create_market_data_adapter()` 实例，每次启动只构造一次，跨 tick 复用。
 - `simulate_outcome` 弃用 P7 starter `_GRADE_LADDER` 启发式，接 `aegis_alpha.adapters.jvquant.scoring.candidate_grade()` 真重算 9 字段评级。`hypothesis_json` 现在能覆盖任何 `candidate_grade` kwarg（例如 `{"action": "avoid"}` 立即看到对应的 REJECT 假设结论）。
 - mock `get_active_seats_today` 扩到 3 个游资条目（章盟主 + 孙哥 + 欢乐海岸），其中欢乐海岸覆盖 3 只票，让 SKILL 「板块共振」工作流有真实演示信号。
+- jvQuant live-probe wiring 接入已确认字段：周线位置、跌停池、ST 池、次新候选、停牌 confirmed-empty、原始龙虎榜记录、日级资金流；`get_active_seats_today` 与分钟级语义资金切片仍保留限制说明。
 
 Minute replay is not tick-by-tick realtime Level-2. During active trading, agents must inspect `minute_replay_timestamp`, `five_min_speed_timestamp`, and the relevant orderbook timestamp before treating a conclusion as fresh enough for intraday monitoring.
 

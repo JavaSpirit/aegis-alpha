@@ -62,6 +62,12 @@ def _inferred_change_pct_for_limit_up(symbol: str) -> float:
     return daily_limit_pct(symbol)
 
 
+def _day_query_prefix(trading_day: str) -> str:
+    day = (trading_day or "").strip()
+    today = datetime.now(SH_TZ).date().isoformat()
+    return "今日" if not day or day == today else day
+
+
 class JvQuantMarketDataAdapter:
     """Read-only jvQuant adapter for single-symbol smoke and MCP tools."""
 
@@ -802,25 +808,17 @@ class JvQuantMarketDataAdapter:
         )
 
     def get_dragon_tiger(self, symbol: str, trading_day: str) -> DragonTigerRecord:
-        # P5 starter: jvQuant 龙虎榜端点尚未对齐契约，先返回 placeholder 记录。
-        # 真实接入在 P5 Wave 2 单独 issue 内完成（参考 docs/JVQUANT_OFFICIAL_INDEX.md）。
-        return DragonTigerRecord(
-            symbol=symbol,
-            name="",
-            trading_day=trading_day,
-            list_reason="placeholder: jvQuant dragon-tiger endpoint not wired",
-            total_buy_cny=0.0,
-            total_sell_cny=0.0,
-            net_amount_cny=0.0,
-            seats=[],
-            provider="jvquant",
-            data_mode="placeholder",
-            created_at=_now(),
+        day = trading_day or datetime.now(SH_TZ).date().isoformat()
+        prefix = _day_query_prefix(day)
+        payload = self._query(
+            f"{prefix}龙虎榜,股票代码,股票简称,上榜原因,买入金额,卖出金额,净买入额",
+            sort_key="净买入额",
         )
+        return P.parse_jvquant_dragon_tiger_payload(payload, symbol=symbol, trading_day=day)
 
     def get_active_seats_today(self, trading_day: str) -> list[dict]:
-        # P6/P7 starter: jvQuant 龙虎榜端点尚未对齐契约，返回带 placeholder 信号的
-        # 单元素列表，让 Hermes 能区分「真没数据」和「端点未接入」。
+        # Raw jvQuant 龙虎榜 records are wired in get_dragon_tiger, but the live
+        # probe did not expose stable individual营业部 names for alias aggregation.
         return [
             {
                 "hot_money_alias": "",
@@ -829,42 +827,45 @@ class JvQuantMarketDataAdapter:
                 "symbols": [],
                 "data_mode": "placeholder",
                 "error": (
-                    "placeholder: jvQuant active-seats endpoint not wired; "
-                    "agents should not infer hot-money activity from this entry."
+                    "placeholder: jvQuant raw dragon-tiger records are available, "
+                    "but active-seat alias aggregation is not probe-confirmed."
                 ),
             }
         ]
 
     def get_limit_down_pool(self, trading_day: str = "") -> list[ContrarianPoolEntry]:
-        # P5 starter: 跌停池 semantic query 尚未确定字段映射，先返回空列表。
-        return []
+        day = trading_day or datetime.now(SH_TZ).date().isoformat()
+        prefix = _day_query_prefix(day)
+        payload = self._query(
+            f"{prefix}跌停,股票代码,股票简称,涨跌幅,连续跌停天数,价格,成交额,行业",
+            sort_key="涨跌幅",
+        )
+        return P.parse_limit_down_pool_payload(payload, trading_day=day)
 
     def get_st_pool(self, trading_day: str = "") -> list[ContrarianPoolEntry]:
-        # P5 starter: ST 池接入待 jvQuant 字段确认。
-        return []
+        day = trading_day or datetime.now(SH_TZ).date().isoformat()
+        payload = self._query(
+            "是否ST=是,股票代码,股票简称,涨跌幅,价格,成交额,行业",
+            sort_key="涨跌幅",
+        )
+        return P.parse_st_pool_payload(payload, trading_day=day)
 
     def get_capital_flow_slices(
         self, symbol: str, trading_day: str
     ) -> list[CapitalFlowSlice]:
-        # P5 starter: minute-level capital flow detail not yet exposed by jvQuant
-        # semantic queries; return [] until dedicated probe lands.
-        return []
+        code = normalize_symbol(symbol)
+        day = trading_day or datetime.now(SH_TZ).date().isoformat()
+        payload = self._query(
+            f"{code},股票代码,股票简称,主力净额,超大单净额,大单净额,中单净额,小单净额,涨跌幅,成交额",
+            sort_key="主力净额",
+        )
+        return P.parse_daily_capital_flow_payload(payload, symbol=code, trading_day=day)
 
     def get_weekly_position(self, symbol: str) -> WeeklyPosition:
-        # P6 starter: jvQuant 周线接口尚未对齐契约，placeholder 起步。
-        return WeeklyPosition(
-            symbol=symbol,
-            trading_day="",
-            weekly_high=0.0,
-            weekly_low=0.0,
-            weekly_close=0.0,
-            position_pct=0.0,
-            weeks_in_uptrend=0,
-            ma20_above_ma60=False,
-            notes=["placeholder: jvQuant weekly endpoint not wired"],
-            provider="jvquant",
-            data_mode="placeholder",
-        )
+        code = normalize_symbol(symbol)
+        week_payload = self.client.kline(code, "stock", "前复权", "week", 12)
+        day_payload = self.client.kline(code, "stock", "前复权", "day", 60)
+        return P.parse_weekly_position_payload(week_payload, day_payload, symbol=code)
 
     def find_similar_setups(
         self,
@@ -878,12 +879,21 @@ class JvQuantMarketDataAdapter:
         return []
 
     def get_new_stock_candidates(self) -> list[NewStockCandidate]:
-        # P6 starter: jvQuant 次新通道字段映射尚未确认。
-        return []
+        today = datetime.now(SH_TZ).date().isoformat()
+        payload = self._query(
+            "上市天数小于180,股票代码,股票简称,上市日期,上市天数,流通市值,涨跌幅,行业",
+            sort_key="涨跌幅",
+        )
+        return P.parse_new_stock_candidates_payload(payload, today=today)
 
     def get_suspended_stocks(self, trading_day: str = "") -> list[SuspendedStock]:
-        # P6 starter: jvQuant 停牌字段映射尚未对齐。
-        return []
+        day = trading_day or datetime.now(SH_TZ).date().isoformat()
+        prefix = _day_query_prefix(day)
+        payload = self._query(
+            f"{prefix}停牌,股票代码,股票简称,停牌原因,停牌起始日,复牌日,行业",
+            sort_key="",
+        )
+        return P.parse_suspended_stocks_payload(payload, trading_day=day)
 
     def _candidate_note_float(self, candidate: SecondBoardCandidate, key: str) -> float:
         prefix = f"{key}="

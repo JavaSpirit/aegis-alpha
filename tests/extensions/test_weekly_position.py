@@ -53,13 +53,44 @@ def test_mock_adapter_returns_weekly_position():
     assert 0.0 <= pos.position_pct <= 1.0
 
 
-def test_jvquant_adapter_get_weekly_position_returns_placeholder():
+def test_jvquant_adapter_get_weekly_position_from_observed_kline_shape():
     pytest = __import__("pytest")
     try:
         from aegis_alpha.adapters.jvquant.adapter import JvQuantMarketDataAdapter
     except ImportError:
         pytest.skip("jvquant adapter unavailable")
-    adapter = JvQuantMarketDataAdapter.__new__(JvQuantMarketDataAdapter)
+    adapter = JvQuantMarketDataAdapter(token="fake")
+
+    class FakeClient:
+        def kline(self, code, cate="stock", fq="前复权", type="day", limit=240):
+            fields = ["日期", "开盘", "收盘", "最高", "最低", "成交量", "成交额", "振幅", "涨跌幅", "涨跌额", "换手率"]
+            if type == "week":
+                rows = [
+                    ["2026-06-01", "16", "18", "20", "15", "1", "1", "0", "12.50", "2", "1"],
+                    ["2026-05-29", "15", "16", "17", "14", "1", "1", "0", "6.67", "1", "1"],
+                    ["2026-05-22", "14", "15", "16", "13", "1", "1", "0", "7.14", "1", "1"],
+                    ["2026-05-15", "13", "14", "15", "12", "1", "1", "0", "7.69", "1", "1"],
+                    ["2026-05-08", "12", "13", "14", "11", "1", "1", "0", "8.33", "1", "1"],
+                    ["2026-04-30", "11", "12", "13", "10", "1", "1", "0", "9.09", "1", "1"],
+                    ["2026-04-25", "10", "11", "12", "9", "1", "1", "0", "10.00", "1", "1"],
+                    ["2026-04-18", "10", "10", "11", "9", "1", "1", "0", "0", "0", "1"],
+                ]
+            else:
+                rows = []
+                for i in range(60):
+                    day = f"2026-04-{(i % 30) + 1:02d}" if i < 30 else f"2026-05-{(i % 30) + 1:02d}"
+                    close = 10 + i * 0.1
+                    rows.append([day, close, close, close + 1, close - 1, "1", "1", "0", "0", "0", "1"])
+                rows = list(reversed(rows))
+            return {"code": 0, "data": {"fields": fields, "list": rows, "count": len(rows), "type": type}}
+
+    adapter._client = FakeClient()
     pos = adapter.get_weekly_position("600519")
     assert pos.symbol == "600519"
-    assert pos.data_mode == "placeholder"
+    assert pos.data_mode == "live_provider"
+    assert pos.trading_day == "2026-06-01"
+    assert pos.weekly_high == 20.0
+    assert pos.weekly_low == 9.0
+    assert pos.weekly_close == 18.0
+    assert pos.weeks_in_uptrend >= 6
+    assert pos.ma20_above_ma60

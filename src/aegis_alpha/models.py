@@ -91,6 +91,7 @@ IntradayPattern = Literal[
 ]
 ContrarianPoolKind = Literal["limit_down", "st"]
 CapitalFlowSliceWindow = Literal[
+    "daily",
     "pre_first_seal_5m",
     "post_break_1m",
     "tail_30m",

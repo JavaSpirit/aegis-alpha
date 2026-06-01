@@ -124,3 +124,50 @@ def test_jvquant_active_seats_today_returns_placeholder_signal():
     assert rows, "jvquant active_seats placeholder should signal unavailability"
     assert rows[0].get("data_mode") == "placeholder"
     assert "hot_money_alias" in rows[0]
+
+
+def test_jvquant_adapter_get_dragon_tiger_from_nested_observed_payload():
+    pytest = __import__("pytest")
+    try:
+        from aegis_alpha.adapters.jvquant.adapter import JvQuantMarketDataAdapter
+    except ImportError:
+        pytest.skip("jvquant adapter unavailable")
+    adapter = JvQuantMarketDataAdapter(token="fake")
+
+    class FakeClient:
+        def query(self, query, page, sort_type, sort_key):
+            fields = ["代码", "名称", "龙虎榜2026-06-01"]
+            rows = [
+                [
+                    "920190",
+                    "雷神科技",
+                    [
+                        {
+                            "type": "龙虎榜",
+                            "date": "2026-06-01",
+                            "filter": "上榜原因:当日收盘价涨幅达到20%的前5只股票",
+                            "list": [
+                                {
+                                    "上榜原因": "当日收盘价涨幅达到20%的前5只股票",
+                                    "买入额(元)": "9615.32万",
+                                    "卖出额(元)": "5988.67万",
+                                    "净买额(元)": "3626.65万",
+                                    "龙虎榜榜单类型": "单日榜",
+                                    "上榜原因解读": "2家机构买入，成功率51.40%",
+                                }
+                            ],
+                        }
+                    ],
+                ]
+            ]
+            return {"code": 0, "data": {"count": len(rows), "fields": fields, "list": rows}}
+
+    adapter._client = FakeClient()
+    record = adapter.get_dragon_tiger("920190", "2026-06-01")
+    assert record.symbol == "920190"
+    assert record.name == "雷神科技"
+    assert record.data_mode == "live_provider"
+    assert record.total_buy_cny == 96_153_200.0
+    assert record.total_sell_cny == 59_886_700.0
+    assert record.net_amount_cny == 36_266_500.0
+    assert len(record.seats) == 1

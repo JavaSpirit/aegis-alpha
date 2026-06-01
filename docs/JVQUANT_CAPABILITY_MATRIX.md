@@ -33,6 +33,19 @@ This matrix is generated from configured read-only jvQuant semantic-query probes
 | `seal_amount_cny` | `lv10` depth | internal_inference | `signals/orderbook.py` | 当涨幅接近涨停时，用买一量乘价格估算封单额；不是交易所权威封单队列。 |
 | `seal_decay_pct` | `lv10` depth over time | internal_inference | `signals/orderbook.py` | 用前后两次估算封单额计算衰减。 |
 
+## Live-Probe Extension Wiring (2026-06-01)
+
+| Capability | Probe | Status | Authority | Current Use | Limitation |
+|---|---|---:|---|---|---|
+| `weekly_position` | `client.kline(..., type="week")` + day K-line | wired | observed_probe | `get_weekly_position` derives 8-week position and MA20/MA60 from K-line bars | Derived metric; not a vendor-provided health score |
+| `limit_down_pool` | `今日跌停,股票代码,股票简称,涨跌幅,连续跌停天数,价格,成交额,行业` | wired | observed_probe | `get_limit_down_pool` returns `ContrarianPoolEntry` rows | Field names remain semantic-query observations |
+| `st_pool` | `是否ST=是,股票代码,股票简称,涨跌幅,价格,成交额,行业` | wired | observed_probe | `get_st_pool` returns ST `ContrarianPoolEntry` rows | Some provider rows expose `-` price/amount values |
+| `new_stock_candidates` | `上市天数小于180,...` | wired | observed_probe | `get_new_stock_candidates` parses listing date/days/free-float market cap | Uses semantic-query free-float market-cap string parsing |
+| `suspended_stocks` | `今日停牌,...` / `停牌中,...` / `停牌状态=停牌,...` | wired_confirmed_empty | observed_probe | `get_suspended_stocks` parses rows and treats empty provider result as confirmed-empty | Probe day count was 0; parser covered by field-compatible fixture |
+| `dragon_tiger_raw` | `今日龙虎榜,股票代码,股票简称,上榜原因,买入金额,卖出金额,净买入额` | wired_raw | observed_probe | `get_dragon_tiger` flattens nested `龙虎榜YYYY-MM-DD` records | Stable individual营业部 names were not observed |
+| `daily_capital_flow` | `symbol,股票代码,股票简称,主力净额,超大单净额,大单净额,中单净额,小单净额,...` | wired_scope_reduced | observed_probe | `get_capital_flow_slices` returns one `"daily"` slice | Not minute-level Level2 主力/散户 decomposition |
+| `active_seats_today` | `今日龙虎榜,营业部名称,...` | placeholder | observed_probe | Placeholder signal remains | Raw龙虎榜 exists, but stable seat alias aggregation is not confirmed |
+
 | Capability | Probe | Status | Authority | Count | Observed Fields | Notes |
 |---|---|---:|---|---:|---|---|
 | second_board_speed_and_capital_flow | second_board_speed_capital | available | observed_probe | 12 | `代码`, `名称`, `涨跌幅2026-05-27`, `行业分类二级`, `是否ST2026-05-27`, `是否涨停@2026-05-26`, `区间涨跌幅(1分钟)@2026-05-27 14:55:00-2026-05-27 15:00:00`, `主力净额2026-05-27`, ... | Observed by probe; not a contractual field definition. |

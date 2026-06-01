@@ -46,12 +46,29 @@ def test_mock_adapter_get_new_stock_candidates_returns_list():
     assert all(c.days_since_listing < 365 for c in out)
 
 
-def test_jvquant_adapter_get_new_stock_candidates_placeholder():
+def test_jvquant_adapter_get_new_stock_candidates_from_observed_fields():
     pytest = __import__("pytest")
     try:
         from aegis_alpha.adapters.jvquant.adapter import JvQuantMarketDataAdapter
     except ImportError:
         pytest.skip("jvquant unavailable")
-    adapter = JvQuantMarketDataAdapter.__new__(JvQuantMarketDataAdapter)
+    adapter = JvQuantMarketDataAdapter(token="fake")
+
+    class FakeClient:
+        def query(self, query, page, sort_type, sort_key):
+            fields = [
+                "代码", "名称", "涨跌幅2026-06-01", "行业分类二级",
+                "上市日期", "上市天数(天)2026-06-01",
+                "流通市值(日线不复权)2026-06-01",
+            ]
+            rows = [["603248", "锡华科技", "-0.88", "风电设备", "2025-12-23", "161", "18.01亿"]]
+            return {"code": 0, "data": {"count": len(rows), "fields": fields, "list": rows}}
+
+    adapter._client = FakeClient()
     out = adapter.get_new_stock_candidates()
-    assert out == []
+    assert len(out) == 1
+    assert out[0].symbol == "603248"
+    assert out[0].listing_date == "2025-12-23"
+    assert out[0].days_since_listing == 161
+    assert round(out[0].free_float_market_cap_cny, 2) == 1_801_000_000.0
+    assert out[0].data_mode == "live_provider"
