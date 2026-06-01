@@ -200,3 +200,37 @@ def test_jvquant_candidate_weekly_health_score_uses_adapter_call():
         out = adapter.get_second_board_candidates()
     if out:
         assert all(c.weekly_health_score >= 75.0 for c in out)
+
+
+def test_jvquant_get_second_board_candidates_drops_suspended_symbols():
+    """Stocks present in get_suspended_stocks() should not appear in candidates."""
+    from unittest.mock import patch
+
+    from aegis_alpha.adapters.jvquant_market_data import JvQuantMarketDataAdapter
+    from aegis_alpha.models import LadderEntry, SuspendedStock
+
+    adapter = JvQuantMarketDataAdapter(token="fake")
+    adapter._client = FakeJvQuantClient()  # type: ignore[attr-defined]
+
+    def fake_ladder(symbol: str, trading_day: str = "") -> LadderEntry:
+        return LadderEntry(symbol=symbol, trading_day="2026-06-01",
+                           consecutive_boards=1, height_label="first_board")
+
+    # baseline: how many candidates does FakeJvQuantClient produce?
+    with patch.object(adapter, "get_limit_up_ladder", side_effect=fake_ladder), \
+         patch.object(adapter, "get_theme_leaders", return_value=[]):
+        baseline = adapter.get_second_board_candidates()
+    if not baseline:
+        return  # FakeJvQuantClient produced nothing; nothing to filter.
+
+    # Mark every baseline symbol as suspended → expect zero candidates returned.
+    suspended_for_each = [
+        SuspendedStock(symbol=c.symbol, suspension_start_day="2026-05-01",
+                       suspension_end_day="")
+        for c in baseline
+    ]
+    with patch.object(adapter, "get_limit_up_ladder", side_effect=fake_ladder), \
+         patch.object(adapter, "get_theme_leaders", return_value=[]), \
+         patch.object(adapter, "get_suspended_stocks", return_value=suspended_for_each):
+        filtered = adapter.get_second_board_candidates()
+    assert filtered == []

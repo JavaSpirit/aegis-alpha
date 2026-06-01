@@ -45,6 +45,7 @@ from aegis_alpha.models import (
     WeeklyPosition,
 )
 from aegis_alpha.events import EventDetector, freshness_status, load_event_scoring_config
+from aegis_alpha.extensions.suspended_stocks import is_symbol_suspended
 from aegis_alpha.extensions.weekly_position import compute_weekly_health_score
 from aegis_alpha.grading import CandidateGradingConfig, load_candidate_grading_config
 from aegis_alpha.storage import AegisAlphaStore
@@ -485,6 +486,10 @@ class JvQuantMarketDataAdapter:
         gate = self.get_market_sentiment_gate()
 
         trading_day = query_timestamp[:10]
+        try:
+            _suspended_today = self.get_suspended_stocks(trading_day)
+        except Exception:
+            _suspended_today = []
         ladder_entries: dict[str, LadderEntry] = {}
         for row in rows[:max_candidates]:
             row_symbol = P._symbol_from_row(row)
@@ -507,6 +512,10 @@ class JvQuantMarketDataAdapter:
         candidates: list[SecondBoardCandidate] = []
         for index, row in enumerate(rows[:max_candidates]):
             row_symbol = P._symbol_from_row(row)
+            if row_symbol and is_symbol_suspended(
+                row_symbol, trading_day=trading_day, suspended=_suspended_today,
+            ):
+                continue
             try:
                 weekly_pos = self.get_weekly_position(row_symbol)
                 weekly_score = compute_weekly_health_score(weekly_pos)
