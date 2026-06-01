@@ -35,6 +35,8 @@ MarketEventType = Literal[
     "SECOND_BOARD_CANDIDATE_REPRICE",
     "THEME_DIVERGENCE",
     "MARKET_BOTTOM_REVERSAL",
+    "THEME_LEADER_BREAK_BOARD",
+    "SECTOR_ROTATION",
 ]
 WatchlistStatus = Literal["active", "closed", "expired"]
 WatchlistEntryAction = Literal["added", "promoted", "downgraded", "dropped", "noted"]
@@ -799,4 +801,16 @@ class IntradayPatternFeatures(BaseModel):
     sealed_at_open: bool = False
     closing_at_limit: bool = False
     high_to_close_drawdown_pct: float = 0.0
+    notes: list[str] = Field(default_factory=list)
+
+
+class SectorRotationEvidence(BaseModel):
+    """SECTOR_ROTATION 事件的结构化证据。"""
+
+    weakening_theme: str
+    weakening_leader_status: str = "unknown"
+    strengthening_theme: str
+    strengthening_leader_status: str = "unknown"
+    weakening_alive_count: int = 0
+    strengthening_alive_count: int = 0
     notes: list[str] = Field(default_factory=list)
