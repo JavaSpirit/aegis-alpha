@@ -497,6 +497,7 @@ class MockMarketDataAdapter:
                     "评级为 B，因为同题材联动和盘口质量较好，但仍是 mock 数据，"
                     "且没有真实 Level-2 大单净流入与封单排队验证。"
                 ),
+                weekly_health_score=78.0,
                 data_quality=self._mock_second_board_data_quality(),
                 notes=[
                     "Yesterday limit-up stock with same-theme momentum in mock data.",
@@ -550,6 +551,7 @@ class MockMarketDataAdapter:
                     "评级为 C，因为题材虽活跃，但盘口质量低于偏好阈值，"
                     "模拟封板概率也不足以进入重点观察。"
                 ),
+                weekly_health_score=42.0,
                 data_quality=self._mock_second_board_data_quality(),
                 notes=[
                     "Theme is active, but orderbook quality is below the preferred threshold.",

@@ -78,3 +78,16 @@ def test_mock_candidate_at_least_one_non_unknown_intraday_pattern():
     candidates = adapter.get_second_board_candidates()
     patterns = {c.intraday_pattern for c in candidates}
     assert patterns - {"unknown"}, f"mock should expose at least one real pattern, got: {patterns}"
+
+
+def test_mock_candidate_includes_weekly_health_score():
+    from aegis_alpha.adapters.mock_market_data import MockMarketDataAdapter
+
+    adapter = MockMarketDataAdapter()
+    candidates = adapter.get_second_board_candidates()
+    assert candidates
+    for cand in candidates:
+        assert hasattr(cand, "weekly_health_score")
+        assert 0.0 <= cand.weekly_health_score <= 100.0
+    scores = {c.weekly_health_score for c in candidates}
+    assert scores - {50.0}, "mock should expose at least one calibrated weekly_health_score"

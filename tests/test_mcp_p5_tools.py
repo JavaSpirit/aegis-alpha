@@ -53,3 +53,13 @@ def test_get_capital_flow_slices_returns_three_dicts():
     assert {r["window"] for r in rows} == {
         "pre_first_seal_5m", "post_break_1m", "tail_30m"
     }
+
+
+def test_compact_candidate_includes_weekly_health_score():
+    from aegis_alpha.mcp.server import get_second_board_candidates_compact
+
+    items = get_second_board_candidates_compact(limit=5)
+    assert items
+    for item in items:
+        assert "weekly_health_score" in item
+        assert 0.0 <= item["weekly_health_score"] <= 100.0

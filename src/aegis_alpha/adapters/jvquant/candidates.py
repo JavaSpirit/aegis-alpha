@@ -31,6 +31,7 @@ from aegis_alpha.extensions.intraday_pattern import (
     PatternInputs,
     classify_intraday_pattern,
 )
+from aegis_alpha.extensions.weekly_position import compute_weekly_health_score
 from aegis_alpha.symbols import daily_limit_pct
 from aegis_alpha.themes.auction import AuctionAnalyzer
 
@@ -63,6 +64,7 @@ def build_one_candidate(
     ladder_entries: dict[str, LadderEntry],
     theme_leaders_by_theme: dict[str, ThemeLeader],
     history_stats_by_symbol: dict[str, HistoryStats],
+    weekly_health_score: float = 50.0,
 ) -> SecondBoardCandidate:
     symbol = P._symbol_from_row(row)
     seal_row = seal_rows.get(symbol, {})
@@ -386,6 +388,7 @@ def build_one_candidate(
         limitup_driver_type=limitup_driver_type,
         grade_reason=grade_reason,
         intraday_pattern=intraday_pattern_value,
+        weekly_health_score=weekly_health_score,
         data_quality=data_quality,
         orderbook_notes=orderbook_notes,
         minute_replay_notes=minute_replay_notes,
@@ -446,6 +449,7 @@ def build_second_board_candidate(
     grade: str,
     limitup_driver_type: str = "unknown",
     intraday_pattern: str = "unknown",
+    weekly_health_score: float = 50.0,
     grade_reason: str = "",
     data_quality: dict[str, SignalMetadata] | None = None,
     orderbook_notes: list[str] | None = None,
@@ -558,6 +562,7 @@ def build_second_board_candidate(
         grade=grade,
         limitup_driver_type=limitup_driver_type,
         intraday_pattern=intraday_pattern,
+        weekly_health_score=weekly_health_score,
         grade_reason=grade_reason,
         data_quality=data_quality,
         notes=notes,

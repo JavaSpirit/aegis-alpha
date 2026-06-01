@@ -165,3 +165,38 @@ def test_grade_reason_mentions_pattern_when_classified():
         return
     for cand in interesting:
         assert cand.intraday_pattern in cand.grade_reason or f"pattern={cand.intraday_pattern}" in cand.grade_reason
+
+
+def test_jvquant_candidate_has_weekly_health_score_in_range():
+    candidates = _build_candidates_with_minimal_patches()
+    for cand in candidates:
+        assert 0.0 <= cand.weekly_health_score <= 100.0
+
+
+def test_jvquant_candidate_weekly_health_score_uses_adapter_call():
+    """When get_weekly_position returns a high-score WeeklyPosition,
+    SecondBoardCandidate.weekly_health_score should reflect compute_weekly_health_score."""
+    from unittest.mock import patch
+
+    from aegis_alpha.adapters.jvquant_market_data import JvQuantMarketDataAdapter
+    from aegis_alpha.models import LadderEntry, WeeklyPosition
+
+    fixed_pos = WeeklyPosition(
+        symbol="STUB", trading_day="2026-06-01",
+        weekly_high=120.0, weekly_low=100.0, weekly_close=118.0,
+        position_pct=0.9, weeks_in_uptrend=4, ma20_above_ma60=True,
+    )
+
+    adapter = JvQuantMarketDataAdapter(token="fake")
+    adapter._client = FakeJvQuantClient()  # type: ignore[attr-defined]
+
+    def fake_ladder(symbol: str, trading_day: str = "") -> LadderEntry:
+        return LadderEntry(symbol=symbol, trading_day="2026-06-01",
+                           consecutive_boards=1, height_label="first_board")
+
+    with patch.object(adapter, "get_limit_up_ladder", side_effect=fake_ladder), \
+         patch.object(adapter, "get_theme_leaders", return_value=[]), \
+         patch.object(adapter, "get_weekly_position", return_value=fixed_pos):
+        out = adapter.get_second_board_candidates()
+    if out:
+        assert all(c.weekly_health_score >= 75.0 for c in out)

@@ -42,6 +42,7 @@ from aegis_alpha.models import (
     WeeklyPosition,
 )
 from aegis_alpha.events import EventDetector, freshness_status, load_event_scoring_config
+from aegis_alpha.extensions.weekly_position import compute_weekly_health_score
 from aegis_alpha.grading import CandidateGradingConfig, load_candidate_grading_config
 from aegis_alpha.storage import AegisAlphaStore
 from aegis_alpha.adapters.jvquant_websocket import JvQuantRealtimeClient
@@ -502,6 +503,12 @@ class JvQuantMarketDataAdapter:
 
         candidates: list[SecondBoardCandidate] = []
         for index, row in enumerate(rows[:max_candidates]):
+            row_symbol = P._symbol_from_row(row)
+            try:
+                weekly_pos = self.get_weekly_position(row_symbol)
+                weekly_score = compute_weekly_health_score(weekly_pos)
+            except Exception:
+                weekly_score = 50.0
             candidate = build_one_candidate(
                 index=index,
                 row=row,
@@ -525,6 +532,7 @@ class JvQuantMarketDataAdapter:
                 ladder_entries=ladder_entries,
                 theme_leaders_by_theme=theme_leaders_by_theme,
                 history_stats_by_symbol=history_stats_by_symbol,
+                weekly_health_score=weekly_score,
             )
             candidates.append(candidate)
 
