@@ -7,10 +7,49 @@ from typing import Any
 from aegis_alpha.models import HistoricalCandidateSnapshot, HypothesisOutcome
 
 
+_GRADE_LADDER = ("REJECT", "C", "B", "A")
+# CALIBRATE: see config/p6_thresholds.yaml — these starter rules apply only inside
+# simulate_outcome and are intentionally simpler than the real candidate_grade.
+_SEAL_AMOUNT_BOOST_THRESHOLD = 500_000_000.0
+_SPEED_BOOST_THRESHOLD = 5.0
+
+
 @dataclass(frozen=True)
 class HypothesisInputs:
     snapshot: HistoricalCandidateSnapshot
     hypothesis: dict[str, Any]
+
+
+def _bump_grade(current: str, steps: int) -> str:
+    if current not in _GRADE_LADDER:
+        return current
+    idx = _GRADE_LADDER.index(current)
+    new_idx = max(0, min(len(_GRADE_LADDER) - 1, idx + steps))
+    return _GRADE_LADDER[new_idx]
+
+
+def _grade_delta_from_crossing(
+    *, original_payload: dict[str, Any], new_payload: dict[str, Any]
+) -> int:
+    """Return integer steps to move along _GRADE_LADDER given the crossings.
+
+    Each "crossing" of a starter threshold contributes +1 (upward) or -1
+    (downward). Multiple fields stack.
+    """
+    delta = 0
+    orig_seal = float(original_payload.get("seal_amount_cny") or 0)
+    new_seal = float(new_payload.get("seal_amount_cny") or 0)
+    if orig_seal < _SEAL_AMOUNT_BOOST_THRESHOLD <= new_seal:
+        delta += 1
+    elif new_seal < _SEAL_AMOUNT_BOOST_THRESHOLD <= orig_seal:
+        delta -= 1
+    orig_speed = float(original_payload.get("five_min_speed_pct") or 0)
+    new_speed = float(new_payload.get("five_min_speed_pct") or 0)
+    if orig_speed < _SPEED_BOOST_THRESHOLD <= new_speed:
+        delta += 1
+    elif new_speed < _SPEED_BOOST_THRESHOLD <= orig_speed:
+        delta -= 1
+    return delta
 
 
 def simulate_outcome(inputs: HypothesisInputs) -> HypothesisOutcome | None:
@@ -37,16 +76,19 @@ def simulate_outcome(inputs: HypothesisInputs) -> HypothesisOutcome | None:
                 "hypothetical": new_value,
             }
 
-    # P6 starter: until a real re-grading hook is wired, the hypothetical grade
-    # is left equal to the original grade. The structured diff is the artifact.
+    delta = _grade_delta_from_crossing(
+        original_payload=payload, new_payload=new_payload,
+    )
+    hypothetical_grade = _bump_grade(inputs.snapshot.grade_at_pick, delta)
+
     return HypothesisOutcome(
         symbol=inputs.snapshot.symbol,
         trading_day=inputs.snapshot.trading_day,
         original_grade=inputs.snapshot.grade_at_pick,
-        hypothetical_grade=inputs.snapshot.grade_at_pick,
+        hypothetical_grade=hypothetical_grade,
         applied_hypothesis=dict(inputs.hypothesis),
         payload_diff=payload_diff,
         notes=[
-            "starter: re-grading hook not yet wired; only payload diff returned"
+            f"P7 starter re-grade: delta={delta} on _GRADE_LADDER",
         ],
     )
