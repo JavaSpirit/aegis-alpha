@@ -74,6 +74,11 @@ Core tools:
 - `get_st_pool`
 - `get_capital_flow_slices`
 - `backfill_candidates`
+- `find_similar_setups`
+- `get_new_stock_candidates`
+- `get_suspended_stocks`
+- `query_minute_bars`
+- `simulate_outcome`
 
 Useful supporting tools:
 
@@ -126,6 +131,13 @@ Use `get_runner_status` when the user asks whether realtime monitoring is active
     - `get_limit_down_pool(trading_day)` / `get_st_pool(trading_day)` 在判断市场情绪时观察反向池规模；如 `MARKET_BOTTOM_REVERSAL` 事件出现，将其当作板块见底的辅助语境，不要由它直接推荐买点。
     - 候选契约里 `limitup_driver_type` 与 `intraday_pattern` 在 evidence 里给一句中文备注；`policy` / `earnings` 驱动通常比 `theme` 更稳，`one_word_board` / `platform_breakout` 比 `messy_board` / `false_breakout` 风险更低。
     - `get_capital_flow_slices(symbol, trading_day)` 在复盘失败案例时使用：`tail_30m` 主力净流出说明尾盘机构离场。
+21. P6 进阶能力（按需使用）：
+    - `find_similar_setups(symbol, lookback_days, similarity_threshold)` 在复盘候选时找相似历史样本；当返回的 `similarity ≥ 0.85` 且 `match_grade_at_pick = A`，可作为「这个形态历史上确实经常打成功」的弱证据，但不要替代当下行情判断。
+    - `get_new_stock_candidates()` 返回的 `tier_aged_out` 不应再按次新处理；`tier_a_smallcap_recent` 才是典型的次新打板候选。
+    - `get_suspended_stocks(trading_day)` 在每次拉候选前检查；候选若出现在停牌列表中应直接 REJECT 并提示数据脏。
+    - `query_minute_bars(symbol, start_day, end_day)` 仅在 history-store extras 安装后可用；返回 `data_mode=unavailable` 时直接告诉用户分钟级历史层未启用。
+    - `simulate_outcome(symbol, trading_day, hypothesis_json)` 在用户问「如果当时封单是 X 亿，评级会变吗？」时调用；返回 `payload_diff` 是结构化对比，不是确定性结论。
+    - 候选契约里的 `weekly_health_score` ≥ 70 表示周线位置健康，可加分；< 30 应在评级原因里点出周线劣势。
 
 ## Candidate Interpretation Rules
 

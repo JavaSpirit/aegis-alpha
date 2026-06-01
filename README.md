@@ -171,6 +171,11 @@ When `AEGIS_ALPHA_MARKET_DATA_PROVIDER=jvquant`, Hermes can access jvQuant-backe
 - `get_pending_correction_actions(limit)`
 - `record_correction_action_decision(...)`
 - `get_correction_action_history(limit)`
+- `find_similar_setups(symbol, lookback_days, similarity_threshold)`
+- `get_new_stock_candidates()`
+- `get_suspended_stocks(trading_day)`
+- `query_minute_bars(symbol, start_day, end_day)`
+- `simulate_outcome(symbol, trading_day, hypothesis_json)`
 
 The second-board candidate pool is currently derived from jvQuant semantic queries for yesterday limit-up stocks with current strength. Auction metrics, capital-flow net inflow ratio, concept/topic tags, first/final seal time, seal amount, max seal amount, break/reseal counts, seal volume, and seal-to-turnover ratio come from jvQuant semantic fields when available. Aegis Alpha now also calls jvQuant `client.minute(..., mode=minute)` for minute replay and recalculates 1/3/5/10-minute speed windows from minute bars when available. In that case speed fields use `minute_replay_exact_window:...` or `minute_replay_partial_window:...`; if minute replay is unavailable or disabled, the adapter falls back to jvQuant semantic speed fields such as `provider_exact_window:...` or `provider_latest_rolling_5m`. True own-order queue position still requires broker order/trade callbacks, so the current output only exposes a queue-position note from the read-only orderbook summary. Historical limit-up statistics and normalized theme strength still use placeholders until dedicated scanners are implemented.
 
@@ -183,6 +188,18 @@ P5 数据扩展（自 2026-05 起）增加了 5 个外部数据维度：
 - 资金分时切片 — `get_capital_flow_slices` 返回 `pre_first_seal_5m` / `post_break_1m` / `tail_30m` 三个窗口的大单 / 主力 / 散户净流入。
 
 P5 字段在 jvQuant 真实端尚未完全接入时会以 placeholder 模式返回；agent 应在 SKILL 工作流中检查 `data_mode == "placeholder"` 并据此降级置信。
+
+P6 进阶事件与生态（自 2026-06 起）增加了 7 个能力：
+
+- 板块事件 — `THEME_LEADER_BREAK_BOARD` / `SECTOR_ROTATION` 加入 `MarketEventType`；检测器在 `extensions/sector_events.py`，runner 在 P6 起步阶段不会自动调用，由后续 issue 接入。
+- 跨周期校验 — adapter 增 `get_weekly_position(symbol)`（mock 完整 / jvquant placeholder）；候选契约新增 `weekly_health_score ∈ [0, 100]`，由 jvquant `build_one_candidate` 通过 `compute_weekly_health_score` 自动注入。
+- 相似形态搜索 — `find_similar_setups(symbol, lookback_days, similarity_threshold)` 在 P4 历史快照上做 5 维余弦匹配（连板高度 / 同题材数 / 封单 / 涨速 / 竞价）。
+- 次新股专用通道 — `get_new_stock_candidates()` 返回按上市天数与流通市值分层（`tier_a_smallcap_recent` / `tier_b_midcap_recent` / `tier_c_largecap` / `tier_aged_out`）的次新股候选。
+- 停牌处理 — `suspended_stocks` 表 + `get_suspended_stocks(trading_day)`；候选拉取链路可在 P6 后续接 `is_symbol_suspended` 过滤掉停牌股。
+- Parquet 历史层（可选 extras） — `pip install '.[history-store]'` 启用 pyarrow + duckdb；`MinuteBarWriter` 写入按 `{symbol}/{trading_day}.parquet` 分区，`MinuteBarReader` 通过 DuckDB 跨分区查询；MCP 工具 `query_minute_bars` 在依赖缺失时优雅降级返回 `data_mode=unavailable`。
+- 假设分析 — `simulate_outcome(symbol, trading_day, hypothesis_json)` 在历史快照上做单股假设回测，返回结构化的 `payload_diff`。
+
+P6 阈值（如 `_MESSY_BREAK_THRESHOLD`、`_HOT_MONEY_NET_BUY_THRESHOLD`、`_AGED_OUT_DAYS`）目前是 starter 常量，待 P7 历史校准。
 
 Minute replay is not tick-by-tick realtime Level-2. During active trading, agents must inspect `minute_replay_timestamp`, `five_min_speed_timestamp`, and the relevant orderbook timestamp before treating a conclusion as fresh enough for intraday monitoring.
 
@@ -394,6 +411,11 @@ The MVP exposes these read-only tools:
 - `get_second_board_candidates`
 - `explain_candidate`
 - `explain_second_board_candidate`
+- `find_similar_setups`
+- `get_new_stock_candidates`
+- `get_suspended_stocks`
+- `query_minute_bars`
+- `simulate_outcome`
 
 `explain_candidate(symbol)` returns structured watchlist output:
 
