@@ -61,5 +61,6 @@ mcp_servers:
         - explain_second_board_candidate
         - get_capital_flow_slices
         - find_similar_setups
+        - get_new_stock_candidates
       prompts: false
       resources: false

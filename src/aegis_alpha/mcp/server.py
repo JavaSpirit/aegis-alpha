@@ -746,6 +746,14 @@ def find_similar_setups(
     return _call_store(_run)
 
 
+@mcp.tool
+def get_new_stock_candidates() -> list[dict]:
+    """Return today's new-stock candidates classified by free-float and listing days."""
+    return _call_tool(
+        lambda adapter: [c.model_dump() for c in adapter.get_new_stock_candidates()]
+    )
+
+
 def main() -> None:
     mcp.run()
 
