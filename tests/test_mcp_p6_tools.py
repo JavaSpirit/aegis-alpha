@@ -31,3 +31,21 @@ def test_get_suspended_stocks_returns_list():
     if out:
         assert "symbol" in out[0]
         assert "suspension_start_day" in out[0]
+
+
+def test_query_minute_bars_returns_list_or_unavailable_dict():
+    from aegis_alpha.mcp.server import query_minute_bars
+
+    res = query_minute_bars("600519", "2026-06-01", "2026-06-01")
+    if isinstance(res, dict):
+        assert res.get("data_mode") == "unavailable"
+    else:
+        assert isinstance(res, list)
+
+
+def test_query_minute_bars_rejects_empty_args():
+    from aegis_alpha.mcp.server import query_minute_bars
+
+    res = query_minute_bars("", "2026-06-01", "2026-06-01")
+    assert isinstance(res, dict)
+    assert res.get("data_mode") == "unavailable"

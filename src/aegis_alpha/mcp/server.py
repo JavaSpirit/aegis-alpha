@@ -765,6 +765,40 @@ def get_suspended_stocks(trading_day: str = "") -> list[dict]:
     )
 
 
+@mcp.tool
+def query_minute_bars(symbol: str, start_day: str, end_day: str) -> list[dict] | dict:
+    """Query Parquet-stored minute bars for a symbol over a date range.
+
+    Returns a list of bar dicts. If history-store extras (pyarrow + duckdb)
+    are not installed, returns {"data_mode": "unavailable", "error": ...}.
+    """
+    from aegis_alpha.history_store import (
+        history_store_unavailable_error,
+        is_history_store_available,
+    )
+
+    safe_symbol = symbol.strip()
+    safe_start = start_day.strip()
+    safe_end = end_day.strip()
+    if not (safe_symbol and safe_start and safe_end):
+        return {
+            "data_mode": "unavailable",
+            "error": "symbol / start_day / end_day are required",
+        }
+    if not is_history_store_available():
+        return {
+            "data_mode": "unavailable",
+            "error": history_store_unavailable_error(),
+        }
+
+    from aegis_alpha.history_store.parquet_reader import MinuteBarReader
+
+    reader = MinuteBarReader(root_dir="data")
+    return reader.read_minute_bars(
+        symbol=safe_symbol, start_day=safe_start, end_day=safe_end,
+    )
+
+
 def main() -> None:
     mcp.run()
 
