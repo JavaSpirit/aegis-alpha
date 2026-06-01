@@ -31,7 +31,6 @@ from aegis_alpha.extensions.intraday_pattern import (
     PatternInputs,
     classify_intraday_pattern,
 )
-from aegis_alpha.extensions.weekly_position import compute_weekly_health_score
 from aegis_alpha.symbols import daily_limit_pct
 from aegis_alpha.themes.auction import AuctionAnalyzer
 
