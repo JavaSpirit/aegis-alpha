@@ -31,6 +31,7 @@ from aegis_alpha.models import (
     MarketSnapshot,
     MarketEvent,
     MinuteReplaySnapshot,
+    NewStockCandidate,
     OrderbookQueueLevel,
     SealTimeline,
     SealTimelineEvent,
@@ -850,6 +851,10 @@ class JvQuantMarketDataAdapter:
     ) -> list[SimilarSetupResult]:
         # P6 starter: real search runs in MCP layer (combines adapter + store).
         # See mcp/server.py:find_similar_setups.
+        return []
+
+    def get_new_stock_candidates(self) -> list[NewStockCandidate]:
+        # P6 starter: jvQuant 次新通道字段映射尚未确认。
         return []
 
     def _candidate_note_float(self, candidate: SecondBoardCandidate, key: str) -> float:

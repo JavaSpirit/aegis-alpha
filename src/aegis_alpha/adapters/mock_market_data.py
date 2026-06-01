@@ -23,6 +23,7 @@ from aegis_alpha.models import (
     MarketSnapshot,
     MinuteReplayBar,
     MinuteReplaySnapshot,
+    NewStockCandidate,
     OrderbookQueueLevel,
     SealTimeline,
     SealTimelineEvent,
@@ -959,5 +960,41 @@ class MockMarketDataAdapter:
                     "auction_change_pct": 0.0,
                 },
                 notes=["mock 相似形态"],
+            ),
+        ]
+
+    def get_new_stock_candidates(self) -> list[NewStockCandidate]:
+        from aegis_alpha.extensions.new_stocks import classify_new_stock_tier
+
+        days = 22
+        cap = 600_000_000.0
+        return [
+            NewStockCandidate(
+                symbol="688001",
+                name="mock-次新-科创",
+                listing_date="2026-05-10",
+                days_since_listing=days,
+                free_float_market_cap_cny=cap,
+                current_change_pct=8.4,
+                tier=classify_new_stock_tier(
+                    days_since_listing=days, free_float_cny=cap,
+                ),
+                notes=["mock smallcap recent"],
+                provider="mock",
+                data_mode="mock",
+            ),
+            NewStockCandidate(
+                symbol="301099",
+                name="mock-次新-创业",
+                listing_date="2026-04-20",
+                days_since_listing=42,
+                free_float_market_cap_cny=2_500_000_000.0,
+                current_change_pct=4.5,
+                tier=classify_new_stock_tier(
+                    days_since_listing=42, free_float_cny=2_500_000_000.0,
+                ),
+                notes=["mock midcap"],
+                provider="mock",
+                data_mode="mock",
             ),
         ]

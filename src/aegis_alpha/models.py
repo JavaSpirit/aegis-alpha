@@ -95,6 +95,13 @@ CapitalFlowSliceWindow = Literal[
     "post_break_1m",
     "tail_30m",
 ]
+NewStockTier = Literal[
+    "tier_a_smallcap_recent",
+    "tier_b_midcap_recent",
+    "tier_c_largecap",
+    "tier_aged_out",
+    "unknown",
+]
 
 
 class SignalEvidence(BaseModel):
@@ -844,3 +851,16 @@ class SimilarSetupResult(BaseModel):
     match_outcome_summary: str = ""
     feature_diffs: dict[str, float] = Field(default_factory=dict)
     notes: list[str] = Field(default_factory=list)
+
+
+class NewStockCandidate(BaseModel):
+    symbol: str
+    name: str
+    listing_date: str
+    days_since_listing: int = 0
+    free_float_market_cap_cny: float = 0.0
+    current_change_pct: float = 0.0
+    tier: NewStockTier = "unknown"
+    notes: list[str] = Field(default_factory=list)
+    provider: str = "mock"
+    data_mode: str = "mock"

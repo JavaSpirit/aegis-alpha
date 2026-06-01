@@ -20,6 +20,7 @@ from aegis_alpha.models import (
     MarketSentimentGate,
     MarketSnapshot,
     MinuteReplaySnapshot,
+    NewStockCandidate,
     RealtimeConnectionStatus,
     SealTimeline,
     SealTimelineEvent,
@@ -116,3 +117,5 @@ class MarketDataAdapter(Protocol):
         lookback_days: int = 90,
         similarity_threshold: float = 0.7,
     ) -> list[SimilarSetupResult]: ...
+
+    def get_new_stock_candidates(self) -> list[NewStockCandidate]: ...
