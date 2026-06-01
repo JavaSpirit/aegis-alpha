@@ -52,3 +52,30 @@ def test_sector_rotation_evidence_model_construct():
     )
     assert ev.weakening_theme == "军工"
     assert ev.strengthening_alive_count == 4
+
+
+def test_weekly_position_model_construct():
+    from aegis_alpha.models import WeeklyPosition
+
+    pos = WeeklyPosition(
+        symbol="600519",
+        trading_day="2026-06-01",
+        weekly_high=2100.0,
+        weekly_low=1820.0,
+        weekly_close=1995.0,
+        position_pct=0.625,
+        weeks_in_uptrend=3,
+        ma20_above_ma60=True,
+    )
+    assert pos.symbol == "600519"
+    assert 0.0 <= pos.position_pct <= 1.0
+    assert pos.weeks_in_uptrend == 3
+
+
+def test_second_board_candidate_has_weekly_health_score_default():
+    from aegis_alpha.models import SecondBoardCandidate
+
+    fields = set(SecondBoardCandidate.model_fields.keys())
+    assert "weekly_health_score" in fields
+    default = SecondBoardCandidate.model_fields["weekly_health_score"].default
+    assert abs(default - 50.0) < 1e-6

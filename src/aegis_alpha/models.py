@@ -528,6 +528,7 @@ class SecondBoardCandidate(BaseModel):
     grade: CandidateGrade
     limitup_driver_type: LimitupDriverType = "unknown"
     intraday_pattern: IntradayPattern = "unknown"
+    weekly_health_score: float = Field(default=50.0, ge=0.0, le=100.0)
     grade_reason: str = ""
     data_quality: dict[str, SignalMetadata] = Field(default_factory=dict)
     notes: list[str]
@@ -814,3 +815,19 @@ class SectorRotationEvidence(BaseModel):
     weakening_alive_count: int = 0
     strengthening_alive_count: int = 0
     notes: list[str] = Field(default_factory=list)
+
+
+class WeeklyPosition(BaseModel):
+    """从周线视角衡量个股位置健康度。"""
+
+    symbol: str
+    trading_day: str
+    weekly_high: float = 0.0
+    weekly_low: float = 0.0
+    weekly_close: float = 0.0
+    position_pct: float = Field(default=0.0, ge=0.0, le=1.0)
+    weeks_in_uptrend: int = 0
+    ma20_above_ma60: bool = False
+    notes: list[str] = Field(default_factory=list)
+    provider: str = "mock"
+    data_mode: str = "mock"
