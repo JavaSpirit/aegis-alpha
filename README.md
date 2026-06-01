@@ -148,6 +148,11 @@ When `AEGIS_ALPHA_MARKET_DATA_PROVIDER=jvquant`, Hermes can access jvQuant-backe
 - `get_history_stats(symbol)`
 - `run_backtest(rule_changes_json, start_day, end_day)`
 - `get_recent_backtests(limit)`
+- `get_dragon_tiger(symbol, trading_day)`
+- `get_active_seats_today(trading_day)`
+- `get_limit_down_pool(trading_day)`
+- `get_st_pool(trading_day)`
+- `get_capital_flow_slices(symbol, trading_day)`
 - `get_stock_realtime_snapshot(symbol)`
 - `get_stock_orderbook_snapshot(symbol)`
 - `get_stock_minute_replay_snapshot(symbol, end_day, limit_days)`
@@ -168,6 +173,16 @@ When `AEGIS_ALPHA_MARKET_DATA_PROVIDER=jvquant`, Hermes can access jvQuant-backe
 - `get_correction_action_history(limit)`
 
 The second-board candidate pool is currently derived from jvQuant semantic queries for yesterday limit-up stocks with current strength. Auction metrics, capital-flow net inflow ratio, concept/topic tags, first/final seal time, seal amount, max seal amount, break/reseal counts, seal volume, and seal-to-turnover ratio come from jvQuant semantic fields when available. Aegis Alpha now also calls jvQuant `client.minute(..., mode=minute)` for minute replay and recalculates 1/3/5/10-minute speed windows from minute bars when available. In that case speed fields use `minute_replay_exact_window:...` or `minute_replay_partial_window:...`; if minute replay is unavailable or disabled, the adapter falls back to jvQuant semantic speed fields such as `provider_exact_window:...` or `provider_latest_rolling_5m`. True own-order queue position still requires broker order/trade callbacks, so the current output only exposes a queue-position note from the read-only orderbook summary. Historical limit-up statistics and normalized theme strength still use placeholders until dedicated scanners are implemented.
+
+P5 数据扩展（自 2026-05 起）增加了 4 个外部数据维度：
+
+- 龙虎榜适配器 — `get_dragon_tiger` / `get_active_seats_today` 暴露知名游资席位（章盟主、孙哥、欢乐海岸、炒股养家等，白名单可在 `config/dragon_tiger_seats.yaml` 维护）；jvQuant 端尚未对齐契约，目前以 placeholder 起步，mock 端给出确定性样本。
+- 跌停池 / ST 池 — `get_limit_down_pool` / `get_st_pool` 给出今日跌停股与 ST 板成员；连续多只昨日跌停股今日反弹涨停时触发 `MARKET_BOTTOM_REVERSAL` 反向情绪事件。
+- 涨停原因细分 — 候选契约新增 `limitup_driver_type ∈ {earnings, policy, theme, hot_money, unknown}`。
+- 分时形态识别 — 候选契约新增 `intraday_pattern ∈ {one_word_board, t_shape_board, messy_board, platform_breakout, false_breakout, normal, unknown}`。
+- 资金分时切片 — `get_capital_flow_slices` 返回 `pre_first_seal_5m` / `post_break_1m` / `tail_30m` 三个窗口的大单 / 主力 / 散户净流入。
+
+P5 字段在 jvQuant 真实端尚未完全接入时会以 placeholder 模式返回；agent 应在 SKILL 工作流中检查 `data_mode == "placeholder"` 并据此降级置信。
 
 Minute replay is not tick-by-tick realtime Level-2. During active trading, agents must inspect `minute_replay_timestamp`, `five_min_speed_timestamp`, and the relevant orderbook timestamp before treating a conclusion as fresh enough for intraday monitoring.
 
@@ -371,6 +386,11 @@ The MVP exposes these read-only tools:
 - `get_history_stats`
 - `run_backtest`
 - `get_recent_backtests`
+- `get_dragon_tiger`
+- `get_active_seats_today`
+- `get_limit_down_pool`
+- `get_st_pool`
+- `get_capital_flow_slices`
 - `get_second_board_candidates`
 - `explain_candidate`
 - `explain_second_board_candidate`

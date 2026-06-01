@@ -68,6 +68,11 @@ Core tools:
 - `get_history_stats`
 - `run_backtest`
 - `get_recent_backtests`
+- `get_dragon_tiger`
+- `get_active_seats_today`
+- `get_limit_down_pool`
+- `get_st_pool`
+- `get_capital_flow_slices`
 - `backfill_candidates`
 
 Useful supporting tools:
@@ -115,6 +120,12 @@ Use `get_runner_status` when the user asks whether realtime monitoring is active
 17. After collecting at least 5 trading days of outcomes, run `attribute_outcome(symbol, trading_day)` for failed candidates to identify recurring failure patterns. Surface the top primary_tag from recent attributions as a Hermes memory candidate after 3+ similar tags accumulate.
 18. Use `get_history_stats(symbol)` instead of relying on the placeholder three_year_* fields when available. If `confidence` is `insufficient_sample`, treat the historical signal as unavailable and do not narrate a probability.
 19. When the user asks "would tightening rule X improve hit rate?", call `run_backtest(rule_changes_json='{"flip_a_to_b": true}', start_day, end_day)` and report the sealed_rate delta + advice. Never apply a threshold proposal automatically — they always require the human-confirmation flow defined by `record_correction_action_decision`.
+20. P5 数据维度可选用：
+    - `get_dragon_tiger(symbol, trading_day)` 在收盘后查看候选股的龙虎榜结构；如席位含 `hot_money_known` 且 `hot_money_alias` 为白名单游资（章盟主、孙哥等），在评级原因里点出资金主体。
+    - `get_active_seats_today(trading_day)` 看当天哪几位游资同时进入多只股，用作板块共振辅助证据。
+    - `get_limit_down_pool(trading_day)` / `get_st_pool(trading_day)` 在判断市场情绪时观察反向池规模；如 `MARKET_BOTTOM_REVERSAL` 事件出现，将其当作板块见底的辅助语境，不要由它直接推荐买点。
+    - 候选契约里 `limitup_driver_type` 与 `intraday_pattern` 在 evidence 里给一句中文备注；`policy` / `earnings` 驱动通常比 `theme` 更稳，`one_word_board` / `platform_breakout` 比 `messy_board` / `false_breakout` 风险更低。
+    - `get_capital_flow_slices(symbol, trading_day)` 在复盘失败案例时使用：`tail_30m` 主力净流出说明尾盘机构离场。
 
 ## Candidate Interpretation Rules
 
