@@ -29,6 +29,7 @@ from aegis_alpha.models import (
     SimilarSetupResult,
     StockOrderbookSnapshot,
     StockRealtimeSnapshot,
+    SuspendedStock,
     ThemeLeader,
     ThemeStrength,
     WeeklyPosition,
@@ -119,3 +120,5 @@ class MarketDataAdapter(Protocol):
     ) -> list[SimilarSetupResult]: ...
 
     def get_new_stock_candidates(self) -> list[NewStockCandidate]: ...
+
+    def get_suspended_stocks(self, trading_day: str = "") -> list[SuspendedStock]: ...

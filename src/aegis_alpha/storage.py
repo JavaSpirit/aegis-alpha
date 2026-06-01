@@ -29,6 +29,7 @@ from aegis_alpha.models import (
     RunnerStatus,
     SealTimelineEvent,
     SignalSnapshot,
+    SuspendedStock,
     ThemeLeader,
     Watchlist,
     WatchlistEntry,
@@ -1244,6 +1245,54 @@ class AegisAlphaStore:
                 (symbol, trading_day),
             ).fetchall()
         return [CapitalFlowSlice.model_validate_json(row[0]) for row in rows]
+
+
+    def save_suspended_stock(
+        self, entry: SuspendedStock, *, created_at: str
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO suspended_stocks (
+                    symbol, suspension_start_day, suspension_end_day, reason,
+                    payload_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(symbol, suspension_start_day) DO UPDATE SET
+                    suspension_end_day = excluded.suspension_end_day,
+                    reason = excluded.reason,
+                    payload_json = excluded.payload_json
+                """,
+                (
+                    entry.symbol,
+                    entry.suspension_start_day,
+                    entry.suspension_end_day,
+                    entry.reason,
+                    entry.model_dump_json(),
+                    created_at,
+                ),
+            )
+
+    def list_suspended_stocks(
+        self, *, trading_day: str = ""
+    ) -> list[SuspendedStock]:
+        """List suspended stocks. If trading_day given, only return entries that
+        are active on that day (start_day <= trading_day, AND end_day blank or end_day >= trading_day)."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT payload_json FROM suspended_stocks ORDER BY suspension_start_day ASC"
+            ).fetchall()
+        out: list[SuspendedStock] = []
+        for row in rows:
+            s = SuspendedStock.model_validate_json(row[0])
+            if not trading_day:
+                out.append(s)
+                continue
+            if s.suspension_start_day > trading_day:
+                continue
+            if s.suspension_end_day and s.suspension_end_day < trading_day:
+                continue
+            out.append(s)
+        return out
 
 
 def write_runner_status(status: RunnerStatus, path: str | Path | None = None) -> Path:

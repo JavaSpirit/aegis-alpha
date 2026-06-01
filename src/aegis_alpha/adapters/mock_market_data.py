@@ -35,6 +35,7 @@ from aegis_alpha.models import (
     RealtimeConnectionStatus,
     StockOrderbookSnapshot,
     StockRealtimeSnapshot,
+    SuspendedStock,
     ThemeLeader,
     ThemeStrength,
     WeeklyPosition,
@@ -960,6 +961,15 @@ class MockMarketDataAdapter:
                     "auction_change_pct": 0.0,
                 },
                 notes=["mock 相似形态"],
+            ),
+        ]
+
+    def get_suspended_stocks(self, trading_day: str = "") -> list[SuspendedStock]:
+        return [
+            SuspendedStock(
+                symbol="600519", name="mock-停牌-1",
+                suspension_start_day="2026-05-25", suspension_end_day="",
+                reason="重大事项", provider="mock", data_mode="mock",
             ),
         ]
 

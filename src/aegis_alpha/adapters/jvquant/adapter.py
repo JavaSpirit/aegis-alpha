@@ -40,6 +40,7 @@ from aegis_alpha.models import (
     SimilarSetupResult,
     StockOrderbookSnapshot,
     StockRealtimeSnapshot,
+    SuspendedStock,
     ThemeLeader,
     WeeklyPosition,
 )
@@ -855,6 +856,10 @@ class JvQuantMarketDataAdapter:
 
     def get_new_stock_candidates(self) -> list[NewStockCandidate]:
         # P6 starter: jvQuant 次新通道字段映射尚未确认。
+        return []
+
+    def get_suspended_stocks(self, trading_day: str = "") -> list[SuspendedStock]:
+        # P6 starter: jvQuant 停牌字段映射尚未对齐。
         return []
 
     def _candidate_note_float(self, candidate: SecondBoardCandidate, key: str) -> float:
