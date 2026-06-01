@@ -39,6 +39,7 @@ from aegis_alpha.models import (
     StockOrderbookSnapshot,
     StockRealtimeSnapshot,
     ThemeLeader,
+    WeeklyPosition,
 )
 from aegis_alpha.events import EventDetector, freshness_status, load_event_scoring_config
 from aegis_alpha.grading import CandidateGradingConfig, load_candidate_grading_config
@@ -814,6 +815,22 @@ class JvQuantMarketDataAdapter:
         # P5 starter: minute-level capital flow detail not yet exposed by jvQuant
         # semantic queries; return [] until dedicated probe lands.
         return []
+
+    def get_weekly_position(self, symbol: str) -> WeeklyPosition:
+        # P6 starter: jvQuant 周线接口尚未对齐契约，placeholder 起步。
+        return WeeklyPosition(
+            symbol=symbol,
+            trading_day="",
+            weekly_high=0.0,
+            weekly_low=0.0,
+            weekly_close=0.0,
+            position_pct=0.0,
+            weeks_in_uptrend=0,
+            ma20_above_ma60=False,
+            notes=["placeholder: jvQuant weekly endpoint not wired"],
+            provider="jvquant",
+            data_mode="placeholder",
+        )
 
     def _candidate_note_float(self, candidate: SecondBoardCandidate, key: str) -> float:
         prefix = f"{key}="

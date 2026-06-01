@@ -29,6 +29,7 @@ from aegis_alpha.models import (
     StockRealtimeSnapshot,
     ThemeLeader,
     ThemeStrength,
+    WeeklyPosition,
 )
 
 
@@ -104,3 +105,5 @@ class MarketDataAdapter(Protocol):
     def get_capital_flow_slices(
         self, symbol: str, trading_day: str
     ) -> list[CapitalFlowSlice]: ...
+
+    def get_weekly_position(self, symbol: str) -> WeeklyPosition: ...

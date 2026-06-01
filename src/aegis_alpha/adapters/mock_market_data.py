@@ -35,6 +35,7 @@ from aegis_alpha.models import (
     StockRealtimeSnapshot,
     ThemeLeader,
     ThemeStrength,
+    WeeklyPosition,
 )
 from aegis_alpha.events import EventDetector, load_event_scoring_config
 from aegis_alpha.themes.auction import AuctionAnalyzer
@@ -916,3 +917,18 @@ class MockMarketDataAdapter:
                 created_at=timestamp,
             ),
         ]
+
+    def get_weekly_position(self, symbol: str) -> WeeklyPosition:
+        return WeeklyPosition(
+            symbol=symbol,
+            trading_day="2026-06-01",
+            weekly_high=110.0,
+            weekly_low=90.0,
+            weekly_close=102.0,
+            position_pct=0.6,
+            weeks_in_uptrend=2,
+            ma20_above_ma60=True,
+            notes=["mock weekly position"],
+            provider="mock",
+            data_mode="mock",
+        )
