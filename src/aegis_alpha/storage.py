@@ -1276,23 +1276,27 @@ class AegisAlphaStore:
         self, *, trading_day: str = ""
     ) -> list[SuspendedStock]:
         """List suspended stocks. If trading_day given, only return entries that
-        are active on that day (start_day <= trading_day, AND end_day blank or end_day >= trading_day)."""
+        are active on that day (start_day <= trading_day, AND end_day blank or end_day >= trading_day).
+
+        Day-range filtering happens in SQL using idx_suspended_day for efficiency.
+        """
+        if not trading_day:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    "SELECT payload_json FROM suspended_stocks "
+                    "ORDER BY suspension_start_day ASC"
+                ).fetchall()
+            return [SuspendedStock.model_validate_json(row[0]) for row in rows]
+
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT payload_json FROM suspended_stocks ORDER BY suspension_start_day ASC"
+                "SELECT payload_json FROM suspended_stocks "
+                "WHERE suspension_start_day <= ? "
+                "AND (suspension_end_day = '' OR suspension_end_day >= ?) "
+                "ORDER BY suspension_start_day ASC",
+                (trading_day, trading_day),
             ).fetchall()
-        out: list[SuspendedStock] = []
-        for row in rows:
-            s = SuspendedStock.model_validate_json(row[0])
-            if not trading_day:
-                out.append(s)
-                continue
-            if s.suspension_start_day > trading_day:
-                continue
-            if s.suspension_end_day and s.suspension_end_day < trading_day:
-                continue
-            out.append(s)
-        return out
+        return [SuspendedStock.model_validate_json(row[0]) for row in rows]
 
 
 def write_runner_status(status: RunnerStatus, path: str | Path | None = None) -> Path:
