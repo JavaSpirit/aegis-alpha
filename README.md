@@ -174,7 +174,7 @@ When `AEGIS_ALPHA_MARKET_DATA_PROVIDER=jvquant`, Hermes can access jvQuant-backe
 
 The second-board candidate pool is currently derived from jvQuant semantic queries for yesterday limit-up stocks with current strength. Auction metrics, capital-flow net inflow ratio, concept/topic tags, first/final seal time, seal amount, max seal amount, break/reseal counts, seal volume, and seal-to-turnover ratio come from jvQuant semantic fields when available. Aegis Alpha now also calls jvQuant `client.minute(..., mode=minute)` for minute replay and recalculates 1/3/5/10-minute speed windows from minute bars when available. In that case speed fields use `minute_replay_exact_window:...` or `minute_replay_partial_window:...`; if minute replay is unavailable or disabled, the adapter falls back to jvQuant semantic speed fields such as `provider_exact_window:...` or `provider_latest_rolling_5m`. True own-order queue position still requires broker order/trade callbacks, so the current output only exposes a queue-position note from the read-only orderbook summary. Historical limit-up statistics and normalized theme strength still use placeholders until dedicated scanners are implemented.
 
-P5 数据扩展（自 2026-05 起）增加了 4 个外部数据维度：
+P5 数据扩展（自 2026-05 起）增加了 5 个外部数据维度：
 
 - 龙虎榜适配器 — `get_dragon_tiger` / `get_active_seats_today` 暴露知名游资席位（章盟主、孙哥、欢乐海岸、炒股养家等，白名单可在 `config/dragon_tiger_seats.yaml` 维护）；jvQuant 端尚未对齐契约，目前以 placeholder 起步，mock 端给出确定性样本。
 - 跌停池 / ST 池 — `get_limit_down_pool` / `get_st_pool` 给出今日跌停股与 ST 板成员；连续多只昨日跌停股今日反弹涨停时触发 `MARKET_BOTTOM_REVERSAL` 反向情绪事件。
