@@ -799,6 +799,45 @@ def query_minute_bars(symbol: str, start_day: str, end_day: str) -> list[dict] |
     )
 
 
+@mcp.tool
+def simulate_outcome(
+    symbol: str, trading_day: str, hypothesis_json: str
+) -> dict:
+    """Apply a hypothesis (JSON-encoded dict of field overrides) to the
+    historical snapshot for (symbol, trading_day) and return structured diff."""
+    import json as _json
+
+    from aegis_alpha.feedback.hypothesis import simulate_outcome as _simulate
+    from aegis_alpha.feedback.hypothesis import HypothesisInputs
+
+    safe_symbol = symbol.strip()
+    safe_day = trading_day.strip()
+    if not (safe_symbol and safe_day):
+        return {"data_mode": "unavailable",
+                "error": "symbol and trading_day are required"}
+    try:
+        hypothesis = _json.loads(hypothesis_json or "{}")
+    except _json.JSONDecodeError as exc:
+        return {"data_mode": "unavailable",
+                "error": f"hypothesis_json invalid: {exc}"}
+    if not isinstance(hypothesis, dict):
+        return {"data_mode": "unavailable",
+                "error": "hypothesis_json must decode to an object"}
+
+    def _run(store: AegisAlphaStore) -> dict:
+        snap = store.get_historical_snapshot(safe_symbol, safe_day)
+        if snap is None:
+            return {"data_mode": "unavailable",
+                    "error": "no historical snapshot for given symbol/day"}
+        out = _simulate(HypothesisInputs(snapshot=snap, hypothesis=hypothesis))
+        if out is None:
+            return {"data_mode": "unavailable",
+                    "error": "snapshot payload not valid JSON"}
+        return out.model_dump()
+
+    return _call_store(_run)
+
+
 def main() -> None:
     mcp.run()
 

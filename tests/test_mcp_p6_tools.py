@@ -49,3 +49,20 @@ def test_query_minute_bars_rejects_empty_args():
     res = query_minute_bars("", "2026-06-01", "2026-06-01")
     assert isinstance(res, dict)
     assert res.get("data_mode") == "unavailable"
+
+
+def test_simulate_outcome_rejects_empty_args():
+    from aegis_alpha.mcp.server import simulate_outcome
+
+    res = simulate_outcome("", "2026-05-30", "{}")
+    assert isinstance(res, dict)
+    assert res.get("data_mode") == "unavailable"
+
+
+def test_simulate_outcome_returns_unavailable_when_no_snapshot():
+    from aegis_alpha.mcp.server import simulate_outcome
+
+    res = simulate_outcome("ZZZ", "2026-05-30", "{}")
+    assert isinstance(res, dict)
+    # 当快照不存在时也走 unavailable 分支
+    assert res.get("data_mode") == "unavailable"

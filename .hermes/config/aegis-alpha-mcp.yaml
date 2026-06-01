@@ -64,5 +64,6 @@ mcp_servers:
         - get_new_stock_candidates
         - get_suspended_stocks
         - query_minute_bars
+        - simulate_outcome
       prompts: false
       resources: false
