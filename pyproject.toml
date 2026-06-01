@@ -28,6 +28,10 @@ market-data = [
     "requests>=2.32.0,<3.0.0",
     "websocket-client>=1.8.0,<2.0.0",
 ]
+history-store = [
+    "pyarrow>=15.0.0,<20.0.0",
+    "duckdb>=0.10.0,<2.0.0",
+]
 
 [project.scripts]
 aegis-alpha-mcp = "aegis_alpha.mcp.server:main"
