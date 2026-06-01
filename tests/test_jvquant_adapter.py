@@ -399,24 +399,37 @@ def test_inferred_change_pct_bse() -> None:
 
 
 def test_time_or_unknown_normalizes_short_form() -> None:
-    adapter = JvQuantMarketDataAdapter(token="test-token")
+    from aegis_alpha.adapters.jvquant.parsers import _time_or_unknown
 
-    assert adapter._time_or_unknown("9:45") == "09:45:00"
-    assert adapter._time_or_unknown("9:45:30") == "09:45:30"
-    assert adapter._time_or_unknown("09:45") == "09:45:00"
-    assert adapter._time_or_unknown("09:45:30") == "09:45:30"
-    assert adapter._time_or_unknown("2026-05-29 9:45:30") == "09:45:30"
-    assert adapter._time_or_unknown("2026-05-29T09:45:30+08:00") == "09:45:30"
-    assert adapter._time_or_unknown("") == "unknown"
-    assert adapter._time_or_unknown("None") == "unknown"
-    assert adapter._time_or_unknown("nan") == "unknown"
-    assert adapter._time_or_unknown("garbage") == "unknown"
+    assert _time_or_unknown("9:45") == "09:45:00"
+    assert _time_or_unknown("9:45:30") == "09:45:30"
+    assert _time_or_unknown("09:45") == "09:45:00"
+    assert _time_or_unknown("09:45:30") == "09:45:30"
+    assert _time_or_unknown("2026-05-29 9:45:30") == "09:45:30"
+    assert _time_or_unknown("2026-05-29T09:45:30+08:00") == "09:45:30"
+    assert _time_or_unknown("") == "unknown"
+    assert _time_or_unknown("None") == "unknown"
+    assert _time_or_unknown("nan") == "unknown"
+    assert _time_or_unknown("garbage") == "unknown"
 
 
 def test_seal_quality_score_uses_normalized_time() -> None:
-    adapter = JvQuantMarketDataAdapter(token="test-token")
-    score_short = adapter._seal_quality_score("09:45:00", 200_000_000, 3.0)
-    score_normalized = adapter._seal_quality_score(adapter._time_or_unknown("9:45"), 200_000_000, 3.0)
+    from aegis_alpha.adapters.jvquant.parsers import _time_or_unknown
+    from aegis_alpha.adapters.jvquant.scoring import seal_quality_score
+    from aegis_alpha.grading import CandidateGradingConfig
 
+    config = CandidateGradingConfig()
+    score_short = seal_quality_score(
+        first_limit_up_time="09:45:00",
+        seal_amount_cny=200_000_000,
+        seal_to_turnover_ratio=3.0,
+        config=config,
+    )
+    score_normalized = seal_quality_score(
+        first_limit_up_time=_time_or_unknown("9:45"),
+        seal_amount_cny=200_000_000,
+        seal_to_turnover_ratio=3.0,
+        config=config,
+    )
     assert score_short > 0
     assert score_short == score_normalized
