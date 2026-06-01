@@ -694,6 +694,58 @@ def get_recent_backtests(limit: int = 10) -> list[dict] | dict:
     return _call_store(lambda store: [r.model_dump() for r in store.list_backtest_runs(limit=safe_limit)])
 
 
+@mcp.tool
+def find_similar_setups(
+    symbol: str,
+    lookback_days: int = 90,
+    similarity_threshold: float = 0.7,
+) -> list[dict] | dict:
+    """Find historical candidate snapshots structurally similar to the most
+    recent snapshot of `symbol` (5-dim cosine similarity)."""
+    from datetime import date, timedelta
+    import json as _json
+
+    from aegis_alpha.extensions.similar_setups import (
+        find_similar_setups_in_snapshots,
+        vectorize_setup,
+    )
+
+    safe_symbol = symbol.strip()
+    if not safe_symbol:
+        return {"data_mode": "unavailable", "error": "symbol is required"}
+    safe_lookback = max(1, min(int(lookback_days or 90), 365))
+    safe_threshold = max(0.0, min(float(similarity_threshold or 0.7), 1.0))
+
+    def _run(store: AegisAlphaStore) -> list[dict]:
+        today = date.today()
+        start_day = (today - timedelta(days=safe_lookback)).isoformat()
+        end_day = today.isoformat()
+        snaps_for_symbol = store.list_historical_snapshots_between(
+            start_day=start_day, end_day=end_day, symbol=safe_symbol
+        )
+        if not snaps_for_symbol:
+            return []
+        latest = snaps_for_symbol[-1]
+        try:
+            latest_payload = _json.loads(latest.payload_json or "{}")
+        except Exception:
+            latest_payload = {}
+        query_vec = vectorize_setup(latest_payload)
+        pool = store.list_historical_snapshots_between(
+            start_day=start_day, end_day=end_day
+        )
+        results = find_similar_setups_in_snapshots(
+            query_symbol=safe_symbol,
+            query_vector=query_vec,
+            snapshots=pool,
+            similarity_threshold=safe_threshold,
+            limit=10,
+        )
+        return [r.model_dump() for r in results]
+
+    return _call_store(_run)
+
+
 def main() -> None:
     mcp.run()
 

@@ -60,5 +60,6 @@ mcp_servers:
         - explain_candidate
         - explain_second_board_candidate
         - get_capital_flow_slices
+        - find_similar_setups
       prompts: false
       resources: false
