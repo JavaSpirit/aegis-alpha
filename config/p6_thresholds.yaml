@@ -1,0 +1,122 @@
+# P6 starter thresholds — calibrate against historical limit-up outcomes in P8.
+# Code constants are NOT loaded from this file; this is documentation only so
+# operators / future calibrators can find every starter value in one place.
+#
+# Each entry: where the constant lives, current value, and what we'd want to
+# learn from history before changing it.
+
+contrarian_pool:
+  # at least N yesterday-limit-down stocks reversing to limit-up today
+  recovery_threshold:
+    file: src/aegis_alpha/extensions/contrarian_pool.py
+    constant: _RECOVERY_THRESHOLD
+    current_value: 3
+    calibration_note: |
+      Run a backtest over yesterday-limit-down pools across 6+ months and
+      measure precision/recall of MARKET_BOTTOM_REVERSAL events at thresholds
+      2/3/4/5. Pick the one whose next-day market behaviour proves most
+      directional.
+
+sector_events:
+  break_board_base_score:
+    file: src/aegis_alpha/extensions/sector_events.py
+    constant: _BREAK_BOARD_BASE_SCORE
+    current_value: 60.0
+    calibration_note: |
+      Min score for a leader-break event to be worth surfacing. Tune so that
+      events scoring below this are dominated by noise in historical replay.
+  break_board_height_bonus:
+    file: src/aegis_alpha/extensions/sector_events.py
+    constant: _BREAK_BOARD_HEIGHT_BONUS
+    current_value: 5.0
+    calibration_note: |
+      Per-extra-board bonus. Calibrate against next-day theme follower
+      drawdown vs leader's connect-board height.
+  rotation_base_score:
+    file: src/aegis_alpha/extensions/sector_events.py
+    constant: _ROTATION_BASE_SCORE
+    current_value: 65.0
+    calibration_note: |
+      Min score for a sector-rotation event. Same shape as break_board_base.
+  rotation_follower_bonus:
+    file: src/aegis_alpha/extensions/sector_events.py
+    constant: _ROTATION_FOLLOWER_BONUS
+    current_value: 3.0
+    calibration_note: |
+      Bonus per alive follower in the strengthening theme. Calibrate against
+      that theme's next-day breadth expansion.
+
+new_stocks:
+  aged_out_days:
+    file: src/aegis_alpha/extensions/new_stocks.py
+    constant: _AGED_OUT_DAYS
+    current_value: 180
+    calibration_note: |
+      Days after listing where a stock should no longer be treated as 次新.
+      Calibrate against historical 次新 momentum half-life.
+  smallcap_threshold_cny:
+    file: src/aegis_alpha/extensions/new_stocks.py
+    constant: _SMALLCAP_THRESHOLD_CNY
+    current_value: 1_000_000_000.0
+    calibration_note: |
+      Free-float cap below which a 次新 is "smallcap recent". Calibrate
+      against board-success rate by float-cap bucket.
+  largecap_threshold_cny:
+    file: src/aegis_alpha/extensions/new_stocks.py
+    constant: _LARGECAP_THRESHOLD_CNY
+    current_value: 5_000_000_000.0
+    calibration_note: |
+      Free-float cap above which 次新 is treated as largecap (less reactive).
+  recent_days:
+    file: src/aegis_alpha/extensions/new_stocks.py
+    constant: _RECENT_DAYS
+    current_value: 30
+    calibration_note: |
+      Within N days of listing → "recent" branch. Calibrate against the
+      half-life of post-listing speculative premium.
+
+limitup_driver:
+  hot_money_net_buy_threshold:
+    file: src/aegis_alpha/extensions/limitup_driver.py
+    constant: _HOT_MONEY_NET_BUY_THRESHOLD
+    current_value: 10_000_000.0
+    calibration_note: |
+      Min dragon-tiger net-buy CNY for the hot_money rule to fire. Calibrate
+      against hot-money seat density per net-buy bucket.
+
+intraday_pattern:
+  messy_break_threshold:
+    file: src/aegis_alpha/extensions/intraday_pattern.py
+    constant: _MESSY_BREAK_THRESHOLD
+    current_value: 3
+    calibration_note: |
+      Break-count threshold for messy_board pattern. Calibrate against
+      next-day premium / drawdown distributions by break count.
+  platform_consolidation_max_pct:
+    file: src/aegis_alpha/extensions/intraday_pattern.py
+    constant: _PLATFORM_CONSOLIDATION_MAX_PCT
+    current_value: 3.0
+    calibration_note: |
+      Max intraday range during the platform-breakout consolidation phase.
+  platform_consolidation_min_minutes:
+    file: src/aegis_alpha/extensions/intraday_pattern.py
+    constant: _PLATFORM_CONSOLIDATION_MIN_MINUTES
+    current_value: 60
+    calibration_note: |
+      Min duration for the consolidation phase to qualify as platform-breakout.
+  false_breakout_retrace_pct:
+    file: src/aegis_alpha/extensions/intraday_pattern.py
+    constant: _FALSE_BREAKOUT_RETRACE_PCT
+    current_value: 5.0
+    calibration_note: |
+      High-to-close drawdown above which a near-limit touch counts as a
+      false_breakout.
+
+weekly_position:
+  position_weight:
+    file: src/aegis_alpha/extensions/weekly_position.py
+    constant: 0.4
+    current_value: 0.4
+    calibration_note: |
+      Inline weight in compute_weekly_health_score. Calibrate after enough
+      review_outcomes data (>= 200 sealed second-board cases).

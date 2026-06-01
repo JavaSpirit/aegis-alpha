@@ -7,6 +7,7 @@ from aegis_alpha.clock import now_iso
 from aegis_alpha.models import MarketEvent
 
 
+# CALIBRATE: see config/p6_thresholds.yaml § contrarian_pool.recovery_threshold
 _RECOVERY_THRESHOLD = 3  # 至少 3 只昨日跌停股今日 reverse 涨停才触发反向情绪事件
 _MAX_SCORE = 100.0
 

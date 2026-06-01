@@ -20,6 +20,7 @@ _POLICY_KEYWORDS: tuple[str, ...] = (
     "补贴",
     "顶层设计",
 )
+# CALIBRATE: see config/p6_thresholds.yaml § limitup_driver.hot_money_net_buy_threshold
 _HOT_MONEY_NET_BUY_THRESHOLD = 10_000_000.0
 
 

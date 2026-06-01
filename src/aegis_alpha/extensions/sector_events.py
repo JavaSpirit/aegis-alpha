@@ -11,9 +11,13 @@ from aegis_alpha.models import (
 )
 
 
+# CALIBRATE: see config/p6_thresholds.yaml § sector_events.break_board_base_score
 _BREAK_BOARD_BASE_SCORE = 60.0
+# CALIBRATE: see config/p6_thresholds.yaml § sector_events.break_board_height_bonus
 _BREAK_BOARD_HEIGHT_BONUS = 5.0  # 每多一个连板 +5 分
+# CALIBRATE: see config/p6_thresholds.yaml § sector_events.rotation_base_score
 _ROTATION_BASE_SCORE = 65.0
+# CALIBRATE: see config/p6_thresholds.yaml § sector_events.rotation_follower_bonus
 _ROTATION_FOLLOWER_BONUS = 3.0  # 每一个 strengthening alive follower +3 分
 
 

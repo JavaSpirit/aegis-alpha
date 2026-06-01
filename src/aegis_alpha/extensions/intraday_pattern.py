@@ -6,9 +6,13 @@ from typing import Any
 from aegis_alpha.models import IntradayPatternFeatures
 
 
+# CALIBRATE: see config/p6_thresholds.yaml § intraday_pattern.messy_break_threshold
 _MESSY_BREAK_THRESHOLD = 3
+# CALIBRATE: see config/p6_thresholds.yaml § intraday_pattern.platform_consolidation_max_pct
 _PLATFORM_CONSOLIDATION_MAX_PCT = 3.0  # 平台震荡幅度
+# CALIBRATE: see config/p6_thresholds.yaml § intraday_pattern.platform_consolidation_min_minutes
 _PLATFORM_CONSOLIDATION_MIN_MINUTES = 60  # 平台至少 60 分钟才算平台
+# CALIBRATE: see config/p6_thresholds.yaml § intraday_pattern.false_breakout_retrace_pct
 _FALSE_BREAKOUT_RETRACE_PCT = 5.0  # 触板后回落 >5% 视为假突破
 
 
