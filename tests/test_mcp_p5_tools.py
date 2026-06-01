@@ -44,9 +44,12 @@ def test_compact_candidate_includes_limitup_driver_and_pattern():
         assert "intraday_pattern" in item
 
 
-def test_get_capital_flow_slices_returns_three_dicts():
+def test_get_capital_flow_slices_returns_three_dicts(monkeypatch):
+    monkeypatch.setenv("AEGIS_ALPHA_MARKET_DATA_PROVIDER", "mock")
+    from aegis_alpha.mcp.dependencies import reset_singletons
     from aegis_alpha.mcp.server import get_capital_flow_slices
 
+    reset_singletons()
     rows = get_capital_flow_slices("600519", "2026-05-30")
     assert isinstance(rows, list)
     assert len(rows) == 3

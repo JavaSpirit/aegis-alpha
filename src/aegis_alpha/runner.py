@@ -110,6 +110,7 @@ class AegisAlphaRunner:
         self.status_path = self.config.get("storage", {}).get("status_path")
         self.detector = EventDetector(load_event_scoring_config())
         self._last_persist_counts: dict[str, int] = {"snapshots": 0, "events": 0}
+        self._sector_events_adapter = None  # lazy-built on first _collect_sector_events
 
     def request_stop(self, *_args: object) -> None:
         self.stop_requested = True
@@ -200,31 +201,41 @@ class AegisAlphaRunner:
     def _collect_sector_events(self) -> list[MarketEvent]:
         """Best-effort: fetch ThemeLeader snapshot and run sector-event detectors.
 
-        Failures are swallowed — sector events are advisory; runner liveness
-        must not depend on them.
+        Each step has its own try/except so partial results survive a failing
+        detector. Failures are still swallowed — sector events are advisory and
+        runner liveness must not depend on them.
         """
-        try:
-            from datetime import date as _date
+        from datetime import date as _date
 
-            adapter = create_market_data_adapter()
+        try:
+            if self._sector_events_adapter is None:
+                self._sector_events_adapter = create_market_data_adapter()
+            adapter = self._sector_events_adapter
             trading_day = _date.today().isoformat()
             leaders = adapter.get_theme_leaders(theme="", trading_day=trading_day)
-            if not leaders:
-                return []
-            events: list[MarketEvent] = []
+        except Exception:
+            return []
+        if not leaders:
+            return []
+
+        events: list[MarketEvent] = []
+        try:
             events.extend(
                 detect_theme_leader_break_board(
                     LeaderBreakInputs(leaders=leaders, trading_day=trading_day)
                 )
             )
+        except Exception:
+            pass
+        try:
             events.extend(
                 detect_sector_rotation(
                     SectorRotationInputs(leaders=leaders, trading_day=trading_day)
                 )
             )
-            return events
         except Exception:
-            return []
+            pass
+        return events
 
     def _maybe_alert_from_events(self, events: list[MarketEvent]) -> None:
         try:
@@ -237,11 +248,21 @@ class AegisAlphaRunner:
             "SEAL_ORDER_DECAY",
             "BIG_ORDER_INFLOW_SPIKE",
             "THEME_DIVERGENCE",
+            "THEME_LEADER_BREAK_BOARD",
+            "SECTOR_ROTATION",
+            "MARKET_BOTTOM_REVERSAL",
         }
         for event in events:
             if event.event_type not in critical_types:
                 continue
-            severity = "critical" if event.event_type == "SEAL_ORDER_DECAY" else "warning"
+            critical_severity_types = {
+                "SEAL_ORDER_DECAY",
+                "THEME_LEADER_BREAK_BOARD",
+                "MARKET_BOTTOM_REVERSAL",
+            }
+            severity = (
+                "critical" if event.event_type in critical_severity_types else "warning"
+            )
             alert = alert_store.create(
                 title=f"{event.event_type} {event.symbol}",
                 body="; ".join(event.evidence)[:512],

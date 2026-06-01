@@ -151,3 +151,191 @@ storage:
 
     types = {e.event_type for e in captured}
     assert "THEME_LEADER_BREAK_BOARD" in types
+
+
+def test_maybe_alert_from_events_includes_p6_event_types(tmp_path, monkeypatch):
+    """P6/P7 added 3 new MarketEventType values; runner alert pipeline must
+    surface them. Otherwise THEME_LEADER_BREAK_BOARD / SECTOR_ROTATION /
+    MARKET_BOTTOM_REVERSAL events are detected and silently dropped."""
+    from aegis_alpha.models import MarketEvent
+    from aegis_alpha.runner import AegisAlphaRunner
+
+    config_path = tmp_path / "runner.yaml"
+    db_path = tmp_path / "runner.db"
+    config_path.write_text(
+        f"""
+market: ab
+loop_interval_seconds: 5
+trading_sessions:
+  - name: all_day
+    start: "00:00"
+    end: "23:59"
+subscription:
+  default_symbols: ["600000"]
+  levels: ["lv1"]
+storage:
+  sqlite_path: "{db_path}"
+  status_path: "{tmp_path / 'runner_status.json'}"
+""".strip()
+    )
+    runner = AegisAlphaRunner(config_path=str(config_path), connect=False)
+
+    triggered: list[str] = []
+
+    def _capture(_alert):
+        triggered.append(_alert.title)
+
+    monkeypatch.setattr("aegis_alpha.runner.notify_macos", _capture, raising=False)
+    import aegis_alpha.alerts.notifier as notifier_mod
+
+    monkeypatch.setattr(notifier_mod, "notify_macos", _capture, raising=False)
+
+    events = [
+        MarketEvent(
+            event_id=f"e{i}",
+            event_type=event_type,  # type: ignore[arg-type]
+            symbol="600519",
+            name="x",
+            theme="AI",
+            confidence="medium",
+            score=70.0,
+            evidence=["test"],
+            provider_timestamp="2026-06-01T09:30:00+08:00",
+            received_at="2026-06-01T09:30:00+08:00",
+            freshness_status="fresh",
+            suggested_agent_action=[],
+            data={},
+        )
+        for i, event_type in enumerate(
+            [
+                "THEME_LEADER_BREAK_BOARD",
+                "SECTOR_ROTATION",
+                "MARKET_BOTTOM_REVERSAL",
+            ]
+        )
+    ]
+    runner._maybe_alert_from_events(events)
+    assert len(triggered) == 3, (
+        f"all 3 P6 event types should trigger notify_macos; got titles: {triggered}"
+    )
+
+
+def test_collect_sector_events_preserves_partial_results_when_one_detector_fails(
+    tmp_path, monkeypatch
+):
+    """If detect_theme_leader_break_board succeeds but detect_sector_rotation
+    raises, the break_board events should NOT be dropped."""
+    from unittest.mock import MagicMock
+
+    from aegis_alpha.models import ThemeLeader
+    from aegis_alpha.runner import AegisAlphaRunner
+
+    config_path = tmp_path / "runner.yaml"
+    db_path = tmp_path / "runner.db"
+    config_path.write_text(
+        f"""
+market: ab
+loop_interval_seconds: 5
+trading_sessions:
+  - name: all_day
+    start: "00:00"
+    end: "23:59"
+subscription:
+  default_symbols: ["600000"]
+  levels: ["lv1"]
+storage:
+  sqlite_path: "{db_path}"
+  status_path: "{tmp_path / 'runner_status.json'}"
+""".strip()
+    )
+    runner = AegisAlphaRunner(config_path=str(config_path), connect=False)
+
+    broken_leader = ThemeLeader(
+        theme="AI",
+        trading_day="2026-06-01",
+        leader_symbol="600519",
+        leader_name="L",
+        leader_consecutive_boards=3,
+        leader_first_limit_up_time="09:30:00",
+        leader_seal_amount_cny=200_000_000.0,
+        leader_status="broken",
+        co_leader_symbols=[],
+        member_count=4,
+    )
+    fake_adapter = MagicMock()
+    fake_adapter.get_theme_leaders = MagicMock(return_value=[broken_leader])
+    monkeypatch.setattr(
+        "aegis_alpha.runner.create_market_data_adapter",
+        lambda: fake_adapter,
+        raising=False,
+    )
+
+    def _explode(*args, **kwargs):
+        raise RuntimeError("rotation detector exploded")
+
+    monkeypatch.setattr(
+        "aegis_alpha.runner.detect_sector_rotation", _explode, raising=False,
+    )
+
+    events = runner._collect_sector_events()
+    types = {e.event_type for e in events}
+    assert "THEME_LEADER_BREAK_BOARD" in types
+
+
+def test_collect_sector_events_caches_adapter_instance(tmp_path, monkeypatch):
+    """create_market_data_adapter should be called at most once across multiple
+    runner ticks, not once per tick."""
+    from unittest.mock import MagicMock
+
+    from aegis_alpha.models import ThemeLeader
+    from aegis_alpha.runner import AegisAlphaRunner
+
+    config_path = tmp_path / "runner.yaml"
+    db_path = tmp_path / "runner.db"
+    config_path.write_text(
+        f"""
+market: ab
+loop_interval_seconds: 5
+trading_sessions:
+  - name: all_day
+    start: "00:00"
+    end: "23:59"
+subscription:
+  default_symbols: ["600000"]
+  levels: ["lv1"]
+storage:
+  sqlite_path: "{db_path}"
+  status_path: "{tmp_path / 'runner_status.json'}"
+""".strip()
+    )
+    runner = AegisAlphaRunner(config_path=str(config_path), connect=False)
+
+    fake_adapter = MagicMock()
+    fake_adapter.get_theme_leaders = MagicMock(
+        return_value=[
+            ThemeLeader(
+                theme="AI",
+                trading_day="2026-06-01",
+                leader_symbol="600519",
+                leader_name="L",
+                leader_consecutive_boards=2,
+                leader_first_limit_up_time="09:30:00",
+                leader_seal_amount_cny=100_000_000.0,
+                leader_status="sealed",
+                co_leader_symbols=[],
+                member_count=2,
+            )
+        ]
+    )
+    factory = MagicMock(return_value=fake_adapter)
+    monkeypatch.setattr(
+        "aegis_alpha.runner.create_market_data_adapter", factory, raising=False,
+    )
+
+    runner._collect_sector_events()
+    runner._collect_sector_events()
+    runner._collect_sector_events()
+
+    assert factory.call_count == 1, (
+        f"adapter factory should be called once across 3 ticks; got {factory.call_count}"
+    )

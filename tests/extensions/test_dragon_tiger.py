@@ -97,6 +97,21 @@ def test_mock_adapter_active_seats_today_non_empty():
     assert all("hot_money_alias" in r for r in rows)
 
 
+def test_mock_active_seats_today_returns_multiple_aliases_for_demo():
+    """Mock should expose at least 3 aliases and at least one alias covering
+    multiple symbols, so SKILL workflow's "板块共振" demo has signal."""
+    from aegis_alpha.adapters.mock_market_data import MockMarketDataAdapter
+
+    adapter = MockMarketDataAdapter()
+    rows = adapter.get_active_seats_today("2026-06-01")
+    aliases = {r["hot_money_alias"] for r in rows}
+    assert len(aliases) >= 3, f"expected >=3 aliases, got {aliases}"
+    multi_symbol_rows = [r for r in rows if r.get("symbol_count", 0) >= 2]
+    assert multi_symbol_rows, (
+        "at least one alias should cover multiple symbols for resonance demo"
+    )
+
+
 def test_jvquant_active_seats_today_returns_placeholder_signal():
     pytest = __import__("pytest")
     try:

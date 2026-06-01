@@ -861,10 +861,22 @@ class MockMarketDataAdapter:
         return [
             {
                 "hot_money_alias": "章盟主",
+                "symbol_count": 2,
+                "total_net_buy_cny": 25_000_000.0,
+                "symbols": ["600519", "300750"],
+            },
+            {
+                "hot_money_alias": "孙哥",
                 "symbol_count": 1,
-                "total_net_buy_cny": 10_000_000.0,
-                "symbols": ["600519"],
-            }
+                "total_net_buy_cny": 8_000_000.0,
+                "symbols": ["002230"],
+            },
+            {
+                "hot_money_alias": "欢乐海岸",
+                "symbol_count": 3,
+                "total_net_buy_cny": 18_000_000.0,
+                "symbols": ["600519", "002594", "300750"],
+            },
         ]
 
     def get_limit_down_pool(self, trading_day: str = "") -> list[ContrarianPoolEntry]:

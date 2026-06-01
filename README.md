@@ -212,6 +212,14 @@ P7 polish & tech debt（自 2026-06 起完成）：
 - `simulate_outcome` 加入 P7 starter re-grading hook：`seal_amount_cny`、`five_min_speed_pct` 跨阈值时按 `_GRADE_LADDER` 升降一级；完整重算评级留 P8。
 - 给 `get_new_stock_candidates` / `get_suspended_stocks` 补 adapter-错误路径回归测试。
 
+P8 runner alerts + hypothesis 真重算（自 2026-06 起完成）：
+
+- `runner._maybe_alert_from_events` 的 critical_types 集合补齐 P5/P6 加的 3 个事件类型（`MARKET_BOTTOM_REVERSAL`、`THEME_LEADER_BREAK_BOARD`、`SECTOR_ROTATION`），它们之前被检测出来后会被 silent 丢弃。
+- `_collect_sector_events` 拆成 3 段独立 try/except，一个 detector 失败不会再丢弃另一个 detector 已产出的事件。
+- runner 缓存 `create_market_data_adapter()` 实例，每次启动只构造一次，跨 tick 复用。
+- `simulate_outcome` 弃用 P7 starter `_GRADE_LADDER` 启发式，接 `aegis_alpha.adapters.jvquant.scoring.candidate_grade()` 真重算 9 字段评级。`hypothesis_json` 现在能覆盖任何 `candidate_grade` kwarg（例如 `{"action": "avoid"}` 立即看到对应的 REJECT 假设结论）。
+- mock `get_active_seats_today` 扩到 3 个游资条目（章盟主 + 孙哥 + 欢乐海岸），其中欢乐海岸覆盖 3 只票，让 SKILL 「板块共振」工作流有真实演示信号。
+
 Minute replay is not tick-by-tick realtime Level-2. During active trading, agents must inspect `minute_replay_timestamp`, `five_min_speed_timestamp`, and the relevant orderbook timestamp before treating a conclusion as fresh enough for intraday monitoring.
 
 Aegis Alpha now also has the first event-driven layer:
