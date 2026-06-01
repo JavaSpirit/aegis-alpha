@@ -25,6 +25,7 @@ from aegis_alpha.models import (
     SealTimelineEvent,
     SecondBoardCandidate,
     SignalSnapshot,
+    SimilarSetupResult,
     StockOrderbookSnapshot,
     StockRealtimeSnapshot,
     ThemeLeader,
@@ -107,3 +108,11 @@ class MarketDataAdapter(Protocol):
     ) -> list[CapitalFlowSlice]: ...
 
     def get_weekly_position(self, symbol: str) -> WeeklyPosition: ...
+
+    def find_similar_setups(
+        self,
+        symbol: str,
+        *,
+        lookback_days: int = 90,
+        similarity_threshold: float = 0.7,
+    ) -> list[SimilarSetupResult]: ...

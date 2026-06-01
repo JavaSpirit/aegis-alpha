@@ -36,6 +36,7 @@ from aegis_alpha.models import (
     SealTimelineEvent,
     SecondBoardCandidate,
     SignalSnapshot,
+    SimilarSetupResult,
     StockOrderbookSnapshot,
     StockRealtimeSnapshot,
     ThemeLeader,
@@ -839,6 +840,17 @@ class JvQuantMarketDataAdapter:
             provider="jvquant",
             data_mode="placeholder",
         )
+
+    def find_similar_setups(
+        self,
+        symbol: str,
+        *,
+        lookback_days: int = 90,
+        similarity_threshold: float = 0.7,
+    ) -> list[SimilarSetupResult]:
+        # P6 starter: real search runs in MCP layer (combines adapter + store).
+        # See mcp/server.py:find_similar_setups.
+        return []
 
     def _candidate_note_float(self, candidate: SecondBoardCandidate, key: str) -> float:
         prefix = f"{key}="

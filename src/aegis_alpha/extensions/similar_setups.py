@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass
 from typing import Any
+
+from aegis_alpha.models import HistoricalCandidateSnapshot, SimilarSetupResult
 
 
 _VECTOR_DIM = 5
@@ -57,3 +60,48 @@ def cosine_similarity(a: SetupVector, b: SetupVector) -> float:
     if norm_a == 0.0 or norm_b == 0.0:
         return 0.0
     return max(0.0, min(1.0, dot / (norm_a * norm_b)))
+
+
+def find_similar_setups_in_snapshots(
+    *,
+    query_symbol: str,
+    query_vector: SetupVector,
+    snapshots: list[HistoricalCandidateSnapshot],
+    similarity_threshold: float = 0.7,
+    limit: int = 10,
+) -> list[SimilarSetupResult]:
+    """Score each snapshot against the query and return matches above threshold."""
+    results: list[SimilarSetupResult] = []
+    for snap in snapshots:
+        if snap.symbol == query_symbol:
+            continue
+        try:
+            payload = json.loads(snap.payload_json or "{}")
+        except json.JSONDecodeError:
+            continue
+        snap_vector = vectorize_setup(payload)
+        sim = cosine_similarity(query_vector, snap_vector)
+        if sim < similarity_threshold:
+            continue
+        feature_diffs: dict[str, float] = {}
+        for i, axis in enumerate(
+            ("previous_consecutive_boards", "same_theme_rising_count",
+             "seal_amount_cny", "five_min_speed_pct", "auction_change_pct")
+        ):
+            feature_diffs[axis] = round(
+                snap_vector.values[i] - query_vector.values[i], 4
+            )
+        results.append(
+            SimilarSetupResult(
+                query_symbol=query_symbol,
+                match_symbol=snap.symbol,
+                match_trading_day=snap.trading_day,
+                similarity=round(sim, 4),
+                match_grade_at_pick=snap.grade_at_pick,
+                match_outcome_summary="",
+                feature_diffs=feature_diffs,
+                notes=[],
+            )
+        )
+    results.sort(key=lambda r: r.similarity, reverse=True)
+    return results[: max(1, limit)]

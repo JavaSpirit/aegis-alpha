@@ -30,6 +30,7 @@ from aegis_alpha.models import (
     SignalEvidence,
     SignalMetadata,
     SignalSnapshot,
+    SimilarSetupResult,
     RealtimeConnectionStatus,
     StockOrderbookSnapshot,
     StockRealtimeSnapshot,
@@ -934,3 +935,29 @@ class MockMarketDataAdapter:
             provider="mock",
             data_mode="mock",
         )
+
+    def find_similar_setups(
+        self,
+        symbol: str,
+        *,
+        lookback_days: int = 90,
+        similarity_threshold: float = 0.7,
+    ) -> list[SimilarSetupResult]:
+        return [
+            SimilarSetupResult(
+                query_symbol=symbol,
+                match_symbol="000858",
+                match_trading_day="2025-11-12",
+                similarity=0.85,
+                match_grade_at_pick="A",
+                match_outcome_summary="sealed_second_board=True",
+                feature_diffs={
+                    "previous_consecutive_boards": 0.0,
+                    "same_theme_rising_count": -0.05,
+                    "seal_amount_cny": -0.10,
+                    "five_min_speed_pct": 0.05,
+                    "auction_change_pct": 0.0,
+                },
+                notes=["mock 相似形态"],
+            ),
+        ]
