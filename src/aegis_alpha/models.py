@@ -831,3 +831,16 @@ class WeeklyPosition(BaseModel):
     notes: list[str] = Field(default_factory=list)
     provider: str = "mock"
     data_mode: str = "mock"
+
+
+class SimilarSetupResult(BaseModel):
+    """find_similar_setups 的单条返回。"""
+
+    query_symbol: str
+    match_symbol: str
+    match_trading_day: str
+    similarity: float = Field(default=0.0, ge=0.0, le=1.0)
+    match_grade_at_pick: str = "C"
+    match_outcome_summary: str = ""
+    feature_diffs: dict[str, float] = Field(default_factory=dict)
+    notes: list[str] = Field(default_factory=list)

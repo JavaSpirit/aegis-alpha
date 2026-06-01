@@ -79,3 +79,19 @@ def test_second_board_candidate_has_weekly_health_score_default():
     assert "weekly_health_score" in fields
     default = SecondBoardCandidate.model_fields["weekly_health_score"].default
     assert abs(default - 50.0) < 1e-6
+
+
+def test_similar_setup_result_model_construct():
+    from aegis_alpha.models import SimilarSetupResult
+
+    res = SimilarSetupResult(
+        query_symbol="600519",
+        match_symbol="000858",
+        match_trading_day="2025-11-12",
+        similarity=0.83,
+        match_grade_at_pick="A",
+        match_outcome_summary="sealed_second_board=True",
+        notes=["同板块 + 同高度"],
+    )
+    assert res.similarity == 0.83
+    assert res.match_grade_at_pick == "A"
