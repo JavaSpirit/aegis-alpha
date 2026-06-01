@@ -201,6 +201,17 @@ P6 进阶事件与生态（自 2026-06 起）增加了 7 个能力：
 
 P6 阈值（如 `_MESSY_BREAK_THRESHOLD`、`_HOT_MONEY_NET_BUY_THRESHOLD`、`_AGED_OUT_DAYS`）目前是 starter 常量，待 P7 历史校准。
 
+P7 polish & tech debt（自 2026-06 起完成）：
+
+- 修复 P3 期间 jvquant adapter 拆分时遗留的 2 个失败测试（`_time_or_unknown` / `_seal_quality_score` 现在调用 module-level helpers）。
+- `list_suspended_stocks` 把 day-range filter 从 Python 端推到 SQL 端，利用 `idx_suspended_day` 索引。
+- 5 个 P6 extensions 文件的 starter 常量加 `# CALIBRATE` 注释；常量值集中文档化在 `config/p6_thresholds.yaml`，方便 P8 回测校准。
+- jvquant `get_active_seats_today` 不再 silent 返回 `[]`；当端点未接入时返回带 `data_mode=placeholder` 的单元素列表，让 Hermes 能区分「真没数据」和「端点未接入」。
+- `JvQuantMarketDataAdapter.get_second_board_candidates` 自动过滤 `is_symbol_suspended` 命中的停牌股。
+- `runner.persist_buffer_outputs` 接入 `detect_theme_leader_break_board` + `detect_sector_rotation`，检测器现在与 `THEME_DIVERGENCE` 一样自动产出事件。
+- `simulate_outcome` 加入 P7 starter re-grading hook：`seal_amount_cny`、`five_min_speed_pct` 跨阈值时按 `_GRADE_LADDER` 升降一级；完整重算评级留 P8。
+- 给 `get_new_stock_candidates` / `get_suspended_stocks` 补 adapter-错误路径回归测试。
+
 Minute replay is not tick-by-tick realtime Level-2. During active trading, agents must inspect `minute_replay_timestamp`, `five_min_speed_timestamp`, and the relevant orderbook timestamp before treating a conclusion as fresh enough for intraday monitoring.
 
 Aegis Alpha now also has the first event-driven layer:
