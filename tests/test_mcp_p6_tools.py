@@ -21,3 +21,13 @@ def test_get_new_stock_candidates_returns_list():
     if out:
         item = out[0]
         assert "symbol" in item and "tier" in item
+
+
+def test_get_suspended_stocks_returns_list():
+    from aegis_alpha.mcp.server import get_suspended_stocks
+
+    out = get_suspended_stocks("2026-06-01")
+    assert isinstance(out, list)
+    if out:
+        assert "symbol" in out[0]
+        assert "suspension_start_day" in out[0]

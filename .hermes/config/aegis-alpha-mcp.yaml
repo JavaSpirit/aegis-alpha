@@ -62,5 +62,6 @@ mcp_servers:
         - get_capital_flow_slices
         - find_similar_setups
         - get_new_stock_candidates
+        - get_suspended_stocks
       prompts: false
       resources: false

@@ -754,6 +754,17 @@ def get_new_stock_candidates() -> list[dict]:
     )
 
 
+@mcp.tool
+def get_suspended_stocks(trading_day: str = "") -> list[dict]:
+    """Return suspended stocks active on the given trading day."""
+    safe_day = trading_day.strip()
+    return _call_tool(
+        lambda adapter: [
+            s.model_dump() for s in adapter.get_suspended_stocks(safe_day)
+        ]
+    )
+
+
 def main() -> None:
     mcp.run()
 
