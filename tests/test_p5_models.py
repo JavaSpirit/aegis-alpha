@@ -1,3 +1,16 @@
+def test_suspended_stock_model_construct():
+    from aegis_alpha.models import SuspendedStock
+
+    s = SuspendedStock(
+        symbol="600519", name="贵州茅台",
+        suspension_start_day="2026-05-25",
+        suspension_end_day="",
+        reason="重大事项",
+    )
+    assert s.symbol == "600519"
+    assert s.suspension_end_day == ""
+
+
 def test_dragon_tiger_record_minimal_construct():
     from aegis_alpha.models import DragonTigerRecord, DragonTigerSeat
 

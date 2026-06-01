@@ -864,3 +864,14 @@ class NewStockCandidate(BaseModel):
     notes: list[str] = Field(default_factory=list)
     provider: str = "mock"
     data_mode: str = "mock"
+
+
+class SuspendedStock(BaseModel):
+    symbol: str
+    name: str = ""
+    suspension_start_day: str
+    suspension_end_day: str = ""
+    reason: str = ""
+    notes: list[str] = Field(default_factory=list)
+    provider: str = "mock"
+    data_mode: str = "mock"
