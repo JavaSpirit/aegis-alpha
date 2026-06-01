@@ -138,6 +138,7 @@ Use `get_runner_status` when the user asks whether realtime monitoring is active
     - `query_minute_bars(symbol, start_day, end_day)` 仅在 history-store extras 安装后可用；返回 `data_mode=unavailable` 时直接告诉用户分钟级历史层未启用。
     - `simulate_outcome(symbol, trading_day, hypothesis_json)` 在用户问「如果当时封单是 X 亿，评级会变吗？」时调用；返回 `payload_diff` 是结构化对比，不是确定性结论。
     - 候选契约里的 `weekly_health_score` ≥ 70 表示周线位置健康，可加分；< 30 应在评级原因里点出周线劣势。
+    - 板块事件 `THEME_LEADER_BREAK_BOARD`（高度龙头炸板）与 `SECTOR_ROTATION`（板块轮动）：当 `get_recent_market_events` 返回这两类事件时，把它们当作板块级风险/机会语境而不是单股触发——前者意味着同题材 follower 应整体降级，后者意味着可以把注意力从 weakening_theme 转向 strengthening_theme 的 followers。检测器目前不在 runner 内自动触发，需手动调用 `extensions.sector_events.detect_theme_leader_break_board` / `detect_sector_rotation` 时再使用。
 
 ## Candidate Interpretation Rules
 
