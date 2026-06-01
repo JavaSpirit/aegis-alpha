@@ -95,3 +95,17 @@ def test_mock_adapter_active_seats_today_non_empty():
     rows = adapter.get_active_seats_today("2026-05-30")
     assert isinstance(rows, list)
     assert all("hot_money_alias" in r for r in rows)
+
+
+def test_jvquant_active_seats_today_returns_placeholder_signal():
+    pytest = __import__("pytest")
+    try:
+        from aegis_alpha.adapters.jvquant.adapter import JvQuantMarketDataAdapter
+    except ImportError:
+        pytest.skip("jvquant adapter unavailable")
+    adapter = JvQuantMarketDataAdapter.__new__(JvQuantMarketDataAdapter)
+    rows = adapter.get_active_seats_today("2026-06-01")
+    assert isinstance(rows, list)
+    assert rows, "jvquant active_seats placeholder should signal unavailability"
+    assert rows[0].get("data_mode") == "placeholder"
+    assert "hot_money_alias" in rows[0]

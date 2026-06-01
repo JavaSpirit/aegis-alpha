@@ -63,3 +63,15 @@ def test_compact_candidate_includes_weekly_health_score():
     for item in items:
         assert "weekly_health_score" in item
         assert 0.0 <= item["weekly_health_score"] <= 100.0
+
+
+def test_get_active_seats_today_includes_data_mode_field():
+    from aegis_alpha.mcp.server import get_active_seats_today
+
+    rows = get_active_seats_today("2026-06-01")
+    # mock 模式可能不需要 data_mode；jvquant placeholder 一定有；本测试只
+    # 验证返回结构可读，让 Hermes 即使解析 mock 也不会崩。
+    assert isinstance(rows, list) or isinstance(rows, dict)
+    if isinstance(rows, list):
+        for r in rows:
+            assert "hot_money_alias" in r

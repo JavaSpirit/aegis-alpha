@@ -810,7 +810,21 @@ class JvQuantMarketDataAdapter:
         )
 
     def get_active_seats_today(self, trading_day: str) -> list[dict]:
-        return []
+        # P6/P7 starter: jvQuant 龙虎榜端点尚未对齐契约，返回带 placeholder 信号的
+        # 单元素列表，让 Hermes 能区分「真没数据」和「端点未接入」。
+        return [
+            {
+                "hot_money_alias": "",
+                "symbol_count": 0,
+                "total_net_buy_cny": 0.0,
+                "symbols": [],
+                "data_mode": "placeholder",
+                "error": (
+                    "placeholder: jvQuant active-seats endpoint not wired; "
+                    "agents should not infer hot-money activity from this entry."
+                ),
+            }
+        ]
 
     def get_limit_down_pool(self, trading_day: str = "") -> list[ContrarianPoolEntry]:
         # P5 starter: 跌停池 semantic query 尚未确定字段映射，先返回空列表。
