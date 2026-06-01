@@ -12,10 +12,17 @@ from pathlib import Path
 
 import yaml
 
+from aegis_alpha.adapters.factory import create_market_data_adapter
 from aegis_alpha.adapters.jvquant_websocket import JvQuantRealtimeClient
 from aegis_alpha.clock import SH_TZ, now_iso
 from aegis_alpha.config import load_project_env
 from aegis_alpha.events import EventDetector, SignalWindowBuffer, load_event_scoring_config
+from aegis_alpha.extensions.sector_events import (
+    LeaderBreakInputs,
+    SectorRotationInputs,
+    detect_sector_rotation,
+    detect_theme_leader_break_board,
+)
 from aegis_alpha.models import MarketEvent, RunnerStatus
 from aegis_alpha.storage import AegisAlphaStore, read_runner_status, write_runner_status
 
@@ -183,10 +190,41 @@ class AegisAlphaRunner:
             self.store.save_signal_snapshot(snapshot)
             snapshot_count += 1
             events.extend(self.detector.detect_from_snapshot(snapshot))
+        sector_events = self._collect_sector_events()
+        events.extend(sector_events)
         if events:
             self.store.save_market_events(events)
             self._maybe_alert_from_events(events)
         self._last_persist_counts = {"snapshots": snapshot_count, "events": len(events)}
+
+    def _collect_sector_events(self) -> list[MarketEvent]:
+        """Best-effort: fetch ThemeLeader snapshot and run sector-event detectors.
+
+        Failures are swallowed — sector events are advisory; runner liveness
+        must not depend on them.
+        """
+        try:
+            from datetime import date as _date
+
+            adapter = create_market_data_adapter()
+            trading_day = _date.today().isoformat()
+            leaders = adapter.get_theme_leaders(theme="", trading_day=trading_day)
+            if not leaders:
+                return []
+            events: list[MarketEvent] = []
+            events.extend(
+                detect_theme_leader_break_board(
+                    LeaderBreakInputs(leaders=leaders, trading_day=trading_day)
+                )
+            )
+            events.extend(
+                detect_sector_rotation(
+                    SectorRotationInputs(leaders=leaders, trading_day=trading_day)
+                )
+            )
+            return events
+        except Exception:
+            return []
 
     def _maybe_alert_from_events(self, events: list[MarketEvent]) -> None:
         try:

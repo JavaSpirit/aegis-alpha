@@ -90,3 +90,64 @@ storage:
 
     assert runner.store.signal_snapshot_count("600000") == 1
     assert runner.store.market_event_count() >= 1
+
+
+def test_persist_buffer_outputs_appends_sector_events_when_leader_breaks(tmp_path, monkeypatch):
+    """persist_buffer_outputs should fetch theme leaders and append
+    THEME_LEADER_BREAK_BOARD events when a leader's status is 'broken'."""
+    from unittest.mock import MagicMock
+    from aegis_alpha.models import ThemeLeader
+    from aegis_alpha.runner import AegisAlphaRunner
+
+    config_path = tmp_path / "runner.yaml"
+    db_path = tmp_path / "runner.db"
+    config_path.write_text(
+        f"""
+market: ab
+loop_interval_seconds: 5
+trading_sessions:
+  - name: all_day
+    start: "00:00"
+    end: "23:59"
+subscription:
+  default_symbols: ["600000"]
+  levels: ["lv1"]
+storage:
+  sqlite_path: "{db_path}"
+  status_path: "{tmp_path / 'runner_status.json'}"
+""".strip()
+    )
+
+    # Ensure the runner builds; we then patch internals.
+    runner = AegisAlphaRunner(config_path=str(config_path), connect=False)
+
+    # No buffer snapshots → detector contributes 0 events.
+    # We just need persist_buffer_outputs to call the sector-event detector.
+
+    broken_leader = ThemeLeader(
+        theme="AI", trading_day="2026-06-01",
+        leader_symbol="600519", leader_name="L",
+        leader_consecutive_boards=3,
+        leader_first_limit_up_time="09:30:00",
+        leader_seal_amount_cny=200_000_000.0,
+        leader_status="broken",
+        co_leader_symbols=[],
+        member_count=4,
+    )
+
+    fake_adapter = MagicMock()
+    fake_adapter.get_theme_leaders = MagicMock(return_value=[broken_leader])
+
+    monkeypatch.setattr(
+        "aegis_alpha.runner.create_market_data_adapter",
+        lambda: fake_adapter,
+        raising=False,
+    )
+
+    captured: list = []
+    runner._maybe_alert_from_events = lambda events: captured.extend(events)  # type: ignore[assignment]
+
+    runner.persist_buffer_outputs(["600000"])
+
+    types = {e.event_type for e in captured}
+    assert "THEME_LEADER_BREAK_BOARD" in types
