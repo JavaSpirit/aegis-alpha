@@ -66,3 +66,33 @@ def test_simulate_outcome_returns_unavailable_when_no_snapshot():
     assert isinstance(res, dict)
     # 当快照不存在时也走 unavailable 分支
     assert res.get("data_mode") == "unavailable"
+
+
+def test_get_new_stock_candidates_returns_unavailable_dict_on_adapter_error(monkeypatch):
+    from aegis_alpha.mcp import server as mcp_server
+
+    class _BadAdapter:
+        def get_new_stock_candidates(self):
+            raise RuntimeError("adapter exploded")
+
+    monkeypatch.setattr(mcp_server, "get_market_data_adapter", lambda: _BadAdapter())
+
+    res = mcp_server.get_new_stock_candidates()
+    assert isinstance(res, dict)
+    assert res.get("data_mode") == "unavailable"
+    assert "adapter exploded" in res.get("error", "")
+
+
+def test_get_suspended_stocks_returns_unavailable_dict_on_adapter_error(monkeypatch):
+    from aegis_alpha.mcp import server as mcp_server
+
+    class _BadAdapter:
+        def get_suspended_stocks(self, trading_day=""):
+            raise RuntimeError("adapter exploded")
+
+    monkeypatch.setattr(mcp_server, "get_market_data_adapter", lambda: _BadAdapter())
+
+    res = mcp_server.get_suspended_stocks("2026-06-01")
+    assert isinstance(res, dict)
+    assert res.get("data_mode") == "unavailable"
+    assert "adapter exploded" in res.get("error", "")
