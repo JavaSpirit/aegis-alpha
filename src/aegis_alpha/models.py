@@ -875,3 +875,13 @@ class SuspendedStock(BaseModel):
     notes: list[str] = Field(default_factory=list)
     provider: str = "mock"
     data_mode: str = "mock"
+
+
+class HypothesisOutcome(BaseModel):
+    symbol: str
+    trading_day: str
+    original_grade: str = "C"
+    hypothetical_grade: str = "C"
+    applied_hypothesis: dict[str, Any] = Field(default_factory=dict)
+    payload_diff: dict[str, Any] = Field(default_factory=dict)
+    notes: list[str] = Field(default_factory=list)
