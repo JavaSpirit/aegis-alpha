@@ -31,8 +31,8 @@ def test_mock_adapter_exposes_p2_theme_ladder_emotion_auction_contracts() -> Non
     assert kdxf.theme_leader_symbol == "002230.SZ"
 
     jqr = by_symbol["300024.SZ"]
-    assert jqr.previous_consecutive_boards == 1
-    assert jqr.previous_height_label == "first_board"
+    assert jqr.previous_consecutive_boards == 2
+    assert jqr.previous_height_label == "second_board"
     assert jqr.theme_role == "leader"  # 机器人 theme leader is 300024.SZ itself
     assert jqr.theme_leader_symbol == "300024.SZ"
 

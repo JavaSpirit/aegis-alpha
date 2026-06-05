@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from aegis_alpha.grading import CandidateGradingConfig
 
 
@@ -219,3 +221,172 @@ def estimated_seal_probability(
     elif action == "avoid":
         probability -= 0.25
     return round(max(0.0, min(0.95, probability)), 4)
+
+
+def theme_position_label(*, theme_max_height: int, theme_multi_board_count: int) -> str:
+    if theme_max_height >= 4 or (theme_max_height >= 3 and theme_multi_board_count >= 3):
+        return "extended"
+    if theme_max_height == 3 or theme_multi_board_count >= 3:
+        return "maturing"
+    if theme_max_height == 2:
+        return "early"
+    return "unknown"
+
+
+def third_board_promotion_assessment(
+    *,
+    action: str,
+    theme_role: str,
+    theme_position: str,
+    theme_max_height: int,
+    theme_multi_board_count: int,
+    theme_recent_active_days: int,
+    theme_recent_max_member_count: int,
+    free_float_market_cap_cny: float,
+    turnover_cny: float,
+    seal_amount_cny: float,
+    seal_to_turnover_ratio: float,
+    first_limit_up_time: str,
+    break_board_count: int,
+    reseal_count: int,
+    final_seal_time: str,
+    big_order_net_inflow_ratio: float,
+    orderbook_quality: float,
+    auction_change_pct: float,
+    auction_turnover_cny: float,
+    weekly_health_score: float,
+    config: CandidateGradingConfig,
+) -> dict[str, Any]:
+    score = 50.0
+    reasons: list[str] = []
+
+    action_delta = {"active": 8.0, "selective": 3.0, "defensive": -8.0, "avoid": -22.0}.get(action, 0.0)
+    score += action_delta
+    reasons.append(f"市场闸门={action}({action_delta:+.0f})")
+
+    theme_delta = {"early": 8.0, "maturing": -5.0, "extended": -14.0}.get(theme_position, -2.0)
+    score += theme_delta
+    reasons.append(
+        f"题材阶段={theme_position}, 最高板={theme_max_height}, 多板数={theme_multi_board_count}, "
+        f"近活跃={theme_recent_active_days}天, 最大成员={theme_recent_max_member_count}({theme_delta:+.0f})"
+    )
+
+    role_delta = {"leader": 5.0, "co_leader": 3.0, "follower": -3.0}.get(theme_role, 0.0)
+    score += role_delta
+    if role_delta:
+        reasons.append(f"题材角色={theme_role}({role_delta:+.0f})")
+
+    if free_float_market_cap_cny <= 0:
+        float_delta = -2.0
+        float_label = "unknown"
+    elif free_float_market_cap_cny <= 3_000_000_000:
+        float_delta = 6.0
+        float_label = "small"
+    elif free_float_market_cap_cny <= 8_000_000_000:
+        float_delta = 3.0
+        float_label = "mid"
+    elif free_float_market_cap_cny <= 20_000_000_000:
+        float_delta = -2.0
+        float_label = "large"
+    else:
+        float_delta = -8.0
+        float_label = "mega"
+    score += float_delta
+    reasons.append(f"流通市值={float_label}({float_delta:+.0f})")
+
+    if turnover_cny <= 0:
+        turnover_delta = -2.0
+        turnover_label = "unknown"
+    elif turnover_cny < 200_000_000:
+        turnover_delta = -6.0
+        turnover_label = "thin"
+    elif turnover_cny <= 1_500_000_000:
+        turnover_delta = 5.0
+        turnover_label = "healthy"
+    elif turnover_cny <= 3_500_000_000:
+        turnover_delta = 1.0
+        turnover_label = "heavy"
+    else:
+        turnover_delta = -6.0
+        turnover_label = "too_heavy"
+    score += turnover_delta
+    reasons.append(f"成交额={turnover_label}({turnover_delta:+.0f})")
+
+    seal_q = seal_quality_score(
+        first_limit_up_time=first_limit_up_time,
+        seal_amount_cny=seal_amount_cny,
+        seal_to_turnover_ratio=seal_to_turnover_ratio,
+        config=config,
+    )
+    seal_delta = min(15.0, seal_q * 0.22)
+    score += seal_delta
+    reasons.append(f"封板质量={seal_q:.0f}({seal_delta:+.0f})")
+
+    if break_board_count == 0:
+        reseal_delta = 8.0
+        reseal_label = "未炸板"
+    elif break_board_count == 1 and reseal_count >= 1:
+        reseal_delta = 2.0
+        reseal_label = "一次炸板回封"
+    elif break_board_count == 2 and reseal_count >= 2:
+        reseal_delta = -5.0
+        reseal_label = "多次炸板回封"
+    else:
+        reseal_delta = -12.0
+        reseal_label = "回封弱"
+    if final_seal_time != "unknown":
+        if final_seal_time <= "10:00:00":
+            reseal_delta += 3.0
+        elif final_seal_time >= "14:30:00":
+            reseal_delta -= 6.0
+    score += reseal_delta
+    reasons.append(f"回封力度={reseal_label}({reseal_delta:+.0f})")
+
+    capital_delta = 0.0
+    if big_order_net_inflow_ratio >= 0.05:
+        capital_delta = 7.0
+    elif big_order_net_inflow_ratio >= 0.02:
+        capital_delta = 3.0
+    elif big_order_net_inflow_ratio < 0:
+        capital_delta = -7.0
+    score += capital_delta
+    reasons.append(f"资金净流入占比={big_order_net_inflow_ratio:.2%}({capital_delta:+.0f})")
+
+    if orderbook_quality >= 65:
+        score += 4.0
+        reasons.append("盘口质量偏强(+4)")
+    elif orderbook_quality < 45:
+        score -= 4.0
+        reasons.append("盘口质量偏弱(-4)")
+
+    if auction_change_pct >= 2.0 and auction_turnover_cny >= 30_000_000:
+        score += 3.0
+        reasons.append("竞价承接较强(+3)")
+    elif auction_change_pct < 0:
+        score -= 3.0
+        reasons.append("竞价偏弱(-3)")
+
+    if weekly_health_score >= 70:
+        score += 4.0
+        reasons.append("周线位置健康(+4)")
+    elif weekly_health_score <= 35:
+        score -= 4.0
+        reasons.append("周线位置偏弱(-4)")
+
+    score = round(max(0.0, min(100.0, score)), 2)
+    probability_pct = round(max(5.0, min(90.0, score * 0.86)), 2)
+    if score >= 75:
+        promotion_grade = "A"
+    elif score >= 62:
+        promotion_grade = "B"
+    elif score >= 48:
+        promotion_grade = "C"
+    else:
+        promotion_grade = "D"
+
+    return {
+        "promotion_score": score,
+        "third_board_probability_pct": probability_pct,
+        "promotion_grade": promotion_grade,
+        "promotion_reason": "；".join(reasons[:8]),
+    }

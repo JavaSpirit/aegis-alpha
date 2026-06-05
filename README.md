@@ -452,7 +452,7 @@ The MVP exposes these read-only tools:
 
 The output is for research and watchlist use only. It is not investment advice and not an order instruction.
 
-`explain_second_board_candidate(symbol)` focuses on second-board logic: market sentiment gate, 5-minute speed, big-order net inflow ratio, first limit-up time, seal amount, seal-to-turnover ratio, queue-position note, same-theme co-movement, orderbook quality, and three-year historical limit-up/gap-up placeholders.
+`get_second_board_candidates` / `get_second_board_candidates_compact` use a strict second-board pool: non-ST stocks that are still limit-up today with `consecutive_boards=2`; higher boards, non-limit-up rows, and failed seal rows must not be presented as second-board candidates. Compact candidates also include a deterministic third-board promotion assessment (`promotion_grade`, `third_board_probability_pct`, `promotion_reason`) that combines market gate, theme lifecycle, free-float size, turnover, seal quality, reseal strength, capital flow, auction, and weekly-position factors before the agent writes its answer. `explain_second_board_candidate(symbol)` focuses on second-board logic: market sentiment gate, 5-minute speed, big-order net inflow ratio, first limit-up time, seal amount, seal-to-turnover ratio, queue-position note, same-theme co-movement, orderbook quality, and three-year historical limit-up/gap-up placeholders.
 
 ## Development Checks
 

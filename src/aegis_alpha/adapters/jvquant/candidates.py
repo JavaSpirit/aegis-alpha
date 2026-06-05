@@ -10,6 +10,8 @@ from aegis_alpha.adapters.jvquant.scoring import (
     candidate_grade,
     candidate_grade_reason,
     estimated_seal_probability,
+    theme_position_label,
+    third_board_promotion_assessment,
 )
 from aegis_alpha.clock import SH_TZ
 from aegis_alpha.grading import CandidateGradingConfig
@@ -63,6 +65,7 @@ def build_one_candidate(
     ladder_entries: dict[str, LadderEntry],
     theme_leaders_by_theme: dict[str, ThemeLeader],
     history_stats_by_symbol: dict[str, HistoryStats],
+    theme_board_profiles: dict[str, dict[str, Any]],
     weekly_health_score: float = 50.0,
 ) -> SecondBoardCandidate:
     symbol = P._symbol_from_row(row)
@@ -128,6 +131,7 @@ def build_one_candidate(
         except Exception as exc:
             minute_replay_notes.append(f"minute_replay_unavailable={type(exc).__name__}")
     turnover_cny = P._parse_cny_amount(P._field_value(row, "成交额"))
+    free_float_market_cap_cny = P._parse_cny_amount(P._field_value(row, "流通市值"))
     main_net_inflow_cny = P._parse_cny_amount(
         P._field_value(row, "主力净额", "大单净额", "超大单净额")
     )
@@ -172,6 +176,19 @@ def build_one_candidate(
     ladder = ladder_entries.get(symbol)
     previous_consecutive = ladder.consecutive_boards if ladder else 0
     previous_height = ladder.height_label if ladder else "unknown"
+    theme_profile = theme_board_profiles.get(theme, {})
+    theme_max_height = int(theme_profile.get("max_height", previous_consecutive or 0))
+    theme_multi_board_count = int(theme_profile.get("multi_board_count", theme_counts[theme]))
+    theme_recent_active_days = int(theme_profile.get("recent_active_days", 0))
+    theme_recent_max_member_count = int(theme_profile.get("recent_max_member_count", 0))
+    theme_position = theme_position_label(
+        theme_max_height=theme_max_height,
+        theme_multi_board_count=theme_multi_board_count,
+    )
+    lifecycle_stage = str(theme_profile.get("lifecycle_stage", "unknown"))
+    stage_order = {"unknown": 0, "early": 1, "maturing": 2, "extended": 3}
+    if stage_order.get(lifecycle_stage, 0) > stage_order.get(theme_position, 0):
+        theme_position = lifecycle_stage
 
     limitup_driver_type = classify_limitup_driver(
         LimitupDriverInputs(
@@ -301,6 +318,29 @@ def build_one_candidate(
         seal_to_turnover_ratio=seal_to_turnover_ratio,
         config=grading_config,
     )
+    promotion = third_board_promotion_assessment(
+        action=gate_action,
+        theme_role=theme_role,
+        theme_position=theme_position,
+        theme_max_height=theme_max_height,
+        theme_multi_board_count=theme_multi_board_count,
+        theme_recent_active_days=theme_recent_active_days,
+        theme_recent_max_member_count=theme_recent_max_member_count,
+        free_float_market_cap_cny=free_float_market_cap_cny,
+        turnover_cny=turnover_cny,
+        seal_amount_cny=seal_amount_cny,
+        seal_to_turnover_ratio=seal_to_turnover_ratio,
+        first_limit_up_time=first_limit_up_time,
+        break_board_count=break_board_count,
+        reseal_count=reseal_count,
+        final_seal_time=final_seal_time,
+        big_order_net_inflow_ratio=big_order_net_inflow_ratio,
+        orderbook_quality=orderbook_quality,
+        auction_change_pct=auction_change_pct,
+        auction_turnover_cny=auction_turnover_cny,
+        weekly_health_score=weekly_health_score,
+        config=grading_config,
+    )
     grade_reason = candidate_grade_reason(
         action=gate_action,
         grade=grade,
@@ -384,6 +424,16 @@ def build_one_candidate(
         three_year_sealed_next_day_gap_up_rate=three_year_gap_up_rate,
         estimated=estimated,
         grade=grade,
+        promotion_grade=str(promotion["promotion_grade"]),
+        third_board_probability_pct=float(promotion["third_board_probability_pct"]),
+        third_board_promotion_score=float(promotion["promotion_score"]),
+        promotion_reason=str(promotion["promotion_reason"]),
+        theme_position_label=theme_position,
+        theme_max_height=theme_max_height,
+        theme_multi_board_count=theme_multi_board_count,
+        theme_recent_active_days=theme_recent_active_days,
+        theme_recent_max_member_count=theme_recent_max_member_count,
+        free_float_market_cap_cny=free_float_market_cap_cny,
         limitup_driver_type=limitup_driver_type,
         grade_reason=grade_reason,
         intraday_pattern=intraday_pattern_value,
@@ -446,6 +496,16 @@ def build_second_board_candidate(
     three_year_sealed_next_day_gap_up_rate: float,
     estimated: float,
     grade: str,
+    promotion_grade: str = "C",
+    third_board_probability_pct: float = 0.0,
+    third_board_promotion_score: float = 0.0,
+    promotion_reason: str = "",
+    theme_position_label: str = "unknown",
+    theme_max_height: int = 0,
+    theme_multi_board_count: int = 0,
+    theme_recent_active_days: int = 0,
+    theme_recent_max_member_count: int = 0,
+    free_float_market_cap_cny: float = 0.0,
     limitup_driver_type: str = "unknown",
     intraday_pattern: str = "unknown",
     weekly_health_score: float = 50.0,
@@ -463,7 +523,7 @@ def build_second_board_candidate(
     if minute_replay_notes is None:
         minute_replay_notes = []
     notes: list[str] = [
-        "jvQuant live-provider candidate: yesterday limit-up and today gain above 5%.",
+        "jvQuant live-provider candidate: strict second-board row with current limit-up and consecutive_boards=2.",
         (
             f"current_change_pct was inferred as {change_pct:.1f} from symbol board because jvQuant omitted the raw change field while seal metrics were present."
             if change_pct_inferred
@@ -505,6 +565,16 @@ def build_second_board_candidate(
         f"queue_position_note={queue_position_note}",
         f"turnover_cny={turnover_cny:.0f}",
         f"main_net_inflow_cny={main_net_inflow_cny:.0f}",
+        f"free_float_market_cap_cny={free_float_market_cap_cny:.0f}",
+        f"theme_position_label={theme_position_label}",
+        f"theme_max_height={theme_max_height}",
+        f"theme_multi_board_count={theme_multi_board_count}",
+        f"theme_recent_active_days={theme_recent_active_days}",
+        f"theme_recent_max_member_count={theme_recent_max_member_count}",
+        f"promotion_grade={promotion_grade}",
+        f"third_board_probability_pct={third_board_probability_pct:.2f}",
+        f"third_board_promotion_score={third_board_promotion_score:.2f}",
+        f"promotion_reason={promotion_reason}",
         *orderbook_notes,
         *minute_replay_notes[:5],
     ]
@@ -559,6 +629,18 @@ def build_second_board_candidate(
         three_year_sealed_next_day_gap_up_rate=three_year_sealed_next_day_gap_up_rate,
         estimated_seal_probability=estimated,
         grade=grade,
+        promotion_grade=promotion_grade,
+        third_board_probability_pct=third_board_probability_pct,
+        third_board_promotion_score=third_board_promotion_score,
+        promotion_reason=promotion_reason,
+        theme_position_label=theme_position_label,
+        theme_max_height=theme_max_height,
+        theme_multi_board_count=theme_multi_board_count,
+        theme_recent_active_days=theme_recent_active_days,
+        theme_recent_max_member_count=theme_recent_max_member_count,
+        free_float_market_cap_cny=free_float_market_cap_cny,
+        turnover_cny=turnover_cny,
+        main_net_inflow_cny=main_net_inflow_cny,
         limitup_driver_type=limitup_driver_type,
         intraday_pattern=intraday_pattern,
         weekly_health_score=weekly_health_score,

@@ -34,9 +34,12 @@ def test_get_st_pool_returns_list():
         assert rows[0]["pool_kind"] == "st"
 
 
-def test_compact_candidate_includes_limitup_driver_and_pattern():
+def test_compact_candidate_includes_limitup_driver_and_pattern(monkeypatch):
+    monkeypatch.setenv("AEGIS_ALPHA_MARKET_DATA_PROVIDER", "mock")
+    from aegis_alpha.mcp.dependencies import reset_singletons
     from aegis_alpha.mcp.server import get_second_board_candidates_compact
 
+    reset_singletons()
     items = get_second_board_candidates_compact(limit=5)
     assert items
     for item in items:
@@ -58,14 +61,51 @@ def test_get_capital_flow_slices_returns_three_dicts(monkeypatch):
     }
 
 
-def test_compact_candidate_includes_weekly_health_score():
+def test_compact_candidate_includes_weekly_health_score(monkeypatch):
+    monkeypatch.setenv("AEGIS_ALPHA_MARKET_DATA_PROVIDER", "mock")
+    from aegis_alpha.mcp.dependencies import reset_singletons
     from aegis_alpha.mcp.server import get_second_board_candidates_compact
 
+    reset_singletons()
     items = get_second_board_candidates_compact(limit=5)
     assert items
     for item in items:
         assert "weekly_health_score" in item
         assert 0.0 <= item["weekly_health_score"] <= 100.0
+
+
+def test_compact_candidate_includes_third_board_promotion_assessment(monkeypatch):
+    monkeypatch.setenv("AEGIS_ALPHA_MARKET_DATA_PROVIDER", "mock")
+    from aegis_alpha.mcp.dependencies import reset_singletons
+    from aegis_alpha.mcp.server import get_second_board_candidates_compact
+
+    reset_singletons()
+    items = get_second_board_candidates_compact(limit=5)
+    assert items
+    for item in items:
+        assert "promotion_grade" in item
+        assert "third_board_probability_pct" in item
+        assert "promotion_reason" in item
+        assert "theme_position_label" in item
+        assert "theme_recent_active_days" in item
+        assert "theme_recent_max_member_count" in item
+        assert "free_float_market_cap_cny" in item
+        assert "turnover_cny" in item
+
+
+def test_compact_candidate_break_filter_splits_break_and_no_break_candidates(monkeypatch):
+    monkeypatch.setenv("AEGIS_ALPHA_MARKET_DATA_PROVIDER", "mock")
+    from aegis_alpha.mcp.dependencies import reset_singletons
+    from aegis_alpha.mcp.server import get_second_board_candidates_compact
+
+    reset_singletons()
+    no_break = get_second_board_candidates_compact(limit=10, break_filter="exclude")
+    break_only = get_second_board_candidates_compact(limit=10, break_filter="only")
+
+    assert no_break
+    assert break_only
+    assert all(item["break_board_count"] == 0 for item in no_break)
+    assert all(item["break_board_count"] > 0 for item in break_only)
 
 
 def test_get_active_seats_today_includes_data_mode_field():

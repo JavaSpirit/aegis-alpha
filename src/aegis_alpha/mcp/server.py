@@ -318,18 +318,38 @@ def get_auction_analysis(symbol: str, trading_day: str = "") -> dict:
 
 @mcp.tool
 def get_second_board_candidates() -> list[dict]:
-    """Return mock candidates for the second-board radar."""
+    """Return strict second-board radar candidates."""
     return _call_tool(lambda adapter: [item.model_dump() for item in adapter.get_second_board_candidates()])
 
 
+def _normalize_break_filter(value: str) -> str:
+    normalized = str(value or "any").strip().lower()
+    if normalized in {"exclude", "no_break", "no-break", "without_break", "without-break", "none", "0"}:
+        return "exclude"
+    if normalized in {"only", "break_only", "break-only", "with_break", "with-break", "broken", "1"}:
+        return "only"
+    return "any"
+
+
 @mcp.tool
-def get_second_board_candidates_compact(limit: int = 12) -> list[dict]:
-    """Return compact second-board candidates without verbose evidence."""
+def get_second_board_candidates_compact(limit: int = 12, break_filter: str = "any") -> list[dict]:
+    """Return compact strict second-board candidates.
+
+    break_filter controls break-board preference:
+    - "any": include both no-break and break/reseal candidates.
+    - "exclude": only candidates with break_board_count == 0.
+    - "only": only candidates with break_board_count > 0.
+    """
 
     def _compact(adapter: Any) -> list[dict]:
         safe_limit = max(1, min(int(limit or 12), 50))
+        safe_break_filter = _normalize_break_filter(break_filter)
         items = []
-        for candidate in adapter.get_second_board_candidates()[:safe_limit]:
+        for candidate in adapter.get_second_board_candidates():
+            if safe_break_filter == "exclude" and candidate.break_board_count > 0:
+                continue
+            if safe_break_filter == "only" and candidate.break_board_count <= 0:
+                continue
             items.append(
                 {
                     "symbol": candidate.symbol,
@@ -368,6 +388,18 @@ def get_second_board_candidates_compact(limit: int = 12) -> list[dict]:
                     "same_theme_rising_count": candidate.same_theme_rising_count,
                     "orderbook_quality_score": candidate.orderbook_quality_score,
                     "estimated_seal_probability": candidate.estimated_seal_probability,
+                    "promotion_grade": candidate.promotion_grade,
+                    "third_board_probability_pct": candidate.third_board_probability_pct,
+                    "third_board_promotion_score": candidate.third_board_promotion_score,
+                    "promotion_reason": candidate.promotion_reason,
+                    "theme_position_label": candidate.theme_position_label,
+                    "theme_max_height": candidate.theme_max_height,
+                    "theme_multi_board_count": candidate.theme_multi_board_count,
+                    "theme_recent_active_days": candidate.theme_recent_active_days,
+                    "theme_recent_max_member_count": candidate.theme_recent_max_member_count,
+                    "free_float_market_cap_cny": candidate.free_float_market_cap_cny,
+                    "turnover_cny": candidate.turnover_cny,
+                    "main_net_inflow_cny": candidate.main_net_inflow_cny,
                     "limitup_driver_type": candidate.limitup_driver_type,
                     "intraday_pattern": candidate.intraday_pattern,
                     "weekly_health_score": candidate.weekly_health_score,
@@ -382,6 +414,8 @@ def get_second_board_candidates_compact(limit: int = 12) -> list[dict]:
                     },
                 }
             )
+            if len(items) >= safe_limit:
+                break
         return items
 
     return _call_tool(_compact)

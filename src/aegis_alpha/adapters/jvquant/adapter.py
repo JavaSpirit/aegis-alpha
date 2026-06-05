@@ -68,6 +68,69 @@ def _day_query_prefix(trading_day: str) -> str:
     return "今日" if not day or day == today else day
 
 
+def _row_consecutive_boards(row: dict[str, Any]) -> int:
+    return _int_or_zero(P._field_value(row, "连板", "连板数", "连板(天)"))
+
+
+def _row_is_limit_up(row: dict[str, Any]) -> bool:
+    symbol = P._symbol_from_row(row)
+    status = str(P._field_value(row, "是否涨停", "涨停") or "").strip()
+    if "涨停" in status and not any(token in status for token in ("不", "未", "否", "炸")):
+        return True
+    change_pct = _float_or_zero(P._field_value(row, "涨跌幅"))
+    return bool(symbol) and change_pct >= daily_limit_pct(symbol) - 0.2
+
+
+def _is_strict_second_board_row(row: dict[str, Any]) -> bool:
+    return _row_consecutive_boards(row) == 2 and _row_is_limit_up(row)
+
+
+def _theme_board_profiles(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    profiles: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        theme = P._theme_from_row(row)
+        height = _row_consecutive_boards(row)
+        if not theme or theme == "unknown" or height <= 0:
+            continue
+        profile = profiles.setdefault(theme, {"max_height": 0, "multi_board_count": 0})
+        profile["max_height"] = max(profile["max_height"], height)
+        if height >= 2:
+            profile["multi_board_count"] += 1
+    return profiles
+
+
+def _theme_lifecycle_profiles(leaders: list[ThemeLeader], *, current_day: str) -> dict[str, dict[str, int | str]]:
+    profiles: dict[str, dict[str, int | str]] = {}
+    days_by_theme: dict[str, set[str]] = {}
+    for leader in leaders:
+        if not leader.theme:
+            continue
+        profile = profiles.setdefault(
+            leader.theme,
+            {
+                "active_days": 0,
+                "max_member_count": 0,
+                "stage": "unknown",
+            },
+        )
+        days = days_by_theme.setdefault(leader.theme, set())
+        days.add(leader.trading_day)
+        profile["active_days"] = len(days)
+        profile["max_member_count"] = max(int(profile.get("max_member_count", 0)), int(leader.member_count or 0))
+
+    for profile in profiles.values():
+        active_days = int(profile.get("active_days", 0))
+        max_member_count = int(profile.get("max_member_count", 0))
+        if active_days >= 3 or max_member_count >= 7:
+            stage = "extended"
+        elif active_days >= 2 or max_member_count >= 4:
+            stage = "maturing"
+        else:
+            stage = "unknown"
+        profile["stage"] = stage
+    return profiles
+
+
 class JvQuantMarketDataAdapter:
     """Read-only jvQuant adapter for single-symbol smoke and MCP tools."""
 
@@ -434,23 +497,23 @@ class JvQuantMarketDataAdapter:
 
     def get_second_board_candidates(self):
         payload = self._query(
-            "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,5分钟涨幅,资金流向,主力资金,价格,成交额,行业",
+            "今日涨停,连板数大于1,非ST,股票代码,股票简称,涨跌幅,连板数,5分钟涨幅,资金流向,主力资金,价格,成交额,流通市值,行业",
             sort_key="涨跌幅",
         )
         seal_payload = self._query(
-            "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,首次涨停时间,封单量,封单金额,涨停封成比,价格,成交额,行业",
+            "今日涨停,连板数大于1,非ST,股票代码,股票简称,涨跌幅,连板数,首次涨停时间,封单量,封单金额,涨停封成比,价格,成交额,流通市值,行业",
             sort_key="涨跌幅",
         )
         speed_1m_payload = self._query(
-            "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,1分钟涨幅,价格,成交额,行业",
+            "今日涨停,连板数大于1,非ST,股票代码,股票简称,涨跌幅,连板数,1分钟涨幅,价格,成交额,行业",
             sort_key="涨跌幅",
         )
         speed_3m_payload = self._query(
-            "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,3分钟涨幅,价格,成交额,行业",
+            "今日涨停,连板数大于1,非ST,股票代码,股票简称,涨跌幅,连板数,3分钟涨幅,价格,成交额,行业",
             sort_key="涨跌幅",
         )
         speed_10m_payload = self._query(
-            "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,10分钟涨幅,价格,成交额,行业",
+            "今日涨停,连板数大于1,非ST,股票代码,股票简称,涨跌幅,连板数,10分钟涨幅,价格,成交额,行业",
             sort_key="涨跌幅",
         )
         auction_payload = self._query(
@@ -458,18 +521,20 @@ class JvQuantMarketDataAdapter:
             sort_key="竞价涨幅",
         )
         theme_payload = self._query(
-            "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,所属概念,概念,题材,行业,价格,成交额",
+            "今日涨停,连板数大于1,非ST,股票代码,股票简称,涨跌幅,连板数,所属概念,概念,题材,行业,价格,成交额",
             sort_key="涨跌幅",
         )
         break_reseal_payload = self._query(
-            "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,炸板次数,首次炸板时间,回封次数,最后封板时间,价格,成交额,行业",
+            "今日涨停,连板数大于1,非ST,股票代码,股票简称,涨跌幅,连板数,炸板次数,首次炸板时间,回封次数,最后封板时间,价格,成交额,行业",
             sort_key="涨跌幅",
         )
         max_seal_payload = self._query(
-            "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,最大封单金额,最大封单量,价格,成交额,行业",
+            "今日涨停,连板数大于1,非ST,股票代码,股票简称,涨跌幅,连板数,最大封单金额,最大封单量,价格,成交额,行业",
             sort_key="涨跌幅",
         )
-        rows = P._query_rows(payload)
+        raw_rows = P._query_rows(payload)
+        theme_board_profiles = _theme_board_profiles(raw_rows)
+        rows = [row for row in raw_rows if _is_strict_second_board_row(row)]
         seal_rows = P._rows_by_symbol(P._query_rows(seal_payload))
         speed_1m_rows = P._rows_by_symbol(P._query_rows(speed_1m_payload))
         speed_3m_rows = P._rows_by_symbol(P._query_rows(speed_3m_payload))
@@ -501,12 +566,26 @@ class JvQuantMarketDataAdapter:
             row_symbol = P._symbol_from_row(row)
             if not row_symbol:
                 continue
-            ladder_entries[row_symbol] = self.get_limit_up_ladder(row_symbol, trading_day)
+            ladder_entries[row_symbol] = LadderEntry(
+                symbol=row_symbol,
+                trading_day=trading_day,
+                consecutive_boards=2,
+                height_label=classify_height(2),
+                last_limit_up_day=trading_day,
+                notes=["Strict second-board pool: jvQuant row had 连板数=2 and current limit-up evidence."],
+            )
 
         theme_leaders_list = self.get_theme_leaders(trading_day=trading_day)
         theme_leaders_by_theme: dict[str, ThemeLeader] = {
             leader.theme: leader for leader in theme_leaders_list
         }
+        recent_theme_leaders = AegisAlphaStore().latest_theme_leaders(limit=100)
+        lifecycle_profiles = _theme_lifecycle_profiles(recent_theme_leaders, current_day=trading_day)
+        for theme, lifecycle in lifecycle_profiles.items():
+            profile = theme_board_profiles.setdefault(theme, {"max_height": 0, "multi_board_count": 0})
+            profile["lifecycle_stage"] = lifecycle.get("stage", "unknown")
+            profile["recent_active_days"] = lifecycle.get("active_days", 0)
+            profile["recent_max_member_count"] = lifecycle.get("max_member_count", 0)
 
         history_stats_by_symbol: dict[str, HistoryStats] = {}
         for row in rows[:max_candidates]:
@@ -550,6 +629,7 @@ class JvQuantMarketDataAdapter:
                 ladder_entries=ladder_entries,
                 theme_leaders_by_theme=theme_leaders_by_theme,
                 history_stats_by_symbol=history_stats_by_symbol,
+                theme_board_profiles=theme_board_profiles,
                 weekly_health_score=weekly_score,
             )
             candidates.append(candidate)
@@ -569,16 +649,16 @@ class JvQuantMarketDataAdapter:
                 grade="REJECT",
                 grade_reason=(
                     "评级为 REJECT，因为该股票不在当前 jvQuant 二板候选池中；"
-                    "当前候选池只覆盖昨日涨停且今日涨幅大于 5% 的非 ST 股票。"
+                    "当前候选池只覆盖今日仍涨停、连板数严格等于 2 的非 ST 股票。"
                 ),
                 observations=[
                     "Symbol is not in the current jvQuant live-provider second-board candidate pool.",
                 ],
                 risks=[
-                    "The current candidate pool only covers yesterday limit-up stocks with today's gain above 5%.",
+                    "The current candidate pool only covers non-ST stocks that are still limit-up with consecutive_boards=2.",
                 ],
                 trigger_conditions=[
-                    "Add the symbol to the valid previous-day limit-up and current strength pool before scoring.",
+                    "Add the symbol to the strict second-board pool only after current limit-up and consecutive_boards=2 are verified.",
                 ],
                 avoid_conditions=[
                     "Avoid treating arbitrary symbols as second-board candidates.",

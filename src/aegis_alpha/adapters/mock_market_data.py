@@ -288,7 +288,7 @@ class MockMarketDataAdapter:
                 trading_day=day,
                 leader_symbol="300024.SZ",
                 leader_name="机器人",
-                leader_consecutive_boards=1,
+                leader_consecutive_boards=2,
                 leader_first_limit_up_time="10:22:31",
                 leader_seal_amount_cny=42_000_000,
                 leader_status="reopened",
@@ -304,7 +304,7 @@ class MockMarketDataAdapter:
         if normalized.startswith("002230"):
             return LadderEntry(symbol=normalized, trading_day=day, consecutive_boards=2, height_label="second_board")
         if normalized.startswith("300024"):
-            return LadderEntry(symbol=normalized, trading_day=day, consecutive_boards=1, height_label="first_board")
+            return LadderEntry(symbol=normalized, trading_day=day, consecutive_boards=2, height_label="second_board")
         return LadderEntry(symbol=normalized, trading_day=day, consecutive_boards=0, height_label="unknown")
 
     def get_market_emotion(self, trading_day: str = "") -> MarketEmotion:
@@ -496,6 +496,22 @@ class MockMarketDataAdapter:
                 three_year_sealed_next_day_gap_up_rate=0.58,
                 estimated_seal_probability=0.67,
                 grade="B",
+                promotion_grade="B",
+                third_board_probability_pct=66.4,
+                third_board_promotion_score=77.2,
+                promotion_reason=(
+                    "市场闸门=selective(+3)；题材阶段=maturing, 最高板=3, 多板数=4, "
+                    "近活跃=2天, 最大成员=6(-5)；流通市值=mid(+3)；成交额=healthy(+5)；"
+                    "封板质量=70(+15)；回封力度=未炸板(+8)"
+                ),
+                theme_position_label="maturing",
+                theme_max_height=3,
+                theme_multi_board_count=4,
+                theme_recent_active_days=2,
+                theme_recent_max_member_count=6,
+                free_float_market_cap_cny=5_200_000_000,
+                turnover_cny=860_000_000,
+                main_net_inflow_cny=154_800_000,
                 grade_reason=(
                     "评级为 B，因为同题材联动和盘口质量较好，但仍是 mock 数据，"
                     "且没有真实 Level-2 大单净流入与封单排队验证。"
@@ -550,6 +566,22 @@ class MockMarketDataAdapter:
                 three_year_sealed_next_day_gap_up_rate=0.44,
                 estimated_seal_probability=0.46,
                 grade="C",
+                promotion_grade="C",
+                third_board_probability_pct=48.5,
+                third_board_promotion_score=56.4,
+                promotion_reason=(
+                    "市场闸门=selective(+3)；题材阶段=extended, 最高板=5, 多板数=5, "
+                    "近活跃=3天, 最大成员=8(-14)；流通市值=large(-2)；成交额=heavy(+1)；"
+                    "封板质量=45(+10)；回封力度=一次炸板回封(+2)"
+                ),
+                theme_position_label="extended",
+                theme_max_height=5,
+                theme_multi_board_count=5,
+                theme_recent_active_days=3,
+                theme_recent_max_member_count=8,
+                free_float_market_cap_cny=12_000_000_000,
+                turnover_cny=1_900_000_000,
+                main_net_inflow_cny=133_000_000,
                 grade_reason=(
                     "评级为 C，因为题材虽活跃，但盘口质量低于偏好阈值，"
                     "模拟封板概率也不足以进入重点观察。"

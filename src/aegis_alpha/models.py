@@ -534,6 +534,18 @@ class SecondBoardCandidate(BaseModel):
     three_year_sealed_next_day_gap_up_rate: float = Field(ge=0, le=1)
     estimated_seal_probability: float = Field(ge=0, le=1)
     grade: CandidateGrade
+    promotion_grade: str = "C"
+    third_board_probability_pct: float = Field(default=0.0, ge=0.0, le=100.0)
+    third_board_promotion_score: float = Field(default=0.0, ge=0.0, le=100.0)
+    promotion_reason: str = ""
+    theme_position_label: str = "unknown"
+    theme_max_height: int = 0
+    theme_multi_board_count: int = 0
+    theme_recent_active_days: int = 0
+    theme_recent_max_member_count: int = 0
+    free_float_market_cap_cny: float = 0.0
+    turnover_cny: float = 0.0
+    main_net_inflow_cny: float = 0.0
     limitup_driver_type: LimitupDriverType = "unknown"
     intraday_pattern: IntradayPattern = "unknown"
     weekly_health_score: float = Field(default=50.0, ge=0.0, le=100.0)
