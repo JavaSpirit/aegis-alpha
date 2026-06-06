@@ -15,5 +15,5 @@ def test_explain_has_no_judgment_words():
     a = MockMarketDataAdapter()
     c = a.get_second_board_candidates()[0]
     blob = " ".join(a.explain_second_board_candidate(c.symbol).observations)
-    for word in ("买入", "卖出", "推荐", "应该", "强烈"):
+    for word in ("买入", "卖出", "推荐", "应该", "强烈", "强", "弱", "好", "差", "看多", "看空"):
         assert word not in blob
