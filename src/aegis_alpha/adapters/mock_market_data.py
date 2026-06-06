@@ -43,7 +43,7 @@ from aegis_alpha.models import (
 from aegis_alpha.events import EventDetector, load_event_scoring_config
 from aegis_alpha.measurements.client_facts import (
     avg_turnover_10d,
-    broke_previous_high,
+    broke_previous_high as compute_broke_previous_high,
     ma5_slope_degrees,
     prev_day_volume_shrink_ratio,
 )
@@ -459,20 +459,22 @@ class MockMarketDataAdapter:
         # theme_leader_symbol are intentionally omitted here; they are filled
         # by the real resolver logic in Step 2 below.
         # ---------------------------------------------------------------
-        # 002230.SZ — strong setup: broke prev high, rising MA5
+        # 002230.SZ — strong setup: T-1 缩量 (shrink ratio <1), broke prev high, rising MA5
         # ---------------------------------------------------------------
         _turnover_002230 = [5.8e9, 6.0e9, 6.2e9, 5.5e9, 6.5e9, 7.0e9, 6.8e9, 7.2e9, 6.9e9, 7.5e9, 8.0e9]
         _prices_002230 = [12.0, 12.3, 12.5, 12.9, 13.2, 13.6, 14.0, 14.5]
         _avg10d_002230 = avg_turnover_10d(_turnover_002230)
         _prior_highs_002230 = [13.8, 14.1, 14.0]
+        _max_high_002230 = max(_prior_highs_002230)
 
         # ---------------------------------------------------------------
-        # 300024.SZ — weaker setup: flat/negative MA5, no prev-high break
+        # 300024.SZ — weak setup: T-1 放量 (ratio >1), did not break prev high, flat/falling MA5
         # ---------------------------------------------------------------
         _turnover_300024 = [3.2e9, 3.0e9, 2.8e9, 3.5e9, 3.1e9, 2.9e9, 3.3e9, 3.0e9, 2.7e9, 3.2e9]
         _prices_300024 = [18.5, 18.3, 18.1, 17.9, 17.8, 17.6, 17.7, 17.5]
         _avg10d_300024 = avg_turnover_10d(_turnover_300024)
         _prior_highs_300024 = [18.8, 19.0, 18.9]
+        _max_high_300024 = max(_prior_highs_300024)
 
         raw = [
             SecondBoardCandidate(
@@ -523,8 +525,8 @@ class MockMarketDataAdapter:
                 prev_day_volume_shrink_ratio=prev_day_volume_shrink_ratio(
                     prev_day_volume=6.2e9, avg_10d=_avg10d_002230
                 ),
-                previous_high_price=max(_prior_highs_002230),
-                broke_previous_high=broke_previous_high(
+                previous_high_price=_max_high_002230,
+                broke_previous_high=compute_broke_previous_high(
                     current_price=14.6, prior_highs=_prior_highs_002230
                 ),
                 data_quality=self._mock_second_board_data_quality(),
@@ -581,8 +583,8 @@ class MockMarketDataAdapter:
                 prev_day_volume_shrink_ratio=prev_day_volume_shrink_ratio(
                     prev_day_volume=3.8e9, avg_10d=_avg10d_300024
                 ),
-                previous_high_price=max(_prior_highs_300024),
-                broke_previous_high=broke_previous_high(
+                previous_high_price=_max_high_300024,
+                broke_previous_high=compute_broke_previous_high(
                     current_price=17.5, prior_highs=_prior_highs_300024
                 ),
                 data_quality=self._mock_second_board_data_quality(),
