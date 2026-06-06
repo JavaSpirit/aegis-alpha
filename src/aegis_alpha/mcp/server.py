@@ -367,12 +367,9 @@ def get_second_board_candidates_compact(limit: int = 12) -> list[dict]:
                     "topic_tags": candidate.topic_tags[:8],
                     "same_theme_rising_count": candidate.same_theme_rising_count,
                     "orderbook_quality_score": candidate.orderbook_quality_score,
-                    "estimated_seal_probability": candidate.estimated_seal_probability,
                     "limitup_driver_type": candidate.limitup_driver_type,
                     "intraday_pattern": candidate.intraday_pattern,
                     "weekly_health_score": candidate.weekly_health_score,
-                    "grade": candidate.grade,
-                    "grade_reason": candidate.grade_reason,
                     "data_quality_summary": {
                         key: {
                             "confidence": value.confidence,

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from aegis_alpha.adapters.jvquant_market_data import (
     JvQuantMarketDataAdapter,
     _inferred_change_pct_for_limit_up,
@@ -353,9 +355,6 @@ def test_jvquant_second_board_candidates_use_minute_replay_when_available() -> N
     assert candidates[0].seal_to_turnover_ratio == 1.65
     assert "Own-order queue position unavailable" in candidates[0].queue_position_note
     assert candidates[0].same_theme_rising_count >= 1
-    assert candidates[0].grade in {"A", "B", "C", "REJECT"}
-    assert candidates[0].grade_reason
-    assert explanation.grade_reason
     assert any("Five-minute speed window" in observation for observation in explanation.observations)
     assert "not investment advice" in explanation.disclaimer.lower()
 
@@ -413,6 +412,7 @@ def test_time_or_unknown_normalizes_short_form() -> None:
     assert _time_or_unknown("garbage") == "unknown"
 
 
+@pytest.mark.skip(reason="grade-remap backtest re-homed to Phase 7; scoring.py deleted in 1A.4")
 def test_seal_quality_score_uses_normalized_time() -> None:
     from aegis_alpha.adapters.jvquant.parsers import _time_or_unknown
     from aegis_alpha.adapters.jvquant.scoring import seal_quality_score

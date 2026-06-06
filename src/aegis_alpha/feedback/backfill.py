@@ -33,8 +33,6 @@ def backfill_candidates(
             snap = HistoricalCandidateSnapshot(
                 symbol=candidate.symbol,
                 trading_day=trading_day,
-                grade_at_pick=candidate.grade,
-                grade_reason=candidate.grade_reason,
                 theme=candidate.theme,
                 theme_role=candidate.theme_role,
                 previous_consecutive_boards=candidate.previous_consecutive_boards,

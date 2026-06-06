@@ -33,7 +33,7 @@ def test_daily_review_aggregates_grades_and_outcomes(tmp_path: Path) -> None:
 
     assert review.trading_day == "2026-05-31"
     assert review.candidate_count == 2
-    assert review.grade_distribution
+    assert review.grade_distribution == {}  # program no longer grades; agent/human grades in a later phase
     assert review.sealed_count == 1
     assert {item.symbol for item in review.items} == {"002230.SZ", "300024.SZ"}
 

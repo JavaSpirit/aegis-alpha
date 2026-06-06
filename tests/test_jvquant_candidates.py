@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import pytest
+
 from aegis_alpha.adapters.jvquant_market_data import JvQuantMarketDataAdapter
 from aegis_alpha.models import LadderEntry
 
@@ -141,6 +143,7 @@ def test_jvquant_candidate_has_limitup_driver_type_in_allowed_set():
         assert cand.limitup_driver_type in allowed
 
 
+@pytest.mark.skip(reason="grade_reason removed from SecondBoardCandidate in 1A.1; re-home to Phase 7")
 def test_grade_reason_mentions_driver_when_classified():
     """When candidate has a non-unknown limitup_driver_type, grade_reason should hint it."""
     candidates = _build_candidates_with_minimal_patches()
@@ -150,6 +153,7 @@ def test_grade_reason_mentions_driver_when_classified():
         assert cand.limitup_driver_type in cand.grade_reason or f"driver={cand.limitup_driver_type}" in cand.grade_reason
 
 
+@pytest.mark.skip(reason="grade_reason removed from SecondBoardCandidate in 1A.1; re-home to Phase 7")
 def test_grade_reason_mentions_pattern_when_classified():
     """When intraday_pattern is non-trivial (not unknown/normal), grade_reason should hint it."""
     candidates = _build_candidates_with_minimal_patches()

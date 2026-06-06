@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from aegis_alpha.feedback.backtest import (
     BacktestInputs,
     run_backtest_and_advise,
@@ -14,6 +16,7 @@ from aegis_alpha.models import (
 from aegis_alpha.storage import AegisAlphaStore
 
 
+@pytest.mark.skip(reason="grade-remap backtest re-homed to Phase 7")
 def test_run_backtest_persists_run_and_returns_advice(tmp_path: Path) -> None:
     store = AegisAlphaStore(tmp_path / "test.db")
     for day, symbol, grade, sealed in [

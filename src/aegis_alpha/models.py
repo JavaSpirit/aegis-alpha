@@ -600,7 +600,7 @@ class SealTimeline(BaseModel):
 
 class DailyReviewItem(BaseModel):
     symbol: str
-    grade_at_pick: CandidateGrade
+    grade_at_pick: CandidateGrade | None = None
     theme: str = ""
     theme_role: ThemeLeaderRole = "unknown"
     previous_consecutive_boards: int = 0
@@ -695,7 +695,7 @@ class HistoryStats(BaseModel):
 class HistoricalCandidateSnapshot(BaseModel):
     symbol: str
     trading_day: str
-    grade_at_pick: CandidateGrade
+    grade_at_pick: CandidateGrade | None = None
     grade_reason: str = ""
     theme: str = ""
     theme_role: ThemeLeaderRole = "unknown"
@@ -707,8 +707,8 @@ class HistoricalCandidateSnapshot(BaseModel):
 class BacktestCandidateRow(BaseModel):
     symbol: str
     trading_day: str
-    original_grade: CandidateGrade
-    new_grade: CandidateGrade
+    original_grade: CandidateGrade | None = None
+    new_grade: CandidateGrade | None = None
     sealed_second_board: bool | None = None
     next_day_open_pct: float | None = None
 

@@ -483,7 +483,7 @@ class JvQuantMarketDataAdapter:
         }
         minute_replay_limit = _int_or_zero(os.environ.get("AEGIS_ALPHA_SECOND_BOARD_MINUTE_REPLAY_LIMIT")) or 12
         theme_counts = Counter(P._theme_from_row(row) for row in rows)
-        gate = self.get_market_sentiment_gate()
+        gate = self.get_market_sentiment_gate()  # TODO(1D): gate result no longer used in candidate build; remove when market gate is retired.
 
         trading_day = query_timestamp[:10]
         try:

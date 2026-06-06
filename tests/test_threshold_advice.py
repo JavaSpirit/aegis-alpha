@@ -20,15 +20,12 @@ def _run(rule_changes: dict, *, sealed_before: float, sealed_after: float, sampl
 
 
 def test_proposes_change_when_after_rate_higher_and_sample_sufficient() -> None:
+    # Grade-remap proposals removed (program grading gone); proposer now always returns empty.
     run = _run({"promote_b_to_a": True}, sealed_before=0.40, sealed_after=0.55, sample=20)
 
     report = propose_threshold_changes(run=run, attributions=[])
 
-    assert report.proposals
-    proposal = report.proposals[0]
-    assert proposal.sealed_rate_delta > 0
-    assert proposal.confidence in {"medium", "high"}
-    assert proposal.rationale
+    assert report.proposals == []  # grade-remap mappers removed; Phase 7 will re-add.
 
 
 def test_no_proposal_when_after_rate_not_better() -> None:
@@ -40,13 +37,12 @@ def test_no_proposal_when_after_rate_not_better() -> None:
 
 
 def test_low_confidence_when_sample_too_small() -> None:
+    # Grade-remap proposals removed; proposer now always returns empty regardless of sample size.
     run = _run({"promote_b_to_a": True}, sealed_before=0.30, sealed_after=0.60, sample=2)
 
     report = propose_threshold_changes(run=run, attributions=[])
 
-    if report.proposals:
-        assert report.proposals[0].confidence == "low"
-    # 也可能直接被过滤掉；任一 OK
+    assert report.proposals == []  # grade-remap mappers removed; Phase 7 will re-add.
 
 
 def test_attributions_appear_in_notes() -> None:

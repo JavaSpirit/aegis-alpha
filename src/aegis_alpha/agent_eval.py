@@ -106,6 +106,7 @@ def evaluate_agent_replay_response(
     )
 
     if parsed is not None:
+        # Validates the AGENT's self-reported grade (agent judgment), not a program grade.
         grades = parsed_grades(parsed)
         checks.append(
             {
