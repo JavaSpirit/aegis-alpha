@@ -520,6 +520,12 @@ class SecondBoardCandidate(BaseModel):
     ten_min_speed_window: str = "unknown"
     ten_min_speed_timestamp: str = ""
     big_order_net_inflow_ratio: float = Field(ge=-1, le=1)
+    free_float_market_cap_cny: float = 0.0
+    avg_turnover_10d_cny: float = 0.0
+    ma5_slope_degrees: float = 0.0
+    prev_day_volume_shrink_ratio: float = 0.0
+    broke_previous_high: bool = False
+    previous_high_price: float = 0.0
     concept_tags: list[str] = Field(default_factory=list)
     topic_tags: list[str] = Field(default_factory=list)
     break_board_count: int = 0
