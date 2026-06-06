@@ -89,6 +89,14 @@ IntradayPattern = Literal[
     "normal",
     "unknown",
 ]
+ThemeLifecycleStage = Literal[
+    "launch",      # 启动
+    "fermenting",  # 发酵
+    "climax",      # 高潮
+    "divergence",  # 分歧
+    "ebb",         # 退潮
+    "unknown",
+]
 ContrarianPoolKind = Literal["limit_down", "st"]
 CapitalFlowSliceWindow = Literal[
     "pre_first_seal_5m",
@@ -502,6 +510,7 @@ class SecondBoardCandidate(BaseModel):
     previous_consecutive_boards: int = 0
     previous_height_label: LadderHeight = "unknown"
     theme_role: ThemeLeaderRole = "unknown"
+    theme_lifecycle_stage: ThemeLifecycleStage = "unknown"
     theme_leader_symbol: str = ""
     auction_pattern: AuctionPattern = "unknown"
     five_min_speed_pct: float
