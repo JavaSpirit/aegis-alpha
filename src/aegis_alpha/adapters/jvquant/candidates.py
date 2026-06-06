@@ -404,6 +404,12 @@ def build_second_board_candidate(
     minute_replay_notes: list[str] | None = None,
     turnover_cny: float = 0.0,
     main_net_inflow_cny: float = 0.0,
+    free_float_market_cap_cny: float = 0.0,
+    avg_turnover_10d_cny: float = 0.0,
+    ma5_slope_degrees: float = 0.0,
+    prev_day_volume_shrink_ratio: float = 0.0,
+    previous_high_price: float = 0.0,
+    broke_previous_high: bool = False,
 ) -> SecondBoardCandidate:
     if data_quality is None:
         data_quality = {}
@@ -454,6 +460,7 @@ def build_second_board_candidate(
         f"queue_position_note={queue_position_note}",
         f"turnover_cny={turnover_cny:.0f}",
         f"main_net_inflow_cny={main_net_inflow_cny:.0f}",
+        "client-strategy facts (10d avg turnover / MA5 slope / T-1 shrink / prev-high break / float cap) are unavailable from current jvQuant semantic queries.",
         *orderbook_notes,
         *minute_replay_notes[:5],
     ]
@@ -509,6 +516,12 @@ def build_second_board_candidate(
         limitup_driver_type=limitup_driver_type,
         intraday_pattern=intraday_pattern,
         weekly_health_score=weekly_health_score,
+        free_float_market_cap_cny=free_float_market_cap_cny,
+        avg_turnover_10d_cny=avg_turnover_10d_cny,
+        ma5_slope_degrees=ma5_slope_degrees,
+        prev_day_volume_shrink_ratio=prev_day_volume_shrink_ratio,
+        previous_high_price=previous_high_price,
+        broke_previous_high=broke_previous_high,
         data_quality=data_quality,
         notes=notes,
     )

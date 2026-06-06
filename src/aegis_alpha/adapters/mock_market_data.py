@@ -41,6 +41,12 @@ from aegis_alpha.models import (
     WeeklyPosition,
 )
 from aegis_alpha.events import EventDetector, load_event_scoring_config
+from aegis_alpha.measurements.client_facts import (
+    avg_turnover_10d,
+    broke_previous_high,
+    ma5_slope_degrees,
+    prev_day_volume_shrink_ratio,
+)
 from aegis_alpha.themes.auction import AuctionAnalyzer
 
 
@@ -452,6 +458,22 @@ class MockMarketDataAdapter:
         # theme_role / previous_consecutive_boards / previous_height_label /
         # theme_leader_symbol are intentionally omitted here; they are filled
         # by the real resolver logic in Step 2 below.
+        # ---------------------------------------------------------------
+        # 002230.SZ — strong setup: broke prev high, rising MA5
+        # ---------------------------------------------------------------
+        _turnover_002230 = [5.8e9, 6.0e9, 6.2e9, 5.5e9, 6.5e9, 7.0e9, 6.8e9, 7.2e9, 6.9e9, 7.5e9, 8.0e9]
+        _prices_002230 = [12.0, 12.3, 12.5, 12.9, 13.2, 13.6, 14.0, 14.5]
+        _avg10d_002230 = avg_turnover_10d(_turnover_002230)
+        _prior_highs_002230 = [13.8, 14.1, 14.0]
+
+        # ---------------------------------------------------------------
+        # 300024.SZ — weaker setup: flat/negative MA5, no prev-high break
+        # ---------------------------------------------------------------
+        _turnover_300024 = [3.2e9, 3.0e9, 2.8e9, 3.5e9, 3.1e9, 2.9e9, 3.3e9, 3.0e9, 2.7e9, 3.2e9]
+        _prices_300024 = [18.5, 18.3, 18.1, 17.9, 17.8, 17.6, 17.7, 17.5]
+        _avg10d_300024 = avg_turnover_10d(_turnover_300024)
+        _prior_highs_300024 = [18.8, 19.0, 18.9]
+
         raw = [
             SecondBoardCandidate(
                 symbol="002230.SZ",
@@ -495,6 +517,16 @@ class MockMarketDataAdapter:
                 three_year_touch_limit_success_rate=0.64,
                 three_year_sealed_next_day_gap_up_rate=0.58,
                 weekly_health_score=78.0,
+                free_float_market_cap_cny=8.2e10,
+                avg_turnover_10d_cny=_avg10d_002230,
+                ma5_slope_degrees=ma5_slope_degrees(_prices_002230),
+                prev_day_volume_shrink_ratio=prev_day_volume_shrink_ratio(
+                    prev_day_volume=6.2e9, avg_10d=_avg10d_002230
+                ),
+                previous_high_price=max(_prior_highs_002230),
+                broke_previous_high=broke_previous_high(
+                    current_price=14.6, prior_highs=_prior_highs_002230
+                ),
                 data_quality=self._mock_second_board_data_quality(),
                 notes=[
                     "Yesterday limit-up stock with same-theme momentum in mock data.",
@@ -543,6 +575,16 @@ class MockMarketDataAdapter:
                 three_year_touch_limit_success_rate=0.51,
                 three_year_sealed_next_day_gap_up_rate=0.44,
                 weekly_health_score=42.0,
+                free_float_market_cap_cny=2.1e10,
+                avg_turnover_10d_cny=_avg10d_300024,
+                ma5_slope_degrees=ma5_slope_degrees(_prices_300024),
+                prev_day_volume_shrink_ratio=prev_day_volume_shrink_ratio(
+                    prev_day_volume=3.8e9, avg_10d=_avg10d_300024
+                ),
+                previous_high_price=max(_prior_highs_300024),
+                broke_previous_high=broke_previous_high(
+                    current_price=17.5, prior_highs=_prior_highs_300024
+                ),
                 data_quality=self._mock_second_board_data_quality(),
                 notes=[
                     "Theme is active, but orderbook quality is below the preferred threshold.",
