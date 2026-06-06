@@ -531,12 +531,9 @@ class SecondBoardCandidate(BaseModel):
     orderbook_quality_score: float = Field(ge=0, le=100)
     three_year_touch_limit_success_rate: float = Field(ge=0, le=1)
     three_year_sealed_next_day_gap_up_rate: float = Field(ge=0, le=1)
-    estimated_seal_probability: float = Field(ge=0, le=1)
-    grade: CandidateGrade
     limitup_driver_type: LimitupDriverType = "unknown"
     intraday_pattern: IntradayPattern = "unknown"
     weekly_health_score: float = Field(default=50.0, ge=0.0, le=100.0)
-    grade_reason: str = ""
     data_quality: dict[str, SignalMetadata] = Field(default_factory=dict)
     notes: list[str]
 
