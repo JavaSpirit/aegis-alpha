@@ -597,6 +597,13 @@ class JvQuantMarketDataAdapter:
                 f"Data quality keys: {', '.join(candidate.data_quality.keys())}.",
                 f"Theme is {candidate.theme}; same-theme candidate count is {candidate.same_theme_rising_count}.",
                 f"Orderbook quality score is {candidate.orderbook_quality_score:.2f}.",
+                (
+                    f"流通市值约 {candidate.free_float_market_cap_cny / 1e8:.1f} 亿元，"
+                    f"近10日均成交额约 {candidate.avg_turnover_10d_cny / 1e8:.2f} 亿元，"
+                    f"5日均线斜率 {candidate.ma5_slope_degrees:.1f}°，"
+                    f"T-1量比 {candidate.prev_day_volume_shrink_ratio:.2f}，"
+                    f"{'已' if candidate.broke_previous_high else '未'}突破前期高点 {candidate.previous_high_price:.2f}。"
+                ),
             ],
             risks=[
                 "Candidate pool is live-provider jvQuant; capital-flow fields are semantic-query values, not tick-by-tick order classification.",

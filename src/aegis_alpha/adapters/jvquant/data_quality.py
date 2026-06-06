@@ -370,4 +370,22 @@ def build_second_board_data_quality(
                 ),
             ],
         ),
+        "client_strategy_facts": SignalMetadata(
+            source="jvquant",
+            source_field="free_float_market_cap_cny/avg_turnover_10d_cny/ma5_slope_degrees/prev_day_volume_shrink_ratio/broke_previous_high/previous_high_price",
+            timestamp=query_timestamp,
+            confidence="unavailable",
+            usable_for_grading=False,
+            limitations=[
+                "10-day turnover, MA5 slope, T-1 volume, prev-high break, and float cap are not provided by current jvQuant semantic queries; fields are left at default and must not be read as real measurements.",
+            ],
+            evidence=[
+                SignalEvidence(
+                    authority="internal_inference",
+                    source="aegis_alpha.adapters.jvquant",
+                    detail="10-day turnover, MA5 slope, T-1 volume ratio, prev-high break, and float cap are not provided by current jvQuant semantic queries; fields are left at default and must not be read as real measurements.",
+                    observed_at=query_timestamp,
+                ),
+            ],
+        ),
     }
