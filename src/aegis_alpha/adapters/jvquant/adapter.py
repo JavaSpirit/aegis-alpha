@@ -565,7 +565,7 @@ class JvQuantMarketDataAdapter:
                     "The current candidate pool only covers yesterday limit-up stocks with today's gain above 5% (non-ST).",
                 ],
                 risks=[
-                    "The current candidate pool only covers yesterday limit-up stocks with today's gain above 5%.",
+                    "Symbols outside the previous-day limit-up pool are silently absent from scoring output, so this is not a verdict on the symbol itself.",
                 ],
                 trigger_conditions=[
                     "Add the symbol to the valid previous-day limit-up and current strength pool before scoring.",

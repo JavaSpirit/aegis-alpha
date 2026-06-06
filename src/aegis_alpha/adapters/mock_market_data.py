@@ -719,7 +719,7 @@ class MockMarketDataAdapter:
                     "Second-board model only scores stocks that had a valid previous-day limit-up event.",
                 ],
                 risks=[
-                    "Second-board model should only score stocks that had a valid previous-day limit-up event.",
+                    "Symbols outside the previous-day limit-up pool are silently absent from scoring output, so this is not a verdict on the symbol itself.",
                 ],
                 trigger_conditions=[
                     "Add the symbol to the previous-day limit-up pool before scoring.",
