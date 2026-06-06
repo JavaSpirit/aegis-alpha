@@ -4,6 +4,17 @@ from dataclasses import dataclass
 
 from aegis_alpha.models import ThemeLifecycleStage
 
+# Human-readable Chinese labels for theme lifecycle stages — used in explain output.
+# This is the classifier's own vocabulary; keep it co-located with the classifier.
+STAGE_LABELS_CN: dict[str, str] = {
+    "launch": "启动",
+    "fermenting": "发酵",
+    "climax": "高潮",
+    "divergence": "分歧",
+    "ebb": "退潮",
+    "unknown": "未知",
+}
+
 # Break-board rate ceiling for a clean launch: a theme rising from a low base
 # but shedding >30 % of its members counts as distressed, not nascent.
 # Calibrate against win-rate data once sufficient history exists.

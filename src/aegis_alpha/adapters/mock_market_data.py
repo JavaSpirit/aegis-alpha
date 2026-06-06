@@ -47,7 +47,7 @@ from aegis_alpha.measurements.client_facts import (
     ma5_slope_degrees,
     prev_day_volume_shrink_ratio,
 )
-from aegis_alpha.measurements.theme_lifecycle import ThemeDay, classify_theme_lifecycle
+from aegis_alpha.measurements.theme_lifecycle import STAGE_LABELS_CN, ThemeDay, classify_theme_lifecycle
 from aegis_alpha.themes.auction import AuctionAnalyzer
 
 
@@ -793,6 +793,7 @@ class MockMarketDataAdapter:
                     f"T-1量比 {candidate.prev_day_volume_shrink_ratio:.2f}，"
                     f"{'已' if candidate.broke_previous_high else '未'}突破前期高点 {candidate.previous_high_price:.2f}。"
                 ),
+                f"题材阶段（测量值）：{STAGE_LABELS_CN.get(candidate.theme_lifecycle_stage, candidate.theme_lifecycle_stage)}。",
             ],
             risks=[
                 "This is mock data, not live jvQuant Level-2 data.",

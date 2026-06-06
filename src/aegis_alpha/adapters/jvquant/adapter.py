@@ -45,6 +45,7 @@ from aegis_alpha.models import (
     WeeklyPosition,
 )
 from aegis_alpha.events import EventDetector, freshness_status, load_event_scoring_config
+from aegis_alpha.measurements.theme_lifecycle import STAGE_LABELS_CN
 from aegis_alpha.extensions.suspended_stocks import is_symbol_suspended
 from aegis_alpha.extensions.weekly_position import compute_weekly_health_score
 from aegis_alpha.grading import CandidateGradingConfig, load_candidate_grading_config
@@ -604,6 +605,7 @@ class JvQuantMarketDataAdapter:
                     f"T-1量比 {candidate.prev_day_volume_shrink_ratio:.2f}，"
                     f"{'已' if candidate.broke_previous_high else '未'}突破前期高点 {candidate.previous_high_price:.2f}。"
                 ),
+                f"题材阶段（测量值）：{STAGE_LABELS_CN.get(candidate.theme_lifecycle_stage, candidate.theme_lifecycle_stage)}。",
             ],
             risks=[
                 "Candidate pool is live-provider jvQuant; capital-flow fields are semantic-query values, not tick-by-tick order classification.",
