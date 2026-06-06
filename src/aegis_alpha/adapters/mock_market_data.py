@@ -714,10 +714,9 @@ class MockMarketDataAdapter:
         if candidate is None:
             return CandidateExplanation(
                 symbol=symbol,
-                grade="REJECT",
-                grade_reason="评级为 REJECT，因为该股票不在昨日有效涨停候选池中，不能按二板模型评分。",
                 observations=[
                     "Symbol is not in the mock yesterday-limit-up candidate pool.",
+                    "Second-board model only scores stocks that had a valid previous-day limit-up event.",
                 ],
                 risks=[
                     "Second-board model should only score stocks that had a valid previous-day limit-up event.",
@@ -734,14 +733,11 @@ class MockMarketDataAdapter:
 
         return CandidateExplanation(
             symbol=symbol,
-            grade=candidate.grade,
-            grade_reason=candidate.grade_reason,
             observations=[
                 f"Five-minute speed is {candidate.five_min_speed_pct:.1f}%.",
                 f"Five-minute speed window is {candidate.five_min_speed_window}; timestamp is {candidate.five_min_speed_timestamp}.",
                 f"Big-order net inflow ratio is {candidate.big_order_net_inflow_ratio:.2f}.",
                 f"Same-theme rising count is {candidate.same_theme_rising_count}.",
-                f"Estimated seal probability is {candidate.estimated_seal_probability:.0%} in mock data.",
             ],
             risks=[
                 "This is mock data, not live jvQuant Level-2 data.",
@@ -765,11 +761,6 @@ class MockMarketDataAdapter:
     def explain_candidate(self, symbol: str) -> CandidateExplanation:
         return CandidateExplanation(
             symbol=symbol,
-            grade="B",
-            grade_reason=(
-                "评级为 B，因为 mock 数据显示题材强度、资金方向和买盘质量都偏正面，"
-                "但真实行情与历史统计尚未接入。"
-            ),
             observations=[
                 "Theme strength is high in mock data.",
                 "Big-order net inflow is positive.",

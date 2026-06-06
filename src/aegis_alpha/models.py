@@ -540,8 +540,6 @@ class SecondBoardCandidate(BaseModel):
 
 class CandidateExplanation(BaseModel):
     symbol: str
-    grade: CandidateGrade
-    grade_reason: str = ""
     observations: list[str]
     risks: list[str]
     trigger_conditions: list[str]

@@ -560,13 +560,9 @@ class JvQuantMarketDataAdapter:
         if candidate is None:
             return CandidateExplanation(
                 symbol=symbol,
-                grade="REJECT",
-                grade_reason=(
-                    "评级为 REJECT，因为该股票不在当前 jvQuant 二板候选池中；"
-                    "当前候选池只覆盖昨日涨停且今日涨幅大于 5% 的非 ST 股票。"
-                ),
                 observations=[
                     "Symbol is not in the current jvQuant live-provider second-board candidate pool.",
+                    "The current candidate pool only covers yesterday limit-up stocks with today's gain above 5% (non-ST).",
                 ],
                 risks=[
                     "The current candidate pool only covers yesterday limit-up stocks with today's gain above 5%.",
@@ -583,8 +579,6 @@ class JvQuantMarketDataAdapter:
 
         return CandidateExplanation(
             symbol=candidate.symbol,
-            grade=candidate.grade,
-            grade_reason=candidate.grade_reason,
             observations=[
                 f"Current change is {candidate.current_change_pct:.2f}%.",
                 f"Auction change is {candidate.auction_change_pct:.2f}%; auction turnover is {candidate.auction_turnover_cny:.0f} CNY.",
@@ -604,7 +598,6 @@ class JvQuantMarketDataAdapter:
                 f"Data quality keys: {', '.join(candidate.data_quality.keys())}.",
                 f"Theme is {candidate.theme}; same-theme candidate count is {candidate.same_theme_rising_count}.",
                 f"Orderbook quality score is {candidate.orderbook_quality_score:.2f}.",
-                f"Estimated seal probability is {candidate.estimated_seal_probability:.0%} from current coarse factors.",
             ],
             risks=[
                 "Candidate pool is live-provider jvQuant; capital-flow fields are semantic-query values, not tick-by-tick order classification.",
