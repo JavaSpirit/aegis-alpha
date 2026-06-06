@@ -144,7 +144,10 @@ class WatchlistManager:
             old = before_map[symbol].agent_grade
             new = after_map[symbol].agent_grade
             if old != new:
-                grade_changes[symbol] = {"from": old or "none", "to": new or "none"}
+                grade_changes[symbol] = {
+                    "from": old if old is not None else "none",
+                    "to": new if new is not None else "none",
+                }
         return WatchlistDiff(
             watchlist_id=after.watchlist_id,
             from_timestamp=before.created_at,

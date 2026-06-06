@@ -68,6 +68,18 @@ def test_close_watchlist_sets_status(tmp_path: Path) -> None:
     assert any("end of day" in note for note in closed.notes)
 
 
+def test_update_state_accumulates_agent_grade_history(tmp_path: Path) -> None:
+    manager = WatchlistManager(_store(tmp_path))
+    wl = manager.create(owner="user", label="x", symbols=["002230.SZ"])
+
+    manager.update_state(wl.watchlist_id, "002230.SZ", new_grade="B", action="promoted")
+    wl = manager.update_state(wl.watchlist_id, "002230.SZ", new_grade="A", action="promoted")
+
+    entry = next(e for e in wl.entries if e.symbol == "002230.SZ")
+    assert entry.agent_grade == "A"
+    assert entry.agent_grade_history == ["B", "A"]
+
+
 def test_list_active_for_owner(tmp_path: Path) -> None:
     manager = WatchlistManager(_store(tmp_path))
     wl_a = manager.create(owner="alice", label="a", symbols=["X"])
