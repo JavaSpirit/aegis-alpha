@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any, Callable
 
 from aegis_alpha.adapters.jvquant import parsers as P
-from aegis_alpha.adapters.jvquant.data_quality import build_second_board_data_quality
+from aegis_alpha.adapters.jvquant.data_quality import build_second_board_data_quality, unavailable_metadata
 from aegis_alpha.clock import SH_TZ
 from aegis_alpha.grading import CandidateGradingConfig
 from aegis_alpha.models import (
@@ -396,6 +396,7 @@ def build_second_board_candidate(
     orderbook_quality: float,
     three_year_touch_limit_success_rate: float,
     three_year_sealed_next_day_gap_up_rate: float,
+    theme_lifecycle_stage: str = "unknown",
     limitup_driver_type: str = "unknown",
     intraday_pattern: str = "unknown",
     weekly_health_score: float = 50.0,
@@ -417,6 +418,20 @@ def build_second_board_candidate(
         orderbook_notes = []
     if minute_replay_notes is None:
         minute_replay_notes = []
+    # theme_lifecycle: multi-day theme history is not returned by current jvQuant semantic queries;
+    # the stage is left as "unknown" and flagged so callers know this is a data gap, not a computed value.
+    data_quality = {
+        **data_quality,
+        "theme_lifecycle": unavailable_metadata(
+            source_field="theme_lifecycle_stage",
+            timestamp=speed_timestamp,
+            limitation=(
+                "Multi-day theme limit-up count series is not available from current jvQuant semantic queries; "
+                "theme_lifecycle_stage cannot be computed and is left as 'unknown'. "
+                "Populate from a theme daily aggregate source to enable lifecycle classification."
+            ),
+        ),
+    }
     notes: list[str] = [
         "jvQuant live-provider candidate: yesterday limit-up and today gain above 5%.",
         (
@@ -485,6 +500,7 @@ def build_second_board_candidate(
         previous_height_label=previous_height_label,
         theme_role=theme_role,
         theme_leader_symbol=theme_leader_symbol,
+        theme_lifecycle_stage=theme_lifecycle_stage,
         auction_pattern=auction_pattern,
         five_min_speed_pct=five_min_speed_pct,
         five_min_speed_window=speed_window,

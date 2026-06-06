@@ -47,6 +47,7 @@ from aegis_alpha.measurements.client_facts import (
     ma5_slope_degrees,
     prev_day_volume_shrink_ratio,
 )
+from aegis_alpha.measurements.theme_lifecycle import ThemeDay, classify_theme_lifecycle
 from aegis_alpha.themes.auction import AuctionAnalyzer
 
 
@@ -466,6 +467,12 @@ class MockMarketDataAdapter:
         _avg10d_002230 = avg_turnover_10d(_turnover_002230)
         _prior_highs_002230 = [13.8, 14.1, 14.0]
         _max_high_002230 = max(_prior_highs_002230)
+        # Theme lifecycle: early-to-mid growth phase (fermenting) — breadth steadily rising, low break rate, leader intact.
+        _lifecycle_002230 = classify_theme_lifecycle([
+            ThemeDay(limit_up_count=3, break_board_rate=0.1, new_high_member_count=1, leader_alive=True),
+            ThemeDay(limit_up_count=5, break_board_rate=0.1, new_high_member_count=3, leader_alive=True),
+            ThemeDay(limit_up_count=7, break_board_rate=0.1, new_high_member_count=4, leader_alive=True),
+        ])  # → fermenting
 
         # ---------------------------------------------------------------
         # 300024.SZ — weak setup: T-1 放量 (ratio >1), did not break prev high, flat/falling MA5
@@ -475,6 +482,13 @@ class MockMarketDataAdapter:
         _avg10d_300024 = avg_turnover_10d(_turnover_300024)
         _prior_highs_300024 = [18.8, 19.0, 18.9]
         _max_high_300024 = max(_prior_highs_300024)
+        # 电力-style regression: theme already in a late (decay) stage; the program MEASURES this so the agent won't grade it high off recent hotness.
+        # Break rate rising, breadth contracting, leader already dead — classic ebb pattern.
+        _lifecycle_300024 = classify_theme_lifecycle([
+            ThemeDay(limit_up_count=9, break_board_rate=0.4, new_high_member_count=4, leader_alive=True),
+            ThemeDay(limit_up_count=5, break_board_rate=0.5, new_high_member_count=2, leader_alive=False),
+            ThemeDay(limit_up_count=2, break_board_rate=0.6, new_high_member_count=0, leader_alive=False),
+        ])  # → ebb
 
         raw = [
             SecondBoardCandidate(
@@ -483,6 +497,7 @@ class MockMarketDataAdapter:
                 theme="AI应用",
                 previous_limit_up_time="10:18:24",
                 first_limit_up_time="09:56:12",
+                theme_lifecycle_stage=_lifecycle_002230,
                 limitup_driver_type="policy",
                 intraday_pattern="t_shape_board",
                 seal_amount_cny=128_000_000,
@@ -541,6 +556,7 @@ class MockMarketDataAdapter:
                 theme="机器人",
                 previous_limit_up_time="09:47:09",
                 first_limit_up_time="10:22:31",
+                theme_lifecycle_stage=_lifecycle_300024,
                 limitup_driver_type="theme",
                 intraday_pattern="one_word_board",
                 seal_amount_cny=42_000_000,
