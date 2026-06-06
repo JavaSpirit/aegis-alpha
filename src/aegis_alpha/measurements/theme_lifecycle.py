@@ -4,6 +4,11 @@ from dataclasses import dataclass
 
 from aegis_alpha.models import ThemeLifecycleStage
 
+# Break-board rate ceiling for a clean launch: a theme rising from a low base
+# but shedding >30 % of its members counts as distressed, not nascent.
+# Calibrate against win-rate data once sufficient history exists.
+_LAUNCH_MAX_BREAK_RATE = 0.3
+
 
 @dataclass(frozen=True)
 class ThemeDay:
@@ -16,9 +21,24 @@ class ThemeDay:
 def classify_theme_lifecycle(series: list[ThemeDay]) -> ThemeLifecycleStage:
     """Deterministic stage classifier over measured theme counts.
 
-    Decay states (ebb, divergence) are checked before growth states so a
-    peak-then-fall sequence is not misread as a fresh launch. This is a
-    measurement over observable counts, not a judgment.
+    Evaluation order: ebb → divergence → launch → climax → fermenting → unknown.
+
+    Decay states (ebb, divergence) are checked first so a peak-then-fall
+    sequence is not misread as a fresh growth phase.
+
+    Within the growth states, launch is checked before climax because the
+    low-base signal (counts[-3] ≤ 2) is a definitive early-stage marker
+    that would otherwise collide with the climax heuristic on a short series.
+
+    The climax/fermenting boundary is APPROXIMATE when the series is only
+    3 days long: on a purely ascending 3-day window both counts[-1] and
+    nh[-1] equal their respective series maxima, so an additional heuristic
+    is required — accelerating new-high membership (nh_accel). This
+    heuristic is calibrated against ground truth in a later phase and is
+    NOT definitive; it should be revisited once longer series are available.
+
+    This function is a pure measurement over observable counts. No I/O,
+    no randomness, no side effects.
     """
     if len(series) < 3:
         return "unknown"
@@ -32,13 +52,15 @@ def classify_theme_lifecycle(series: list[ThemeDay]) -> ThemeLifecycleStage:
     if falling_two and not recent[-1].leader_alive:
         return "ebb"
     if (recent[-1].break_board_rate > recent[-3].break_board_rate
-            and counts[-1] <= counts[-3] and counts[-3] >= peak * 0.8):
+            and counts[-1] <= counts[-3]
+            and counts[-3] >= peak * 0.8):  # still within 80% of peak — a divergence near the top, not a routine decline
         return "divergence"
-    # launch: rose from a low base — check before climax/fermenting so a new
-    # series peaking at its own small max is not misread as climax.
-    if counts[-3] <= 2 and counts[-1] >= 3:
+    if (counts[-3] <= 2 and counts[-1] >= 3  # rose from a low base (<3 = embryonic) to meaningful breadth (>=3)
+            and recent[-1].break_board_rate < _LAUNCH_MAX_BREAK_RATE):
         return "launch"
     nh = [x.new_high_member_count for x in recent]
+    # climax heuristic: new-high membership ACCELERATING (a fresh wave of entrants), not just rising —
+    # distinguishes the blow-off top from steady fermenting
     nh_accel = (nh[-1] - nh[-2]) > (nh[-2] - nh[-3])
     if (counts[-1] == peak and recent[-1].new_high_member_count == nh_peak
             and nh_accel):
