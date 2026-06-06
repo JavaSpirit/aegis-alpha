@@ -17,4 +17,4 @@ def test_mock_lifecycle_is_deterministic():
 
 def test_two_mock_themes_have_distinct_stages():
     cands = MockMarketDataAdapter().get_second_board_candidates()
-    assert cands[0].theme_lifecycle_stage != cands[1].theme_lifecycle_stage
+    assert len({c.theme_lifecycle_stage for c in cands}) >= 2

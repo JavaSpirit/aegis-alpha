@@ -10,6 +10,7 @@ The MVP is intentionally conservative:
 - No buy or sell instructions.
 - Mock data by default; optional read-only jvQuant market data.
 - Second-board radar first; automated trading later.
+- The program measures facts and assigns NO buy/sell grade; the AI agent judges from those facts.
 
 ## What It Is
 
@@ -33,7 +34,7 @@ Market sentiment gate
   -> 5-minute speed and big-order inflow
   -> theme co-movement
   -> historical limit-up and gap-up stats
-  -> watchlist grade and risk explanation
+  -> measured facts (speed, float, turnover, MA5 slope, theme lifecycle) and risk explanation
 ```
 
 ## Requirements
@@ -211,6 +212,18 @@ P7 polish & tech debt（自 2026-06 起完成）：
 - `runner.persist_buffer_outputs` 接入 `detect_theme_leader_break_board` + `detect_sector_rotation`，检测器现在与 `THEME_DIVERGENCE` 一样自动产出事件。
 - `simulate_outcome` 加入 P7 starter re-grading hook：`seal_amount_cny`、`five_min_speed_pct` 跨阈值时按 `_GRADE_LADDER` 升降一级；完整重算评级留 P8。
 - 给 `get_new_stock_candidates` / `get_suspended_stocks` 补 adapter-错误路径回归测试。
+
+## Measured facts (Phase 1)
+
+Phase 1 added six client-strategy facts computed by the program from raw market data. These are deterministic measurements — no grading, no judgment. The AI agent reads them and decides:
+
+- **free_float_market_cap_cny** — float-adjusted market cap in CNY.
+- **avg_turnover_10d_cny** — 10-day average daily turnover in CNY.
+- **ma5_slope_degrees** — 5-day moving average slope in degrees (positive = rising trend).
+- **prev_day_volume_shrink_ratio** — T-1 turnover divided by 10-day average (>1 means volume expansion, i.e. the regressing case).
+- **broke_previous_high** — boolean; true if current price exceeds the prior rolling high.
+- **previous_high_price** — the prior rolling high price used for the breakout check.
+- **theme_lifecycle_stage** — measured multi-day theme momentum stage: 启动 / 发酵 / 高潮 / 分歧 / 退潮 (launch / fermenting / climax / divergence / ebb). Derived from the group's limit-up count trend, break-board rate, and leader survival. Left as `unknown` when multi-day theme history is unavailable (e.g. jvQuant live adapter).
 
 Minute replay is not tick-by-tick realtime Level-2. During active trading, agents must inspect `minute_replay_timestamp`, `five_min_speed_timestamp`, and the relevant orderbook timestamp before treating a conclusion as fresh enough for intraday monitoring.
 
@@ -432,12 +445,12 @@ The MVP exposes these read-only tools:
 
 ```json
 {
-  "grade": "B",
   "observations": [],
   "risks": [],
   "trigger_conditions": [],
   "avoid_conditions": [],
-  "data_timestamp": "2026-05-24T09:30:00+08:00"
+  "data_timestamp": "2026-05-24T09:30:00+08:00",
+  "disclaimer": ""
 }
 ```
 

@@ -370,9 +370,20 @@ def build_second_board_data_quality(
                 ),
             ],
         ),
+        # jvQuant semantic queries don't provide these; mark unavailable so callers don't read defaults as real measurements.
         "client_strategy_facts": unavailable_metadata(
             source_field="free_float_market_cap_cny/avg_turnover_10d_cny/ma5_slope_degrees/prev_day_volume_shrink_ratio/broke_previous_high/previous_high_price",
             timestamp=query_timestamp,
             limitation="10-day turnover, MA5 slope, T-1 volume ratio, prev-high break, and float cap are not provided by current jvQuant semantic queries; fields are left at default and must not be read as real measurements.",
+        ),
+        # jvQuant semantic queries don't provide these; mark unavailable so callers don't read defaults as real measurements.
+        "theme_lifecycle": unavailable_metadata(
+            source_field="theme_lifecycle_stage",
+            timestamp=speed_timestamp,
+            limitation=(
+                "Multi-day theme limit-up count series is not available from current jvQuant semantic queries; "
+                "theme_lifecycle_stage cannot be computed and is left as 'unknown'. "
+                "Populate from a theme daily aggregate source to enable lifecycle classification."
+            ),
         ),
     }

@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any, Callable
 
 from aegis_alpha.adapters.jvquant import parsers as P
-from aegis_alpha.adapters.jvquant.data_quality import build_second_board_data_quality, unavailable_metadata
+from aegis_alpha.adapters.jvquant.data_quality import build_second_board_data_quality
 from aegis_alpha.clock import SH_TZ
 from aegis_alpha.grading import CandidateGradingConfig
 from aegis_alpha.models import (
@@ -418,20 +418,6 @@ def build_second_board_candidate(
         orderbook_notes = []
     if minute_replay_notes is None:
         minute_replay_notes = []
-    # theme_lifecycle: multi-day theme history is not returned by current jvQuant semantic queries;
-    # the stage is left as "unknown" and flagged so callers know this is a data gap, not a computed value.
-    data_quality = {
-        **data_quality,
-        "theme_lifecycle": unavailable_metadata(
-            source_field="theme_lifecycle_stage",
-            timestamp=speed_timestamp,
-            limitation=(
-                "Multi-day theme limit-up count series is not available from current jvQuant semantic queries; "
-                "theme_lifecycle_stage cannot be computed and is left as 'unknown'. "
-                "Populate from a theme daily aggregate source to enable lifecycle classification."
-            ),
-        ),
-    }
     notes: list[str] = [
         "jvQuant live-provider candidate: yesterday limit-up and today gain above 5%.",
         (

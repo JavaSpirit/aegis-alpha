@@ -482,7 +482,7 @@ class MockMarketDataAdapter:
         _avg10d_300024 = avg_turnover_10d(_turnover_300024)
         _prior_highs_300024 = [18.8, 19.0, 18.9]
         _max_high_300024 = max(_prior_highs_300024)
-        # 电力-style regression: theme already in a late (decay) stage; the program MEASURES this so the agent won't grade it high off recent hotness.
+        # decay-stage archetype (the 电力 case the client flagged showed this late-stage pattern); any symbol with this series classifies as a decay stage — the program MEASURES it so the agent won't grade it high off recent hotness.
         # Break rate rising, breadth contracting, leader already dead — classic ebb pattern.
         _lifecycle_300024 = classify_theme_lifecycle([
             ThemeDay(limit_up_count=9, break_board_rate=0.4, new_high_member_count=4, leader_alive=True),
