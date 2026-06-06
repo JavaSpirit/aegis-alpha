@@ -551,8 +551,8 @@ class CandidateExplanation(BaseModel):
 class WatchlistEntry(BaseModel):
     symbol: str
     added_at: str
-    initial_grade: CandidateGrade = "C"
-    last_grade: CandidateGrade = "C"
+    agent_grade: CandidateGrade | None = None
+    agent_grade_history: list[CandidateGrade] = Field(default_factory=list)
     last_action: WatchlistEntryAction = "added"
     last_action_at: str = ""
     notes: list[str] = Field(default_factory=list)

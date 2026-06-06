@@ -36,7 +36,7 @@ def test_update_state_records_grade_change(tmp_path: Path) -> None:
     fetched = manager.get(wl.watchlist_id)
     assert fetched is not None
     entry = next(e for e in fetched.entries if e.symbol == "002230.SZ")
-    assert entry.last_grade == "A"
+    assert entry.agent_grade == "A"
     assert entry.last_action == "promoted"
     assert any("seal stable" in note for note in entry.notes)
 
@@ -54,7 +54,7 @@ def test_diff_against_prior_snapshot_lists_added_dropped_grade_changes(tmp_path:
 
     assert diff.added_symbols == ["C"]
     assert diff.dropped_symbols == ["B"]
-    assert diff.grade_changes["A"] == {"from": "C", "to": "A"}
+    assert diff.grade_changes["A"] == {"from": "none", "to": "A"}
 
 
 def test_close_watchlist_sets_status(tmp_path: Path) -> None:
