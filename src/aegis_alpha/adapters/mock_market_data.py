@@ -494,12 +494,6 @@ class MockMarketDataAdapter:
                 orderbook_quality_score=78.0,
                 three_year_touch_limit_success_rate=0.64,
                 three_year_sealed_next_day_gap_up_rate=0.58,
-                estimated_seal_probability=0.67,
-                grade="B",
-                grade_reason=(
-                    "评级为 B，因为同题材联动和盘口质量较好，但仍是 mock 数据，"
-                    "且没有真实 Level-2 大单净流入与封单排队验证。"
-                ),
                 weekly_health_score=78.0,
                 data_quality=self._mock_second_board_data_quality(),
                 notes=[
@@ -548,12 +542,6 @@ class MockMarketDataAdapter:
                 orderbook_quality_score=59.0,
                 three_year_touch_limit_success_rate=0.51,
                 three_year_sealed_next_day_gap_up_rate=0.44,
-                estimated_seal_probability=0.46,
-                grade="C",
-                grade_reason=(
-                    "评级为 C，因为题材虽活跃，但盘口质量低于偏好阈值，"
-                    "模拟封板概率也不足以进入重点观察。"
-                ),
                 weekly_health_score=42.0,
                 data_quality=self._mock_second_board_data_quality(),
                 notes=[

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from aegis_alpha.adapters.jvquant.scoring import action_from_score, market_score, sentiment_from_score
+from aegis_alpha.adapters.jvquant.market_gate import action_from_score, market_score, sentiment_from_score
 from aegis_alpha.grading import CandidateGradingConfig
 
 

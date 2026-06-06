@@ -6,11 +6,6 @@ from typing import Any, Callable
 
 from aegis_alpha.adapters.jvquant import parsers as P
 from aegis_alpha.adapters.jvquant.data_quality import build_second_board_data_quality
-from aegis_alpha.adapters.jvquant.scoring import (
-    candidate_grade,
-    candidate_grade_reason,
-    estimated_seal_probability,
-)
 from aegis_alpha.clock import SH_TZ
 from aegis_alpha.grading import CandidateGradingConfig
 from aegis_alpha.models import (
@@ -53,7 +48,6 @@ def build_one_candidate(
     max_seal_rows: dict[str, dict[str, Any]],
     query_timestamp: str,
     theme_counts: Counter,
-    gate_action: str,
     orderbook_limit: int,
     minute_replay_enabled: bool,
     minute_replay_limit: int,
@@ -277,45 +271,6 @@ def build_one_candidate(
         )
         intraday_pattern_value = features.pattern
 
-    grade = candidate_grade(
-        action=gate_action,
-        change_pct=change_pct,
-        five_min_speed_pct=five_min_speed_pct,
-        big_order_net_inflow_ratio=big_order_net_inflow_ratio,
-        orderbook_quality=orderbook_quality,
-        theme_count=theme_counts[theme],
-        first_limit_up_time=first_limit_up_time,
-        seal_amount_cny=seal_amount_cny,
-        seal_to_turnover_ratio=seal_to_turnover_ratio,
-        config=grading_config,
-    )
-    estimated = estimated_seal_probability(
-        action=gate_action,
-        change_pct=change_pct,
-        five_min_speed_pct=five_min_speed_pct,
-        big_order_net_inflow_ratio=big_order_net_inflow_ratio,
-        orderbook_quality=orderbook_quality,
-        theme_count=theme_counts[theme],
-        first_limit_up_time=first_limit_up_time,
-        seal_amount_cny=seal_amount_cny,
-        seal_to_turnover_ratio=seal_to_turnover_ratio,
-        config=grading_config,
-    )
-    grade_reason = candidate_grade_reason(
-        action=gate_action,
-        grade=grade,
-        change_pct=change_pct,
-        five_min_speed_pct=five_min_speed_pct,
-        big_order_net_inflow_ratio=big_order_net_inflow_ratio,
-        orderbook_quality=orderbook_quality,
-        theme_count=theme_counts[theme],
-        first_limit_up_time=first_limit_up_time,
-        seal_amount_cny=seal_amount_cny,
-        seal_to_turnover_ratio=seal_to_turnover_ratio,
-        queue_position_note=queue_position_note,
-        limitup_driver_type=limitup_driver_type,
-        intraday_pattern=intraday_pattern_value,
-    )
     data_quality = build_second_board_data_quality(
         speed_timestamp=speed_timestamp,
         speed_window=speed_window,
@@ -382,10 +337,7 @@ def build_one_candidate(
         orderbook_quality=orderbook_quality,
         three_year_touch_limit_success_rate=three_year_touch_rate,
         three_year_sealed_next_day_gap_up_rate=three_year_gap_up_rate,
-        estimated=estimated,
-        grade=grade,
         limitup_driver_type=limitup_driver_type,
-        grade_reason=grade_reason,
         intraday_pattern=intraday_pattern_value,
         weekly_health_score=weekly_health_score,
         data_quality=data_quality,
@@ -444,12 +396,9 @@ def build_second_board_candidate(
     orderbook_quality: float,
     three_year_touch_limit_success_rate: float,
     three_year_sealed_next_day_gap_up_rate: float,
-    estimated: float,
-    grade: str,
     limitup_driver_type: str = "unknown",
     intraday_pattern: str = "unknown",
     weekly_health_score: float = 50.0,
-    grade_reason: str = "",
     data_quality: dict[str, SignalMetadata] | None = None,
     orderbook_notes: list[str] | None = None,
     minute_replay_notes: list[str] | None = None,
@@ -557,12 +506,9 @@ def build_second_board_candidate(
         orderbook_quality_score=orderbook_quality,
         three_year_touch_limit_success_rate=three_year_touch_limit_success_rate,
         three_year_sealed_next_day_gap_up_rate=three_year_sealed_next_day_gap_up_rate,
-        estimated_seal_probability=estimated,
-        grade=grade,
         limitup_driver_type=limitup_driver_type,
         intraday_pattern=intraday_pattern,
         weekly_health_score=weekly_health_score,
-        grade_reason=grade_reason,
         data_quality=data_quality,
         notes=notes,
     )

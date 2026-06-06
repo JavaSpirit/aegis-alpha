@@ -11,7 +11,7 @@ from aegis_alpha.adapters.jvquant import parsers as P
 from aegis_alpha.adapters.jvquant.parsers import float_or_zero as _float_or_zero
 from aegis_alpha.adapters.jvquant.parsers import int_or_zero as _int_or_zero
 from aegis_alpha.adapters.jvquant.queries import JvQuantQueryClient
-from aegis_alpha.adapters.jvquant.scoring import action_from_score, market_score, sentiment_from_score
+from aegis_alpha.adapters.jvquant.market_gate import action_from_score, market_score, sentiment_from_score
 from aegis_alpha.adapters.jvquant.candidates import build_one_candidate
 from aegis_alpha.clock import SH_TZ, now_iso as _now
 from aegis_alpha.models import (
@@ -534,7 +534,6 @@ class JvQuantMarketDataAdapter:
                 max_seal_rows=max_seal_rows,
                 query_timestamp=query_timestamp,
                 theme_counts=theme_counts,
-                gate_action=gate.action,
                 orderbook_limit=orderbook_limit,
                 minute_replay_enabled=minute_replay_enabled,
                 minute_replay_limit=minute_replay_limit,
