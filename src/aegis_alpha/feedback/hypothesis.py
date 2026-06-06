@@ -58,6 +58,8 @@ def simulate_outcome(inputs: HypothesisInputs) -> HypothesisOutcome | None:
 
     Returns None when the snapshot payload is not valid JSON.
     """
+    if inputs.snapshot.grade_at_pick is None:
+        return None  # No program grade to re-grade against; agent grade set in a later phase.
     try:
         payload = json.loads(inputs.snapshot.payload_json or "{}")
     except (json.JSONDecodeError, TypeError):

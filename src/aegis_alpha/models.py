@@ -842,7 +842,7 @@ class SimilarSetupResult(BaseModel):
     match_symbol: str
     match_trading_day: str
     similarity: float = Field(default=0.0, ge=0.0, le=1.0)
-    match_grade_at_pick: str = "C"
+    match_grade_at_pick: CandidateGrade | None = None
     match_outcome_summary: str = ""
     feature_diffs: dict[str, float] = Field(default_factory=dict)
     notes: list[str] = Field(default_factory=list)
