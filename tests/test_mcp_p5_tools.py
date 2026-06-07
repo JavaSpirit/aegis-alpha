@@ -74,7 +74,7 @@ def test_compact_candidate_includes_weekly_health_score(monkeypatch):
         assert 0.0 <= item["weekly_health_score"] <= 100.0
 
 
-def test_compact_candidate_includes_third_board_promotion_assessment(monkeypatch):
+def test_compact_candidate_includes_agent_factor_facts(monkeypatch):
     monkeypatch.setenv("AEGIS_ALPHA_MARKET_DATA_PROVIDER", "mock")
     from aegis_alpha.mcp.dependencies import reset_singletons
     from aegis_alpha.mcp.server import get_second_board_candidates_compact
@@ -83,14 +83,16 @@ def test_compact_candidate_includes_third_board_promotion_assessment(monkeypatch
     items = get_second_board_candidates_compact(limit=5)
     assert items
     for item in items:
-        assert "promotion_grade" in item
-        assert "third_board_probability_pct" in item
-        assert "promotion_reason" in item
-        assert "theme_position_label" in item
-        assert "theme_recent_active_days" in item
-        assert "theme_recent_max_member_count" in item
+        assert "promotion_grade" not in item
+        assert "third_board_probability_pct" not in item
+        assert "theme_lifecycle_stage" in item
         assert "free_float_market_cap_cny" in item
         assert "turnover_cny" in item
+        assert "avg_turnover_10d_cny" in item
+        assert "prev_day_volume_shrink_ratio" in item
+        assert "break_board_count" in item
+        assert "reseal_count" in item
+        assert "max_seal_amount_cny" in item
 
 
 def test_compact_candidate_break_filter_splits_break_and_no_break_candidates(monkeypatch):

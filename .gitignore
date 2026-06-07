@@ -24,3 +24,11 @@ data/agent_eval_runs/
 data/runner_status.json
 data/parquet/
 logs/
+
+# agent worktree runtime artifacts
+.claude/worktrees/
+
+# coverage artifacts
+.coverage
+.coverage.*
+htmlcov/

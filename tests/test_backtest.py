@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from aegis_alpha.feedback.backtest import (
     BacktestInputs,
     backtest_grading_rule,
@@ -40,6 +42,7 @@ def _seed_three_days(store: AegisAlphaStore) -> None:
         )
 
 
+@pytest.mark.skip(reason="grade-remap backtest re-homed to Phase 7")
 def test_backtest_no_changes_keeps_grades_constant(tmp_path: Path) -> None:
     store = _store(tmp_path)
     _seed_three_days(store)
@@ -59,6 +62,7 @@ def test_backtest_no_changes_keeps_grades_constant(tmp_path: Path) -> None:
         assert row.original_grade == row.new_grade
 
 
+@pytest.mark.skip(reason="grade-remap backtest re-homed to Phase 7")
 def test_backtest_with_promote_b_to_a_changes_distribution(tmp_path: Path) -> None:
     store = _store(tmp_path)
     _seed_three_days(store)
@@ -77,6 +81,7 @@ def test_backtest_with_promote_b_to_a_changes_distribution(tmp_path: Path) -> No
     assert run.grade_distribution_after.get("B", 0) == 0
 
 
+@pytest.mark.skip(reason="grade-remap backtest re-homed to Phase 7")
 def test_backtest_empty_window_is_completed_with_zero_sample(tmp_path: Path) -> None:
     store = _store(tmp_path)
 

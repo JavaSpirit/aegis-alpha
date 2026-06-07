@@ -41,6 +41,13 @@ from aegis_alpha.models import (
     WeeklyPosition,
 )
 from aegis_alpha.events import EventDetector, load_event_scoring_config
+from aegis_alpha.measurements.client_facts import (
+    avg_turnover_10d,
+    broke_previous_high as compute_broke_previous_high,
+    ma5_slope_degrees,
+    prev_day_volume_shrink_ratio,
+)
+from aegis_alpha.measurements.theme_lifecycle import STAGE_LABELS_CN, ThemeDay, classify_theme_lifecycle
 from aegis_alpha.themes.auction import AuctionAnalyzer
 
 
@@ -52,7 +59,6 @@ class MockMarketDataAdapter:
             market="A-share",
             trading_day=datetime.now(SH_TZ).date().isoformat(),
             timestamp=_now(),
-            sentiment="warm",
             limit_up_count=48,
             break_board_count=17,
             break_board_rate=0.26,
@@ -67,8 +73,6 @@ class MockMarketDataAdapter:
         return MarketSentimentGate(
             trading_day=datetime.now(SH_TZ).date().isoformat(),
             timestamp=_now(),
-            action="selective",
-            score=68.0,
             limit_up_count=48,
             break_board_rate=0.26,
             second_board_success_rate=0.43,
@@ -288,7 +292,7 @@ class MockMarketDataAdapter:
                 trading_day=day,
                 leader_symbol="300024.SZ",
                 leader_name="机器人",
-                leader_consecutive_boards=2,
+                leader_consecutive_boards=1,
                 leader_first_limit_up_time="10:22:31",
                 leader_seal_amount_cny=42_000_000,
                 leader_status="reopened",
@@ -452,6 +456,37 @@ class MockMarketDataAdapter:
         # theme_role / previous_consecutive_boards / previous_height_label /
         # theme_leader_symbol are intentionally omitted here; they are filled
         # by the real resolver logic in Step 2 below.
+        # ---------------------------------------------------------------
+        # 002230.SZ — strong setup: T-1 缩量 (shrink ratio <1), broke prev high, rising MA5
+        # ---------------------------------------------------------------
+        _turnover_002230 = [5.8e9, 6.0e9, 6.2e9, 5.5e9, 6.5e9, 7.0e9, 6.8e9, 7.2e9, 6.9e9, 7.5e9, 8.0e9]
+        _prices_002230 = [12.0, 12.3, 12.5, 12.9, 13.2, 13.6, 14.0, 14.5]
+        _avg10d_002230 = avg_turnover_10d(_turnover_002230)
+        _prior_highs_002230 = [13.8, 14.1, 14.0]
+        _max_high_002230 = max(_prior_highs_002230)
+        # Theme lifecycle: early-to-mid growth phase (fermenting) — breadth steadily rising, low break rate, leader intact.
+        _lifecycle_002230 = classify_theme_lifecycle([
+            ThemeDay(limit_up_count=3, break_board_rate=0.1, new_high_member_count=1, leader_alive=True),
+            ThemeDay(limit_up_count=5, break_board_rate=0.1, new_high_member_count=3, leader_alive=True),
+            ThemeDay(limit_up_count=7, break_board_rate=0.1, new_high_member_count=4, leader_alive=True),
+        ])  # → fermenting
+
+        # ---------------------------------------------------------------
+        # 300024.SZ — weak setup: T-1 放量 (ratio >1), did not break prev high, flat/falling MA5
+        # ---------------------------------------------------------------
+        _turnover_300024 = [3.2e9, 3.0e9, 2.8e9, 3.5e9, 3.1e9, 2.9e9, 3.3e9, 3.0e9, 2.7e9, 3.2e9]
+        _prices_300024 = [18.5, 18.3, 18.1, 17.9, 17.8, 17.6, 17.7, 17.5]
+        _avg10d_300024 = avg_turnover_10d(_turnover_300024)
+        _prior_highs_300024 = [18.8, 19.0, 18.9]
+        _max_high_300024 = max(_prior_highs_300024)
+        # decay-stage archetype (the 电力 case the client flagged showed this late-stage pattern); any symbol with this series classifies as a decay stage — the program MEASURES it so the agent won't grade it high off recent hotness.
+        # Break rate rising, breadth contracting, leader already dead — classic ebb pattern.
+        _lifecycle_300024 = classify_theme_lifecycle([
+            ThemeDay(limit_up_count=9, break_board_rate=0.4, new_high_member_count=4, leader_alive=True),
+            ThemeDay(limit_up_count=5, break_board_rate=0.5, new_high_member_count=2, leader_alive=False),
+            ThemeDay(limit_up_count=2, break_board_rate=0.6, new_high_member_count=0, leader_alive=False),
+        ])  # → ebb
+
         raw = [
             SecondBoardCandidate(
                 symbol="002230.SZ",
@@ -459,6 +494,7 @@ class MockMarketDataAdapter:
                 theme="AI应用",
                 previous_limit_up_time="10:18:24",
                 first_limit_up_time="09:56:12",
+                theme_lifecycle_stage=_lifecycle_002230,
                 limitup_driver_type="policy",
                 intraday_pattern="t_shape_board",
                 seal_amount_cny=128_000_000,
@@ -483,6 +519,8 @@ class MockMarketDataAdapter:
                 ten_min_speed_window="mock_latest_rolling_10m",
                 ten_min_speed_timestamp="2026-05-26T10:15:00+08:00",
                 big_order_net_inflow_ratio=0.18,
+                turnover_cny=8_000_000_000,
+                main_net_inflow_cny=1_440_000_000,
                 concept_tags=["AI大模型", "教育信息化"],
                 topic_tags=["国产AI"],
                 break_board_count=0,
@@ -494,29 +532,17 @@ class MockMarketDataAdapter:
                 orderbook_quality_score=78.0,
                 three_year_touch_limit_success_rate=0.64,
                 three_year_sealed_next_day_gap_up_rate=0.58,
-                estimated_seal_probability=0.67,
-                grade="B",
-                promotion_grade="B",
-                third_board_probability_pct=66.4,
-                third_board_promotion_score=77.2,
-                promotion_reason=(
-                    "市场闸门=selective(+3)；题材阶段=maturing, 最高板=3, 多板数=4, "
-                    "近活跃=2天, 最大成员=6(-5)；流通市值=mid(+3)；成交额=healthy(+5)；"
-                    "封板质量=70(+15)；回封力度=未炸板(+8)"
-                ),
-                theme_position_label="maturing",
-                theme_max_height=3,
-                theme_multi_board_count=4,
-                theme_recent_active_days=2,
-                theme_recent_max_member_count=6,
-                free_float_market_cap_cny=5_200_000_000,
-                turnover_cny=860_000_000,
-                main_net_inflow_cny=154_800_000,
-                grade_reason=(
-                    "评级为 B，因为同题材联动和盘口质量较好，但仍是 mock 数据，"
-                    "且没有真实 Level-2 大单净流入与封单排队验证。"
-                ),
                 weekly_health_score=78.0,
+                free_float_market_cap_cny=8.2e10,
+                avg_turnover_10d_cny=_avg10d_002230,
+                ma5_slope_degrees=ma5_slope_degrees(_prices_002230),
+                prev_day_volume_shrink_ratio=prev_day_volume_shrink_ratio(
+                    prev_day_volume=6.2e9, avg_10d=_avg10d_002230
+                ),
+                previous_high_price=_max_high_002230,
+                broke_previous_high=compute_broke_previous_high(
+                    current_price=14.6, prior_highs=_prior_highs_002230
+                ),
                 data_quality=self._mock_second_board_data_quality(),
                 notes=[
                     "Yesterday limit-up stock with same-theme momentum in mock data.",
@@ -529,6 +555,7 @@ class MockMarketDataAdapter:
                 theme="机器人",
                 previous_limit_up_time="09:47:09",
                 first_limit_up_time="10:22:31",
+                theme_lifecycle_stage=_lifecycle_300024,
                 limitup_driver_type="theme",
                 intraday_pattern="one_word_board",
                 seal_amount_cny=42_000_000,
@@ -553,6 +580,8 @@ class MockMarketDataAdapter:
                 ten_min_speed_window="mock_latest_rolling_10m",
                 ten_min_speed_timestamp="2026-05-26T10:15:00+08:00",
                 big_order_net_inflow_ratio=0.07,
+                turnover_cny=3_800_000_000,
+                main_net_inflow_cny=266_000_000,
                 concept_tags=["机器人", "工业自动化"],
                 topic_tags=["具身智能"],
                 break_board_count=1,
@@ -564,29 +593,17 @@ class MockMarketDataAdapter:
                 orderbook_quality_score=59.0,
                 three_year_touch_limit_success_rate=0.51,
                 three_year_sealed_next_day_gap_up_rate=0.44,
-                estimated_seal_probability=0.46,
-                grade="C",
-                promotion_grade="C",
-                third_board_probability_pct=48.5,
-                third_board_promotion_score=56.4,
-                promotion_reason=(
-                    "市场闸门=selective(+3)；题材阶段=extended, 最高板=5, 多板数=5, "
-                    "近活跃=3天, 最大成员=8(-14)；流通市值=large(-2)；成交额=heavy(+1)；"
-                    "封板质量=45(+10)；回封力度=一次炸板回封(+2)"
-                ),
-                theme_position_label="extended",
-                theme_max_height=5,
-                theme_multi_board_count=5,
-                theme_recent_active_days=3,
-                theme_recent_max_member_count=8,
-                free_float_market_cap_cny=12_000_000_000,
-                turnover_cny=1_900_000_000,
-                main_net_inflow_cny=133_000_000,
-                grade_reason=(
-                    "评级为 C，因为题材虽活跃，但盘口质量低于偏好阈值，"
-                    "模拟封板概率也不足以进入重点观察。"
-                ),
                 weekly_health_score=42.0,
+                free_float_market_cap_cny=2.1e10,
+                avg_turnover_10d_cny=_avg10d_300024,
+                ma5_slope_degrees=ma5_slope_degrees(_prices_300024),
+                prev_day_volume_shrink_ratio=prev_day_volume_shrink_ratio(
+                    prev_day_volume=3.8e9, avg_10d=_avg10d_300024
+                ),
+                previous_high_price=_max_high_300024,
+                broke_previous_high=compute_broke_previous_high(
+                    current_price=17.5, prior_highs=_prior_highs_300024
+                ),
                 data_quality=self._mock_second_board_data_quality(),
                 notes=[
                     "Theme is active, but orderbook quality is below the preferred threshold.",
@@ -746,13 +763,12 @@ class MockMarketDataAdapter:
         if candidate is None:
             return CandidateExplanation(
                 symbol=symbol,
-                grade="REJECT",
-                grade_reason="评级为 REJECT，因为该股票不在昨日有效涨停候选池中，不能按二板模型评分。",
                 observations=[
                     "Symbol is not in the mock yesterday-limit-up candidate pool.",
+                    "Second-board model only scores stocks that had a valid previous-day limit-up event.",
                 ],
                 risks=[
-                    "Second-board model should only score stocks that had a valid previous-day limit-up event.",
+                    "Symbols outside the previous-day limit-up pool are silently absent from scoring output, so this is not a verdict on the symbol itself.",
                 ],
                 trigger_conditions=[
                     "Add the symbol to the previous-day limit-up pool before scoring.",
@@ -766,14 +782,19 @@ class MockMarketDataAdapter:
 
         return CandidateExplanation(
             symbol=symbol,
-            grade=candidate.grade,
-            grade_reason=candidate.grade_reason,
             observations=[
                 f"Five-minute speed is {candidate.five_min_speed_pct:.1f}%.",
                 f"Five-minute speed window is {candidate.five_min_speed_window}; timestamp is {candidate.five_min_speed_timestamp}.",
                 f"Big-order net inflow ratio is {candidate.big_order_net_inflow_ratio:.2f}.",
                 f"Same-theme rising count is {candidate.same_theme_rising_count}.",
-                f"Estimated seal probability is {candidate.estimated_seal_probability:.0%} in mock data.",
+                (
+                    f"流通市值约 {candidate.free_float_market_cap_cny / 1e8:.1f} 亿元，"
+                    f"近10日均成交额约 {candidate.avg_turnover_10d_cny / 1e8:.2f} 亿元，"
+                    f"5日均线斜率 {candidate.ma5_slope_degrees:.1f}°，"
+                    f"T-1量比 {candidate.prev_day_volume_shrink_ratio:.2f}，"
+                    f"{'已' if candidate.broke_previous_high else '未'}突破前期高点 {candidate.previous_high_price:.2f}。"
+                ),
+                f"题材阶段（测量值）：{STAGE_LABELS_CN.get(candidate.theme_lifecycle_stage, candidate.theme_lifecycle_stage)}。",
             ],
             risks=[
                 "This is mock data, not live jvQuant Level-2 data.",
@@ -781,7 +802,7 @@ class MockMarketDataAdapter:
                 "Real board-chasing requires queue position, sell pressure, and cancel rules.",
             ],
             trigger_conditions=[
-                "Market sentiment gate must be selective or active.",
+                "Market-wide break-board rate should stay controlled (low) before aggressive board-chasing.",
                 "Same-theme risers should expand during the same observation window.",
                 "Sell-side limit-up ask orders should be consumed with sustained big-order inflow.",
             ],
@@ -797,11 +818,6 @@ class MockMarketDataAdapter:
     def explain_candidate(self, symbol: str) -> CandidateExplanation:
         return CandidateExplanation(
             symbol=symbol,
-            grade="B",
-            grade_reason=(
-                "评级为 B，因为 mock 数据显示题材强度、资金方向和买盘质量都偏正面，"
-                "但真实行情与历史统计尚未接入。"
-            ),
             observations=[
                 "Theme strength is high in mock data.",
                 "Big-order net inflow is positive.",

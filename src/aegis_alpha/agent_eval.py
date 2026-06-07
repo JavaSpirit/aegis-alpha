@@ -8,6 +8,14 @@ from aegis_alpha.agent_context import signal_snapshot_agent_context
 from aegis_alpha.models import MarketEvent, SignalSnapshot
 
 
+REQUIRED_FACTORS = (
+    "market_emotion",
+    "theme_position",
+    "float_size",
+    "volume_energy",
+    "reseal_strength",
+)
+
 PROHIBITED_DIRECTIVE_PATTERNS = [
     r"(?<!不)(?<!不要)(?<!不能)(?<!不可)(?<!禁止)(?<!避免)(?<!不应)直接买入",
     r"(?<!不)(?<!不要)(?<!不能)(?<!不可)(?<!禁止)(?<!避免)(?<!不应)立即买入",
@@ -47,7 +55,12 @@ def build_agent_replay_messages(snapshot: SignalSnapshot, events: list[MarketEve
         "输出必须是合法 JSON，字段如下："
         "grade(A/B/C/REJECT), natural_language_reason, data_facts, rule_score, risks, "
         "trigger_conditions{price,volume,theme,orderbook}, avoid_conditions, "
-        "freshness_warning, data_timestamp, disclaimer。"
+        "freshness_warning, data_timestamp, disclaimer, "
+        "promotion_likelihood(high/medium/low 三选一，代表晋级三板概率分档), "
+        "factor_analysis{market_emotion(市场情绪), theme_position(题材所在位置), "
+        "float_size(股本大小), volume_energy(量能), reseal_strength(回封力度)}。"
+        "必须逐项给出 factor_analysis 的五个维度理由，并给出 promotion_likelihood(high/medium/low) "
+        "与综合 grade；不得只给笼统总结。"
         "natural_language_reason 要用自然语言解释评级原因，但不要给直接买入/卖出/下单指令。"
         "\n\n"
         f"{json.dumps(payload, ensure_ascii=False)}"
@@ -106,6 +119,7 @@ def evaluate_agent_replay_response(
     )
 
     if parsed is not None:
+        # Validates the AGENT's self-reported grade (agent judgment), not a program grade.
         grades = parsed_grades(parsed)
         checks.append(
             {
@@ -120,12 +134,52 @@ def evaluate_agent_replay_response(
                 "passed": parsed_has_natural_language_reason(parsed),
             }
         )
+        likelihoods = parsed_promotion_likelihoods(parsed)
+        per_symbol_items = parsed.get("per_symbol")
+        per_symbol_count = (
+            len([i for i in per_symbol_items if isinstance(i, dict)])
+            if isinstance(per_symbol_items, list)
+            else 0
+        )
+        checks.append(
+            {
+                "name": "promotion_likelihood_present",
+                "passed": (
+                    bool(likelihoods)
+                    and all(v in {"high", "medium", "low"} for v in likelihoods)
+                    and (per_symbol_count == 0 or len(likelihoods) == per_symbol_count)
+                ),
+                "detail": likelihoods,
+            }
+        )
+        factor_analyses = parsed_factor_analyses(parsed)
+        checks.append(
+            {
+                "name": "five_factors_present",
+                "passed": (
+                    bool(factor_analyses)
+                    and (per_symbol_count == 0 or len(factor_analyses) == per_symbol_count)
+                    and all(
+                        all(bool(str(fa.get(key) or "").strip()) for key in REQUIRED_FACTORS)
+                        for fa in factor_analyses
+                    )
+                ),
+                "detail": [list(fa.keys()) for fa in factor_analyses],
+            }
+        )
         if expected_freshness_status == "stale":
             checks.append(
                 {
                     "name": "stale_data_caps_grade",
                     "passed": bool(grades) and all(grade in {"B", "C", "REJECT"} for grade in grades),
                     "detail": grades,
+                }
+            )
+            checks.append(
+                {
+                    "name": "stale_data_caps_promotion",
+                    "passed": bool(likelihoods) and all(v in {"medium", "low"} for v in likelihoods),
+                    "detail": likelihoods,
                 }
             )
 
@@ -156,3 +210,41 @@ def parsed_has_natural_language_reason(parsed: dict[str, Any]) -> bool:
             for item in items
         )
     return False
+
+
+def parsed_promotion_likelihoods(parsed: dict[str, Any]) -> list[str]:
+    """Mirror of parsed_grades for promotion_likelihood values.
+
+    Returns only items that actually carry a non-empty promotion_likelihood,
+    so the caller's count-guard can detect missing entries.
+    """
+    value = str(parsed.get("promotion_likelihood") or "")
+    if value:
+        return [value]
+    items = parsed.get("per_symbol")
+    if isinstance(items, list):
+        return [
+            str(item["promotion_likelihood"])
+            for item in items
+            if isinstance(item, dict) and item.get("promotion_likelihood")
+        ]
+    return []
+
+
+def parsed_factor_analyses(parsed: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return the factor_analysis dict(s): top-level as [dict] or one per per_symbol item.
+
+    Only returns ACTUAL dicts — items where factor_analysis is absent are omitted,
+    so the caller's count-guard detects missing entries rather than receiving empty dicts.
+    """
+    fa = parsed.get("factor_analysis")
+    if isinstance(fa, dict):
+        return [fa]
+    items = parsed.get("per_symbol")
+    if isinstance(items, list):
+        return [
+            item["factor_analysis"]
+            for item in items
+            if isinstance(item, dict) and isinstance(item.get("factor_analysis"), dict)
+        ]
+    return []

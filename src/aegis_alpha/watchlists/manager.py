@@ -38,8 +38,6 @@ class WatchlistManager:
                 WatchlistEntry(
                     symbol=symbol.strip(),
                     added_at=timestamp,
-                    initial_grade="C",
-                    last_grade="C",
                     last_action="added",
                     last_action_at=timestamp,
                 )
@@ -64,8 +62,6 @@ class WatchlistManager:
             WatchlistEntry(
                 symbol=symbol.strip(),
                 added_at=timestamp,
-                initial_grade="C",
-                last_grade="C",
                 last_action="added",
                 last_action_at=timestamp,
             )
@@ -110,7 +106,8 @@ class WatchlistManager:
             updated_entries.append(
                 entry.model_copy(
                     update={
-                        "last_grade": new_grade,
+                        "agent_grade": new_grade,
+                        "agent_grade_history": [*entry.agent_grade_history, new_grade],
                         "last_action": action,
                         "last_action_at": timestamp,
                         "notes": notes,
@@ -144,10 +141,13 @@ class WatchlistManager:
         dropped = sorted(before_map.keys() - after_map.keys())
         grade_changes: dict[str, dict[str, str]] = {}
         for symbol in before_map.keys() & after_map.keys():
-            old = before_map[symbol].last_grade
-            new = after_map[symbol].last_grade
+            old = before_map[symbol].agent_grade
+            new = after_map[symbol].agent_grade
             if old != new:
-                grade_changes[symbol] = {"from": old, "to": new}
+                grade_changes[symbol] = {
+                    "from": old if old is not None else "none",
+                    "to": new if new is not None else "none",
+                }
         return WatchlistDiff(
             watchlist_id=after.watchlist_id,
             from_timestamp=before.created_at,

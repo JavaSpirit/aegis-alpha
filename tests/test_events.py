@@ -405,7 +405,15 @@ def test_agent_replay_response_evaluation() -> None:
       "avoid_conditions": ["数据过期"],
       "freshness_warning": "stale",
       "data_timestamp": "2000-01-01T09:35:00+08:00",
-      "disclaimer": "仅供研究观察，非投资建议。"
+      "disclaimer": "仅供研究观察，非投资建议。",
+      "promotion_likelihood": "medium",
+      "factor_analysis": {
+        "market_emotion": "市场情绪偏弱，盘面分化明显",
+        "theme_position": "题材处于高位震荡阶段，龙头回落",
+        "float_size": "流通市值约30亿，属于中小盘品种",
+        "volume_energy": "量能萎缩，换手率低于前期均值",
+        "reseal_strength": "数据过期，回封情况无法准确评估"
+      }
     }
     """
 
@@ -423,12 +431,28 @@ def test_agent_evaluation_accepts_per_symbol_grades() -> None:
         {
           "symbol": "600519",
           "grade": "C",
-          "natural_language_reason": "涨幅低且无封单，不适合打板观察。"
+          "natural_language_reason": "涨幅低且无封单，不适合打板观察。",
+          "promotion_likelihood": "low",
+          "factor_analysis": {
+            "market_emotion": "市场情绪一般，板块未形成共振",
+            "theme_position": "题材处于末期，热度消退",
+            "float_size": "流通市值偏大，弹性较低",
+            "volume_energy": "量能不足，5日均换手率持续下滑",
+            "reseal_strength": "未见明显回封，炸板后无反弹动作"
+          }
         },
         {
           "symbol": "000001",
           "grade": "REJECT",
-          "natural_language_reason": "大单净流入为零，盘口质量低。"
+          "natural_language_reason": "大单净流入为零，盘口质量低。",
+          "promotion_likelihood": "low",
+          "factor_analysis": {
+            "market_emotion": "市场情绪低迷，大盘走弱",
+            "theme_position": "无明确题材支撑，游资撤退",
+            "float_size": "流通市值极大，打板机会极低",
+            "volume_energy": "成交量极度萎缩，换手率接近零",
+            "reseal_strength": "无封单记录，不具备回封条件"
+          }
         }
       ],
       "overall_conclusion": "均不适合。",
@@ -449,7 +473,15 @@ def test_agent_evaluation_accepts_trade_instruction_disclaimer() -> None:
         {
           "symbol": "600519",
           "grade": "C",
-          "natural_language_reason": "涨幅低且无封单，不适合打板观察。"
+          "natural_language_reason": "涨幅低且无封单，不适合打板观察。",
+          "promotion_likelihood": "low",
+          "factor_analysis": {
+            "market_emotion": "市场情绪中性，整体缩量",
+            "theme_position": "题材高位分化，龙头已现疲态",
+            "float_size": "流通市值适中，但无弹性支撑",
+            "volume_energy": "量能明显不足，无法支撑突破",
+            "reseal_strength": "昨日未出现回封动作，炸板无后续"
+          }
         }
       ],
       "overall_conclusion": "不适合。",

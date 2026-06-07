@@ -36,7 +36,7 @@ def test_update_state_records_grade_change(tmp_path: Path) -> None:
     fetched = manager.get(wl.watchlist_id)
     assert fetched is not None
     entry = next(e for e in fetched.entries if e.symbol == "002230.SZ")
-    assert entry.last_grade == "A"
+    assert entry.agent_grade == "A"
     assert entry.last_action == "promoted"
     assert any("seal stable" in note for note in entry.notes)
 
@@ -54,7 +54,7 @@ def test_diff_against_prior_snapshot_lists_added_dropped_grade_changes(tmp_path:
 
     assert diff.added_symbols == ["C"]
     assert diff.dropped_symbols == ["B"]
-    assert diff.grade_changes["A"] == {"from": "C", "to": "A"}
+    assert diff.grade_changes["A"] == {"from": "none", "to": "A"}
 
 
 def test_close_watchlist_sets_status(tmp_path: Path) -> None:
@@ -66,6 +66,18 @@ def test_close_watchlist_sets_status(tmp_path: Path) -> None:
     assert closed.status == "closed"
     assert closed.closed_at
     assert any("end of day" in note for note in closed.notes)
+
+
+def test_update_state_accumulates_agent_grade_history(tmp_path: Path) -> None:
+    manager = WatchlistManager(_store(tmp_path))
+    wl = manager.create(owner="user", label="x", symbols=["002230.SZ"])
+
+    manager.update_state(wl.watchlist_id, "002230.SZ", new_grade="B", action="promoted")
+    wl = manager.update_state(wl.watchlist_id, "002230.SZ", new_grade="A", action="promoted")
+
+    entry = next(e for e in wl.entries if e.symbol == "002230.SZ")
+    assert entry.agent_grade == "A"
+    assert entry.agent_grade_history == ["B", "A"]
 
 
 def test_list_active_for_owner(tmp_path: Path) -> None:

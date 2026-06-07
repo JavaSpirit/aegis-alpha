@@ -4,6 +4,8 @@
 
 Aegis Alpha adds AI through Hermes, not by putting an LLM inside the trading signal engine. Hermes reasons over Aegis Alpha MCP outputs, uses project skills, remembers user preferences, and runs scheduled review workflows.
 
+The program measures facts (derived numbers: float cap, turnover, MA5 slope, T-1 volume ratio, previous-high break, theme lifecycle stage); it also reports raw market facts (limit-up count, break-board rate, theme breadth) and fact-derived risk_flags/positive_signals — it does NOT emit a market sentiment label or an action verdict. The AI agent judges market sentiment and trading action from those facts. No buy/sell grade is assigned by the program.
+
 The first project skill is:
 
 ```text
@@ -38,6 +40,32 @@ Use the second-board-radar skill to review today's second-board candidates.
 ```
 
 Hermes MCP setup, the required tool list, and the behavior contract are all defined in [the skill file](../.hermes/skills/second-board-radar/SKILL.md). For the Hermes MCP configuration mechanics, see [HERMES.md](HERMES.md).
+
+## Phase 3 Contract: 5-Factor Walk + Promotion Likelihood
+
+Starting with Phase 3, the second-board-radar skill requires the agent to walk all 5
+factors per candidate — `market_emotion` / `theme_position` / `float_size` /
+`volume_energy` / `reseal_strength` — and output a bucketed `promotion_likelihood`
+(`high` / `medium` / `low`) plus an agent-assigned `grade`. A summary-only response
+that skips the per-candidate factor walk fails the contract.
+
+### Enforcement boundary (be precise — do not overclaim)
+
+`agent_eval.evaluate_agent_replay_response` is the **offline replay and smoke-test
+validator**. It enforces the 5-factor + `promotion_likelihood` contract in unit tests
+(`tests/test_agent_factor_contract.py`) and in offline replay scripts. It does **not**
+run as a live runtime gate that blocks or rejects a Hermes response mid-turn: Hermes
+authors responses guided by `SKILL.md`, and wiring a live-path validator that intercepts
+every turn would be a separate, later-phase feature. As of Phase 3, enforcement is
+offline only.
+
+The late-stage-theme downweight rules (capping grade and `promotion_likelihood` when
+`theme_lifecycle_stage` is `divergence`, `ebb`, or `climax`) are **instructions to the
+agent** written in `SKILL.md`. They are not mechanical validator rules. The offline
+validator checks that the factor keys are **present and non-empty** — it does not verify
+that the agent *weighed* them correctly. Correctness evaluation against ground truth
+(did the agent's `promotion_likelihood` match the real outcome?) is deferred to a future
+backtesting phase.
 
 ## References
 

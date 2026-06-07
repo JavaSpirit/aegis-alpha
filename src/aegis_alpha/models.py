@@ -12,7 +12,6 @@ AgentCorrectionActionPriority = Literal["high", "medium", "low"]
 AgentCorrectionActionStatus = Literal["needs_human_review", "ready_to_apply", "collect_more_evidence"]
 CorrectionActionProposalStatus = Literal["pending", "approved", "rejected", "applied", "superseded"]
 CorrectionActionDecisionType = Literal["approve", "reject", "apply", "supersede", "reopen"]
-MarketAction = Literal["active", "selective", "defensive", "avoid"]
 SignalConfidence = Literal["high", "medium", "low", "placeholder", "unavailable"]
 SignalAuthority = Literal["official_doc", "observed_probe", "internal_inference"]
 FreshnessStatus = Literal["fresh", "stale", "unknown"]
@@ -45,7 +44,7 @@ AlertSeverity = Literal["info", "warning", "critical"]
 AlertStatus = Literal["pending", "acknowledged", "expired"]
 OutcomeAttributionTag = Literal[
     "leader_break_down",
-    "market_gate_turned_avoid",
+    "high_break_board_environment",
     "auction_high_open_too_far",
     "first_seal_too_late",
     "seal_amount_decay",
@@ -89,6 +88,14 @@ IntradayPattern = Literal[
     "normal",
     "unknown",
 ]
+ThemeLifecycleStage = Literal[
+    "launch",      # 启动
+    "fermenting",  # 发酵
+    "climax",      # 高潮
+    "divergence",  # 分歧
+    "ebb",         # 退潮
+    "unknown",
+]
 ContrarianPoolKind = Literal["limit_down", "st"]
 CapitalFlowSliceWindow = Literal[
     "daily",
@@ -128,7 +135,6 @@ class MarketSnapshot(BaseModel):
     timestamp: str
     data_mode: str = "mock"
     provider: str = "mock"
-    sentiment: str
     limit_up_count: int
     break_board_count: int
     break_board_rate: float = Field(ge=0, le=1)
@@ -141,8 +147,6 @@ class MarketSentimentGate(BaseModel):
     timestamp: str
     data_mode: str = "mock"
     provider: str = "mock"
-    action: MarketAction
-    score: float = Field(ge=0, le=100)
     limit_up_count: int
     break_board_rate: float = Field(ge=0, le=1)
     second_board_success_rate: float = Field(ge=0, le=1)
@@ -503,6 +507,7 @@ class SecondBoardCandidate(BaseModel):
     previous_consecutive_boards: int = 0
     previous_height_label: LadderHeight = "unknown"
     theme_role: ThemeLeaderRole = "unknown"
+    theme_lifecycle_stage: ThemeLifecycleStage = "unknown"
     theme_leader_symbol: str = ""
     auction_pattern: AuctionPattern = "unknown"
     five_min_speed_pct: float
@@ -521,6 +526,14 @@ class SecondBoardCandidate(BaseModel):
     ten_min_speed_window: str = "unknown"
     ten_min_speed_timestamp: str = ""
     big_order_net_inflow_ratio: float = Field(ge=-1, le=1)
+    free_float_market_cap_cny: float = 0.0
+    turnover_cny: float = 0.0
+    main_net_inflow_cny: float = 0.0
+    avg_turnover_10d_cny: float = 0.0
+    ma5_slope_degrees: float = 0.0
+    prev_day_volume_shrink_ratio: float = 0.0
+    broke_previous_high: bool = False
+    previous_high_price: float = 0.0
     concept_tags: list[str] = Field(default_factory=list)
     topic_tags: list[str] = Field(default_factory=list)
     break_board_count: int = 0
@@ -532,32 +545,15 @@ class SecondBoardCandidate(BaseModel):
     orderbook_quality_score: float = Field(ge=0, le=100)
     three_year_touch_limit_success_rate: float = Field(ge=0, le=1)
     three_year_sealed_next_day_gap_up_rate: float = Field(ge=0, le=1)
-    estimated_seal_probability: float = Field(ge=0, le=1)
-    grade: CandidateGrade
-    promotion_grade: str = "C"
-    third_board_probability_pct: float = Field(default=0.0, ge=0.0, le=100.0)
-    third_board_promotion_score: float = Field(default=0.0, ge=0.0, le=100.0)
-    promotion_reason: str = ""
-    theme_position_label: str = "unknown"
-    theme_max_height: int = 0
-    theme_multi_board_count: int = 0
-    theme_recent_active_days: int = 0
-    theme_recent_max_member_count: int = 0
-    free_float_market_cap_cny: float = 0.0
-    turnover_cny: float = 0.0
-    main_net_inflow_cny: float = 0.0
     limitup_driver_type: LimitupDriverType = "unknown"
     intraday_pattern: IntradayPattern = "unknown"
     weekly_health_score: float = Field(default=50.0, ge=0.0, le=100.0)
-    grade_reason: str = ""
     data_quality: dict[str, SignalMetadata] = Field(default_factory=dict)
     notes: list[str]
 
 
 class CandidateExplanation(BaseModel):
     symbol: str
-    grade: CandidateGrade
-    grade_reason: str = ""
     observations: list[str]
     risks: list[str]
     trigger_conditions: list[str]
@@ -569,8 +565,8 @@ class CandidateExplanation(BaseModel):
 class WatchlistEntry(BaseModel):
     symbol: str
     added_at: str
-    initial_grade: CandidateGrade = "C"
-    last_grade: CandidateGrade = "C"
+    agent_grade: CandidateGrade | None = None
+    agent_grade_history: list[CandidateGrade] = Field(default_factory=list)
     last_action: WatchlistEntryAction = "added"
     last_action_at: str = ""
     notes: list[str] = Field(default_factory=list)
@@ -618,7 +614,7 @@ class SealTimeline(BaseModel):
 
 class DailyReviewItem(BaseModel):
     symbol: str
-    grade_at_pick: CandidateGrade
+    grade_at_pick: CandidateGrade | None = None
     theme: str = ""
     theme_role: ThemeLeaderRole = "unknown"
     previous_consecutive_boards: int = 0
@@ -713,7 +709,7 @@ class HistoryStats(BaseModel):
 class HistoricalCandidateSnapshot(BaseModel):
     symbol: str
     trading_day: str
-    grade_at_pick: CandidateGrade
+    grade_at_pick: CandidateGrade | None = None
     grade_reason: str = ""
     theme: str = ""
     theme_role: ThemeLeaderRole = "unknown"
@@ -725,8 +721,8 @@ class HistoricalCandidateSnapshot(BaseModel):
 class BacktestCandidateRow(BaseModel):
     symbol: str
     trading_day: str
-    original_grade: CandidateGrade
-    new_grade: CandidateGrade
+    original_grade: CandidateGrade | None = None
+    new_grade: CandidateGrade | None = None
     sealed_second_board: bool | None = None
     next_day_open_pct: float | None = None
 
@@ -860,7 +856,7 @@ class SimilarSetupResult(BaseModel):
     match_symbol: str
     match_trading_day: str
     similarity: float = Field(default=0.0, ge=0.0, le=1.0)
-    match_grade_at_pick: str = "C"
+    match_grade_at_pick: CandidateGrade | None = None
     match_outcome_summary: str = ""
     feature_diffs: dict[str, float] = Field(default_factory=dict)
     notes: list[str] = Field(default_factory=list)

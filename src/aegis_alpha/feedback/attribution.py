@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from aegis_alpha.clock import now_iso
 from aegis_alpha.logging_setup import get_logger
 from aegis_alpha.models import (
-    MarketAction,
     OutcomeAttribution,
     OutcomeAttributionTag,
     ThemeLeaderRole,
@@ -27,7 +26,7 @@ class AttributionInputs:
     theme_role: ThemeLeaderRole
     theme_leader_symbol: str
     theme_leader_final_status: str  # "sealed" / "broken" / "reopened" / "unknown"
-    market_action: MarketAction
+    market_break_board_rate: float
     auction_change_pct: float
     first_limit_up_time: str
     seal_decay_pct: float
@@ -37,6 +36,7 @@ class AttributionInputs:
 _HIGH_OPEN_THRESHOLD = 3.0  # 竞价高开 > 3% 视为风险
 _LATE_SEAL_CUTOFF = "10:30:00"
 _SEAL_DECAY_THRESHOLD = 30.0
+_HIGH_BREAK_BOARD_RATE = 0.45  # 炸板率 >= 45% 视为高风险市场环境; aligned with jvquant adapter's "break-board rate is high" risk-flag threshold.
 
 
 def _attribution_id(symbol: str, trading_day: str) -> str:
@@ -65,10 +65,14 @@ def attribute_outcome(inputs: AttributionInputs) -> OutcomeAttribution:
 
     primary: OutcomeAttributionTag = "no_clear_attribution"
 
-    # Rule 1: market_gate_turned_avoid 优先级最高（结构性问题）
-    if inputs.market_action == "avoid":
-        primary = "market_gate_turned_avoid"
-        evidence.append(f"market_action={inputs.market_action} when candidate failed to seal.")
+    # NOTE: this is a single-fact rule (break_board_rate alone). It intentionally REPLACES the old composite program "avoid" label (which also folded in limit_up_count + theme breadth) — the program now measures one fact; the agent judges the rest.
+    # Rule 1: high_break_board_environment 优先级最高（结构性的市场环境问题）
+    if inputs.market_break_board_rate >= _HIGH_BREAK_BOARD_RATE:
+        primary = "high_break_board_environment"
+        evidence.append(
+            f"market_break_board_rate={inputs.market_break_board_rate:.2f} "
+            f">= {_HIGH_BREAK_BOARD_RATE:.2f} when candidate failed to seal."
+        )
 
     # Rule 2: leader_break_down——follower 且龙头炸板
     elif inputs.theme_role in {"follower", "co_leader"} and inputs.theme_leader_final_status == "broken":
@@ -176,16 +180,16 @@ def attribute_from_stored_data(
         )
         leader_status = "unknown"
 
-    market_action = "selective"
+    market_break_board_rate = 0.0
     try:
         gate = adapter.get_market_sentiment_gate()
-        market_action = gate.action
+        market_break_board_rate = gate.break_board_rate
     except Exception as exc:
         _LOGGER.warning(
             "event=attribute_sentiment_gate_failed symbol=%s trading_day=%s error=%s",
             symbol, trading_day, type(exc).__name__,
         )
-        market_action = "selective"
+        market_break_board_rate = 0.0
 
     inputs = AttributionInputs(
         symbol=symbol,
@@ -195,7 +199,7 @@ def attribute_from_stored_data(
         theme_role=snap.theme_role,
         theme_leader_symbol=leader_symbol,
         theme_leader_final_status=leader_status,
-        market_action=market_action,
+        market_break_board_rate=market_break_board_rate,
         auction_change_pct=_safe_float(raw.get("auction_change_pct")),
         first_limit_up_time=str(raw.get("first_limit_up_time") or "unknown"),
         seal_decay_pct=_safe_float(raw.get("seal_decay_pct")),

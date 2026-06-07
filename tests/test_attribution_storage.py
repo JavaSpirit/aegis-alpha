@@ -46,7 +46,7 @@ def test_list_attributions_by_tag(tmp_path: Path) -> None:
             attribution_id="2",
             symbol="B",
             trading_day="2026-05-31",
-            primary_tag="market_gate_turned_avoid",
+            primary_tag="high_break_board_environment",
             created_at="2026-05-31T15:30:00+08:00",
         )
     )
@@ -136,7 +136,7 @@ def test_save_attribution_upsert_preserves_created_at(tmp_path: Path) -> None:
             attribution_id="abc",
             symbol="X",
             trading_day="2026-05-31",
-            primary_tag="market_gate_turned_avoid",
+            primary_tag="high_break_board_environment",
             created_at="2026-05-31T15:30:00+08:00",
         )
     )

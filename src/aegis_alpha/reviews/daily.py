@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from collections import Counter
-
 from aegis_alpha.clock import now_iso
 from aegis_alpha.models import DailyReview, DailyReviewItem
 from aegis_alpha.protocols import MarketDataAdapter
@@ -16,7 +14,6 @@ def generate_daily_review(
 ) -> DailyReview:
     candidates = adapter.get_second_board_candidates()
     items: list[DailyReviewItem] = []
-    grade_counter: Counter[str] = Counter()
     sealed_count = 0
     for candidate in candidates:
         outcome = store.get_review_outcome(candidate.symbol, trading_day)
@@ -28,13 +25,11 @@ def generate_daily_review(
             sealed = None
         if sealed:
             sealed_count += 1
-        grade_counter[candidate.grade] += 1
         touched_limit_up = outcome.touched_limit_up if (outcome and outcome.touched_limit_up is not None) else None
         next_day_open_pct = outcome.next_day_open_pct if (outcome and outcome.touched_limit_up is not None) else None
         items.append(
             DailyReviewItem(
                 symbol=candidate.symbol,
-                grade_at_pick=candidate.grade,
                 theme=candidate.theme,
                 theme_role=candidate.theme_role,
                 previous_consecutive_boards=candidate.previous_consecutive_boards,
@@ -47,7 +42,7 @@ def generate_daily_review(
         trading_day=trading_day,
         generated_at=now_iso(),
         candidate_count=len(items),
-        grade_distribution=dict(grade_counter),
+        grade_distribution={},
         sealed_count=sealed_count,
         items=items,
         notes=[

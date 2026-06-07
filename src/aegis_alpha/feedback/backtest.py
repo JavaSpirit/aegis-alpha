@@ -62,6 +62,7 @@ def backtest_grading_rule(inputs: BacktestInputs) -> BacktestRun:
     Pure function — does not persist the run. Persistence is handled by
     storage.save_backtest_run in Task 13.
     """
+    raise NotImplementedError("grade-remap backtest re-homed to Phase 7 ground-truth backtest")
     started_at = now_iso()
     snapshots = inputs.store.list_historical_snapshots_between(
         start_day=inputs.start_day,

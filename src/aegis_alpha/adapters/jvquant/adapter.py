@@ -11,7 +11,6 @@ from aegis_alpha.adapters.jvquant import parsers as P
 from aegis_alpha.adapters.jvquant.parsers import float_or_zero as _float_or_zero
 from aegis_alpha.adapters.jvquant.parsers import int_or_zero as _int_or_zero
 from aegis_alpha.adapters.jvquant.queries import JvQuantQueryClient
-from aegis_alpha.adapters.jvquant.scoring import action_from_score, market_score, sentiment_from_score
 from aegis_alpha.adapters.jvquant.candidates import build_one_candidate
 from aegis_alpha.clock import SH_TZ, now_iso as _now
 from aegis_alpha.models import (
@@ -45,9 +44,9 @@ from aegis_alpha.models import (
     WeeklyPosition,
 )
 from aegis_alpha.events import EventDetector, freshness_status, load_event_scoring_config
+from aegis_alpha.measurements.theme_lifecycle import STAGE_LABELS_CN
 from aegis_alpha.extensions.suspended_stocks import is_symbol_suspended
 from aegis_alpha.extensions.weekly_position import compute_weekly_health_score
-from aegis_alpha.grading import CandidateGradingConfig, load_candidate_grading_config
 from aegis_alpha.storage import AegisAlphaStore
 from aegis_alpha.adapters.jvquant_websocket import JvQuantRealtimeClient
 from aegis_alpha.symbols import daily_limit_pct, normalize_symbol
@@ -66,69 +65,6 @@ def _day_query_prefix(trading_day: str) -> str:
     day = (trading_day or "").strip()
     today = datetime.now(SH_TZ).date().isoformat()
     return "今日" if not day or day == today else day
-
-
-def _row_consecutive_boards(row: dict[str, Any]) -> int:
-    return _int_or_zero(P._field_value(row, "连板", "连板数", "连板(天)"))
-
-
-def _row_is_limit_up(row: dict[str, Any]) -> bool:
-    symbol = P._symbol_from_row(row)
-    status = str(P._field_value(row, "是否涨停", "涨停") or "").strip()
-    if "涨停" in status and not any(token in status for token in ("不", "未", "否", "炸")):
-        return True
-    change_pct = _float_or_zero(P._field_value(row, "涨跌幅"))
-    return bool(symbol) and change_pct >= daily_limit_pct(symbol) - 0.2
-
-
-def _is_strict_second_board_row(row: dict[str, Any]) -> bool:
-    return _row_consecutive_boards(row) == 2 and _row_is_limit_up(row)
-
-
-def _theme_board_profiles(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    profiles: dict[str, dict[str, Any]] = {}
-    for row in rows:
-        theme = P._theme_from_row(row)
-        height = _row_consecutive_boards(row)
-        if not theme or theme == "unknown" or height <= 0:
-            continue
-        profile = profiles.setdefault(theme, {"max_height": 0, "multi_board_count": 0})
-        profile["max_height"] = max(profile["max_height"], height)
-        if height >= 2:
-            profile["multi_board_count"] += 1
-    return profiles
-
-
-def _theme_lifecycle_profiles(leaders: list[ThemeLeader], *, current_day: str) -> dict[str, dict[str, int | str]]:
-    profiles: dict[str, dict[str, int | str]] = {}
-    days_by_theme: dict[str, set[str]] = {}
-    for leader in leaders:
-        if not leader.theme:
-            continue
-        profile = profiles.setdefault(
-            leader.theme,
-            {
-                "active_days": 0,
-                "max_member_count": 0,
-                "stage": "unknown",
-            },
-        )
-        days = days_by_theme.setdefault(leader.theme, set())
-        days.add(leader.trading_day)
-        profile["active_days"] = len(days)
-        profile["max_member_count"] = max(int(profile.get("max_member_count", 0)), int(leader.member_count or 0))
-
-    for profile in profiles.values():
-        active_days = int(profile.get("active_days", 0))
-        max_member_count = int(profile.get("max_member_count", 0))
-        if active_days >= 3 or max_member_count >= 7:
-            stage = "extended"
-        elif active_days >= 2 or max_member_count >= 4:
-            stage = "maturing"
-        else:
-            stage = "unknown"
-        profile["stage"] = stage
-    return profiles
 
 
 class JvQuantMarketDataAdapter:
@@ -152,7 +88,6 @@ class JvQuantMarketDataAdapter:
         )
         self._query_cache = self._query_client.cache
         self._query_limiter = self._query_client.limiter
-        self.grading_config: CandidateGradingConfig = load_candidate_grading_config()
 
     @classmethod
     def from_env(cls) -> "JvQuantMarketDataAdapter":
@@ -174,8 +109,6 @@ class JvQuantMarketDataAdapter:
         denominator = limit_up_count + break_board_count
         break_board_rate = round(break_board_count / denominator, 4) if denominator else 0.0
         themes = P._leading_themes(limitup_pool + break_pool)
-        score = market_score(limit_up_count, break_board_rate, len(themes), self.grading_config)
-        sentiment = sentiment_from_score(score, self.grading_config)
 
         total_payload = self._query(
             "主板,非ST,股票代码,股票简称,涨跌幅,价格,成交额,行业",
@@ -189,7 +122,6 @@ class JvQuantMarketDataAdapter:
             timestamp=_now(),
             data_mode="live_provider",
             provider="jvQuant",
-            sentiment=sentiment,
             limit_up_count=limit_up_count,
             break_board_count=break_board_count,
             break_board_rate=break_board_rate,
@@ -203,13 +135,6 @@ class JvQuantMarketDataAdapter:
 
     def get_market_sentiment_gate(self) -> MarketSentimentGate:
         snapshot = self.get_market_snapshot()
-        score = market_score(
-            snapshot.limit_up_count,
-            snapshot.break_board_rate,
-            len(snapshot.leading_themes),
-            self.grading_config,
-        )
-        action = action_from_score(score, snapshot.break_board_rate, self.grading_config)
         risk_flags: list[str] = []
         positive_signals: list[str] = []
 
@@ -242,8 +167,6 @@ class JvQuantMarketDataAdapter:
             timestamp=snapshot.timestamp,
             data_mode="live_provider",
             provider="jvQuant",
-            action=action,
-            score=score,
             limit_up_count=snapshot.limit_up_count,
             break_board_rate=snapshot.break_board_rate,
             second_board_success_rate=0.0,
@@ -497,23 +420,23 @@ class JvQuantMarketDataAdapter:
 
     def get_second_board_candidates(self):
         payload = self._query(
-            "今日涨停,连板数大于1,非ST,股票代码,股票简称,涨跌幅,连板数,5分钟涨幅,资金流向,主力资金,价格,成交额,流通市值,行业",
+            "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,5分钟涨幅,资金流向,主力资金,价格,成交额,行业",
             sort_key="涨跌幅",
         )
         seal_payload = self._query(
-            "今日涨停,连板数大于1,非ST,股票代码,股票简称,涨跌幅,连板数,首次涨停时间,封单量,封单金额,涨停封成比,价格,成交额,流通市值,行业",
+            "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,首次涨停时间,封单量,封单金额,涨停封成比,价格,成交额,行业",
             sort_key="涨跌幅",
         )
         speed_1m_payload = self._query(
-            "今日涨停,连板数大于1,非ST,股票代码,股票简称,涨跌幅,连板数,1分钟涨幅,价格,成交额,行业",
+            "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,1分钟涨幅,价格,成交额,行业",
             sort_key="涨跌幅",
         )
         speed_3m_payload = self._query(
-            "今日涨停,连板数大于1,非ST,股票代码,股票简称,涨跌幅,连板数,3分钟涨幅,价格,成交额,行业",
+            "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,3分钟涨幅,价格,成交额,行业",
             sort_key="涨跌幅",
         )
         speed_10m_payload = self._query(
-            "今日涨停,连板数大于1,非ST,股票代码,股票简称,涨跌幅,连板数,10分钟涨幅,价格,成交额,行业",
+            "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,10分钟涨幅,价格,成交额,行业",
             sort_key="涨跌幅",
         )
         auction_payload = self._query(
@@ -521,20 +444,18 @@ class JvQuantMarketDataAdapter:
             sort_key="竞价涨幅",
         )
         theme_payload = self._query(
-            "今日涨停,连板数大于1,非ST,股票代码,股票简称,涨跌幅,连板数,所属概念,概念,题材,行业,价格,成交额",
+            "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,所属概念,概念,题材,行业,价格,成交额",
             sort_key="涨跌幅",
         )
         break_reseal_payload = self._query(
-            "今日涨停,连板数大于1,非ST,股票代码,股票简称,涨跌幅,连板数,炸板次数,首次炸板时间,回封次数,最后封板时间,价格,成交额,行业",
+            "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,炸板次数,首次炸板时间,回封次数,最后封板时间,价格,成交额,行业",
             sort_key="涨跌幅",
         )
         max_seal_payload = self._query(
-            "今日涨停,连板数大于1,非ST,股票代码,股票简称,涨跌幅,连板数,最大封单金额,最大封单量,价格,成交额,行业",
+            "昨日涨停,今日涨幅大于5,非ST,股票代码,股票简称,涨跌幅,最大封单金额,最大封单量,价格,成交额,行业",
             sort_key="涨跌幅",
         )
-        raw_rows = P._query_rows(payload)
-        theme_board_profiles = _theme_board_profiles(raw_rows)
-        rows = [row for row in raw_rows if _is_strict_second_board_row(row)]
+        rows = P._query_rows(payload)
         seal_rows = P._rows_by_symbol(P._query_rows(seal_payload))
         speed_1m_rows = P._rows_by_symbol(P._query_rows(speed_1m_payload))
         speed_3m_rows = P._rows_by_symbol(P._query_rows(speed_3m_payload))
@@ -554,8 +475,6 @@ class JvQuantMarketDataAdapter:
         }
         minute_replay_limit = _int_or_zero(os.environ.get("AEGIS_ALPHA_SECOND_BOARD_MINUTE_REPLAY_LIMIT")) or 12
         theme_counts = Counter(P._theme_from_row(row) for row in rows)
-        gate = self.get_market_sentiment_gate()
-
         trading_day = query_timestamp[:10]
         try:
             _suspended_today = self.get_suspended_stocks(trading_day)
@@ -566,26 +485,12 @@ class JvQuantMarketDataAdapter:
             row_symbol = P._symbol_from_row(row)
             if not row_symbol:
                 continue
-            ladder_entries[row_symbol] = LadderEntry(
-                symbol=row_symbol,
-                trading_day=trading_day,
-                consecutive_boards=2,
-                height_label=classify_height(2),
-                last_limit_up_day=trading_day,
-                notes=["Strict second-board pool: jvQuant row had 连板数=2 and current limit-up evidence."],
-            )
+            ladder_entries[row_symbol] = self.get_limit_up_ladder(row_symbol, trading_day)
 
         theme_leaders_list = self.get_theme_leaders(trading_day=trading_day)
         theme_leaders_by_theme: dict[str, ThemeLeader] = {
             leader.theme: leader for leader in theme_leaders_list
         }
-        recent_theme_leaders = AegisAlphaStore().latest_theme_leaders(limit=100)
-        lifecycle_profiles = _theme_lifecycle_profiles(recent_theme_leaders, current_day=trading_day)
-        for theme, lifecycle in lifecycle_profiles.items():
-            profile = theme_board_profiles.setdefault(theme, {"max_height": 0, "multi_board_count": 0})
-            profile["lifecycle_stage"] = lifecycle.get("stage", "unknown")
-            profile["recent_active_days"] = lifecycle.get("active_days", 0)
-            profile["recent_max_member_count"] = lifecycle.get("max_member_count", 0)
 
         history_stats_by_symbol: dict[str, HistoryStats] = {}
         for row in rows[:max_candidates]:
@@ -619,17 +524,14 @@ class JvQuantMarketDataAdapter:
                 max_seal_rows=max_seal_rows,
                 query_timestamp=query_timestamp,
                 theme_counts=theme_counts,
-                gate_action=gate.action,
                 orderbook_limit=orderbook_limit,
                 minute_replay_enabled=minute_replay_enabled,
                 minute_replay_limit=minute_replay_limit,
-                grading_config=self.grading_config,
                 get_minute_replay=self.get_stock_minute_replay_snapshot,
                 get_orderbook=self.get_stock_orderbook_snapshot,
                 ladder_entries=ladder_entries,
                 theme_leaders_by_theme=theme_leaders_by_theme,
                 history_stats_by_symbol=history_stats_by_symbol,
-                theme_board_profiles=theme_board_profiles,
                 weekly_health_score=weekly_score,
             )
             candidates.append(candidate)
@@ -646,19 +548,15 @@ class JvQuantMarketDataAdapter:
         if candidate is None:
             return CandidateExplanation(
                 symbol=symbol,
-                grade="REJECT",
-                grade_reason=(
-                    "评级为 REJECT，因为该股票不在当前 jvQuant 二板候选池中；"
-                    "当前候选池只覆盖今日仍涨停、连板数严格等于 2 的非 ST 股票。"
-                ),
                 observations=[
                     "Symbol is not in the current jvQuant live-provider second-board candidate pool.",
+                    "The current candidate pool only covers yesterday limit-up stocks with today's gain above 5% (non-ST).",
                 ],
                 risks=[
-                    "The current candidate pool only covers non-ST stocks that are still limit-up with consecutive_boards=2.",
+                    "Symbols outside the previous-day limit-up pool are silently absent from scoring output, so this is not a verdict on the symbol itself.",
                 ],
                 trigger_conditions=[
-                    "Add the symbol to the strict second-board pool only after current limit-up and consecutive_boards=2 are verified.",
+                    "Add the symbol to the valid previous-day limit-up and current strength pool before scoring.",
                 ],
                 avoid_conditions=[
                     "Avoid treating arbitrary symbols as second-board candidates.",
@@ -669,8 +567,6 @@ class JvQuantMarketDataAdapter:
 
         return CandidateExplanation(
             symbol=candidate.symbol,
-            grade=candidate.grade,
-            grade_reason=candidate.grade_reason,
             observations=[
                 f"Current change is {candidate.current_change_pct:.2f}%.",
                 f"Auction change is {candidate.auction_change_pct:.2f}%; auction turnover is {candidate.auction_turnover_cny:.0f} CNY.",
@@ -690,7 +586,14 @@ class JvQuantMarketDataAdapter:
                 f"Data quality keys: {', '.join(candidate.data_quality.keys())}.",
                 f"Theme is {candidate.theme}; same-theme candidate count is {candidate.same_theme_rising_count}.",
                 f"Orderbook quality score is {candidate.orderbook_quality_score:.2f}.",
-                f"Estimated seal probability is {candidate.estimated_seal_probability:.0%} from current coarse factors.",
+                (
+                    f"流通市值约 {candidate.free_float_market_cap_cny / 1e8:.1f} 亿元，"
+                    f"近10日均成交额约 {candidate.avg_turnover_10d_cny / 1e8:.2f} 亿元，"
+                    f"5日均线斜率 {candidate.ma5_slope_degrees:.1f}°，"
+                    f"T-1量比 {candidate.prev_day_volume_shrink_ratio:.2f}，"
+                    f"{'已' if candidate.broke_previous_high else '未'}突破前期高点 {candidate.previous_high_price:.2f}。"
+                ),
+                f"题材阶段（测量值）：{STAGE_LABELS_CN.get(candidate.theme_lifecycle_stage, candidate.theme_lifecycle_stage)}。",
             ],
             risks=[
                 "Candidate pool is live-provider jvQuant; capital-flow fields are semantic-query values, not tick-by-tick order classification.",
@@ -700,7 +603,7 @@ class JvQuantMarketDataAdapter:
                 "True own-order queue position and cancellation rules require broker order/trade callbacks and are not implemented.",
             ],
             trigger_conditions=[
-                "Market sentiment gate should improve from defensive to selective or active for aggressive board-chasing.",
+                "Market-wide break-board rate should stay controlled (low) before aggressive board-chasing.",
                 "First seal time should be early and seal amount should remain strong versus turnover.",
                 "Orderbook quality should remain strong during active trading hours.",
                 "Same-theme candidates should expand or the theme leader should remain sealed.",
@@ -897,8 +800,8 @@ class JvQuantMarketDataAdapter:
         return P.parse_jvquant_dragon_tiger_payload(payload, symbol=symbol, trading_day=day)
 
     def get_active_seats_today(self, trading_day: str) -> list[dict]:
-        # Raw jvQuant 龙虎榜 records are wired in get_dragon_tiger, but the live
-        # probe did not expose stable individual营业部 names for alias aggregation.
+        # P6/P7 starter: jvQuant 龙虎榜端点尚未对齐契约，返回带 placeholder 信号的
+        # 单元素列表，让 Hermes 能区分「真没数据」和「端点未接入」。
         return [
             {
                 "hot_money_alias": "",
@@ -907,8 +810,8 @@ class JvQuantMarketDataAdapter:
                 "symbols": [],
                 "data_mode": "placeholder",
                 "error": (
-                    "placeholder: jvQuant raw dragon-tiger records are available, "
-                    "but active-seat alias aggregation is not probe-confirmed."
+                    "placeholder: jvQuant active-seats endpoint not wired; "
+                    "agents should not infer hot-money activity from this entry."
                 ),
             }
         ]
@@ -967,13 +870,8 @@ class JvQuantMarketDataAdapter:
         return P.parse_new_stock_candidates_payload(payload, today=today)
 
     def get_suspended_stocks(self, trading_day: str = "") -> list[SuspendedStock]:
-        day = trading_day or datetime.now(SH_TZ).date().isoformat()
-        prefix = _day_query_prefix(day)
-        payload = self._query(
-            f"{prefix}停牌,股票代码,股票简称,停牌原因,停牌起始日,复牌日,行业",
-            sort_key="",
-        )
-        return P.parse_suspended_stocks_payload(payload, trading_day=day)
+        # P6 starter: jvQuant 停牌字段映射尚未对齐。
+        return []
 
     def _candidate_note_float(self, candidate: SecondBoardCandidate, key: str) -> float:
         prefix = f"{key}="

@@ -142,7 +142,7 @@ def test_attribute_handles_malformed_payload_json(tmp_path: Path) -> None:
         trading_day="2026-05-31",
     )
 
-    # Malformed JSON degrades gracefully: defaults applied, mock gate is selective,
+    # Malformed JSON degrades gracefully: defaults applied, mock gate break_board_rate is low,
     # leader_role is leader so leader_break_down can't fire, no other signal triggers.
     assert attribution is not None
     assert attribution.primary_tag == "no_clear_attribution"
@@ -185,8 +185,9 @@ def test_attribute_handles_adapter_exception_with_fallback(tmp_path: Path) -> No
         trading_day="2026-05-31",
     )
 
-    # Both adapter calls fail, fallback to leader_status="unknown" + market_action="selective".
+    # Both adapter calls fail, fallback to leader_status="unknown" + market_break_board_rate=0.0.
     # follower with leader_status="unknown" doesn't trigger leader_break_down (needs "broken"),
+    # break_board_rate=0.0 < 0.45 so Rule 1 doesn't fire either,
     # auction is below threshold, no seal decay, on-time first seal — falls through to no_clear.
     assert attribution is not None
     assert attribution.primary_tag == "no_clear_attribution"

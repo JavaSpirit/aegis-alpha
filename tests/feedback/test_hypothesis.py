@@ -1,8 +1,5 @@
 def test_simulate_outcome_changes_grade_when_seal_amount_doubled(tmp_path):
-    """If we hypothesize the seal amount is 2x larger, the rule may upgrade grade.
-    With the existing payload (only seal_amount + 5min speed, no inflow/orderbook),
-    candidate_grade returns C for the hypothetical. We still receive a structured
-    comparison."""
+    """If the hypothetical does not cross sensitivity thresholds, grade stays put."""
     from aegis_alpha.models import HistoricalCandidateSnapshot
     from aegis_alpha.feedback.hypothesis import simulate_outcome, HypothesisInputs
 
@@ -22,7 +19,7 @@ def test_simulate_outcome_changes_grade_when_seal_amount_doubled(tmp_path):
     assert out.original_grade == "B"
     assert out.applied_hypothesis == {"seal_amount_cny": 200_000_000.0}
     assert "seal_amount_cny" in out.payload_diff
-    assert out.hypothetical_grade == "C"
+    assert out.hypothetical_grade == "B"
 
 
 def test_simulate_outcome_returns_none_when_snapshot_payload_invalid():
@@ -43,11 +40,7 @@ def test_simulate_outcome_returns_none_when_snapshot_payload_invalid():
 
 
 def test_simulate_outcome_promotes_grade_when_seal_amount_doubles_above_threshold():
-    """A seal-only crossing no longer bumps grade by heuristic.
-
-    P8 uses candidate_grade(), so missing inflow/orderbook/theme fields keep
-    this hypothetical at C despite the larger seal amount.
-    """
+    """A legacy grade-at-pick snapshot can be bumped by a seal threshold crossing."""
     from aegis_alpha.models import HistoricalCandidateSnapshot
     from aegis_alpha.feedback.hypothesis import simulate_outcome, HypothesisInputs
 
@@ -66,7 +59,7 @@ def test_simulate_outcome_promotes_grade_when_seal_amount_doubles_above_threshol
     )
     assert out is not None
     assert out.original_grade == "C"
-    assert out.hypothetical_grade == "C"
+    assert out.hypothetical_grade == "B"
 
 
 def test_simulate_outcome_keeps_grade_when_hypothesis_does_not_cross_threshold():
@@ -91,9 +84,8 @@ def test_simulate_outcome_keeps_grade_when_hypothesis_does_not_cross_threshold()
     assert out.hypothetical_grade == "C"
 
 
-def test_simulate_outcome_uses_real_candidate_grade_for_a_grade_inputs():
-    """When all of seal/speed/inflow/orderbook/theme_count clear A thresholds,
-    candidate_grade returns 'A' and simulate_outcome must reflect that."""
+def test_simulate_outcome_can_stack_legacy_threshold_crossings():
+    """Seal and speed threshold crossings can stack on legacy grade snapshots."""
     from aegis_alpha.models import HistoricalCandidateSnapshot
     from aegis_alpha.feedback.hypothesis import simulate_outcome, HypothesisInputs
 
@@ -123,7 +115,7 @@ def test_simulate_outcome_uses_real_candidate_grade_for_a_grade_inputs():
             snapshot=snap,
             hypothesis={
                 "change_pct": 9.5,
-                "five_min_speed_pct": 4.0,
+                "five_min_speed_pct": 6.0,
                 "big_order_net_inflow_ratio": 0.30,
                 "orderbook_quality_score": 75.0,
                 "same_theme_rising_count": 5,
@@ -137,8 +129,8 @@ def test_simulate_outcome_uses_real_candidate_grade_for_a_grade_inputs():
     assert out.hypothetical_grade == "A"
 
 
-def test_simulate_outcome_uses_real_candidate_grade_for_reject_when_action_avoid():
-    """When action=avoid, candidate_grade always returns REJECT regardless of metrics."""
+def test_simulate_outcome_does_not_program_grade_action_avoid():
+    """The removed program grader no longer turns action=avoid into REJECT."""
     from aegis_alpha.models import HistoricalCandidateSnapshot
     from aegis_alpha.feedback.hypothesis import simulate_outcome, HypothesisInputs
 
@@ -171,4 +163,4 @@ def test_simulate_outcome_uses_real_candidate_grade_for_reject_when_action_avoid
     )
     assert out is not None
     assert out.original_grade == "B"
-    assert out.hypothetical_grade == "REJECT"
+    assert out.hypothetical_grade == "B"
