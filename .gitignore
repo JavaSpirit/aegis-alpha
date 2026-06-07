@@ -27,3 +27,8 @@ logs/
 
 # agent worktree runtime artifacts
 .claude/worktrees/
+
+# coverage artifacts
+.coverage
+.coverage.*
+htmlcov/
