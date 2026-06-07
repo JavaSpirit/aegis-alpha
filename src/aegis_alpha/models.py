@@ -12,7 +12,6 @@ AgentCorrectionActionPriority = Literal["high", "medium", "low"]
 AgentCorrectionActionStatus = Literal["needs_human_review", "ready_to_apply", "collect_more_evidence"]
 CorrectionActionProposalStatus = Literal["pending", "approved", "rejected", "applied", "superseded"]
 CorrectionActionDecisionType = Literal["approve", "reject", "apply", "supersede", "reopen"]
-MarketAction = Literal["active", "selective", "defensive", "avoid"]
 SignalConfidence = Literal["high", "medium", "low", "placeholder", "unavailable"]
 SignalAuthority = Literal["official_doc", "observed_probe", "internal_inference"]
 FreshnessStatus = Literal["fresh", "stale", "unknown"]
@@ -45,7 +44,7 @@ AlertSeverity = Literal["info", "warning", "critical"]
 AlertStatus = Literal["pending", "acknowledged", "expired"]
 OutcomeAttributionTag = Literal[
     "leader_break_down",
-    "market_gate_turned_avoid",
+    "high_break_board_environment",
     "auction_high_open_too_far",
     "first_seal_too_late",
     "seal_amount_decay",

@@ -15,7 +15,7 @@ def test_leader_break_down_when_theme_role_follower_and_leader_broke() -> None:
         theme_role="follower",
         theme_leader_symbol="LDR",
         theme_leader_final_status="broken",
-        market_action="selective",
+        market_break_board_rate=0.2,
         auction_change_pct=2.0,
         first_limit_up_time="09:50:00",
         seal_decay_pct=0.0,
@@ -28,7 +28,7 @@ def test_leader_break_down_when_theme_role_follower_and_leader_broke() -> None:
     assert any("LDR" in line for line in attribution.evidence)
 
 
-def test_market_gate_avoid_dominates_other_signals() -> None:
+def test_high_break_board_environment_dominates_other_signals() -> None:
     inputs = AttributionInputs(
         symbol="X",
         trading_day="2026-05-31",
@@ -37,7 +37,7 @@ def test_market_gate_avoid_dominates_other_signals() -> None:
         theme_role="leader",
         theme_leader_symbol="X",
         theme_leader_final_status="sealed",
-        market_action="avoid",
+        market_break_board_rate=0.5,
         auction_change_pct=1.0,
         first_limit_up_time="09:30:00",
         seal_decay_pct=0.0,
@@ -46,7 +46,7 @@ def test_market_gate_avoid_dominates_other_signals() -> None:
 
     attribution = attribute_outcome(inputs)
 
-    assert attribution.primary_tag == "market_gate_turned_avoid"
+    assert attribution.primary_tag == "high_break_board_environment"
 
 
 def test_auction_high_open_too_far_threshold() -> None:
@@ -58,7 +58,7 @@ def test_auction_high_open_too_far_threshold() -> None:
         theme_role="leader",
         theme_leader_symbol="Y",
         theme_leader_final_status="broken",
-        market_action="selective",
+        market_break_board_rate=0.2,
         auction_change_pct=4.5,
         first_limit_up_time="10:00:00",
         seal_decay_pct=0.0,
@@ -81,7 +81,7 @@ def test_no_clear_attribution_when_sealed() -> None:
         theme_role="leader",
         theme_leader_symbol="Z",
         theme_leader_final_status="sealed",
-        market_action="active",
+        market_break_board_rate=0.2,
         auction_change_pct=2.0,
         first_limit_up_time="09:35:00",
         seal_decay_pct=0.0,
@@ -102,7 +102,7 @@ def test_first_seal_too_late_when_after_10_30() -> None:
         theme_role="leader",
         theme_leader_symbol="W",
         theme_leader_final_status="reopened",
-        market_action="selective",
+        market_break_board_rate=0.2,
         auction_change_pct=1.5,
         first_limit_up_time="13:45:00",
         seal_decay_pct=0.0,
@@ -123,7 +123,7 @@ def test_seal_amount_decay_fires_when_above_threshold() -> None:
         theme_role="leader",
         theme_leader_symbol="S",
         theme_leader_final_status="sealed",
-        market_action="selective",
+        market_break_board_rate=0.2,
         auction_change_pct=1.0,
         first_limit_up_time="09:30:00",
         seal_decay_pct=35.0,
@@ -145,7 +145,7 @@ def test_no_clear_attribution_when_no_signal_matches() -> None:
         theme_role="leader",
         theme_leader_symbol="N",
         theme_leader_final_status="sealed",
-        market_action="selective",
+        market_break_board_rate=0.2,
         auction_change_pct=0.5,
         first_limit_up_time="09:20:00",
         seal_decay_pct=0.0,
@@ -169,7 +169,7 @@ def test_secondary_tags_collected_alongside_primary() -> None:
         theme_role="follower",
         theme_leader_symbol="LDR",
         theme_leader_final_status="broken",
-        market_action="selective",
+        market_break_board_rate=0.2,
         auction_change_pct=4.5,
         first_limit_up_time="09:30:00",
         seal_decay_pct=0.0,

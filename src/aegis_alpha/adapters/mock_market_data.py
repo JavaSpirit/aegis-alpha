@@ -798,7 +798,7 @@ class MockMarketDataAdapter:
                 "Real board-chasing requires queue position, sell pressure, and cancel rules.",
             ],
             trigger_conditions=[
-                "Market sentiment gate must be selective or active.",
+                "Market-wide break-board rate should stay controlled (low) before aggressive board-chasing.",
                 "Same-theme risers should expand during the same observation window.",
                 "Sell-side limit-up ask orders should be consumed with sustained big-order inflow.",
             ],

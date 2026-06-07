@@ -602,7 +602,7 @@ class JvQuantMarketDataAdapter:
                 "True own-order queue position and cancellation rules require broker order/trade callbacks and are not implemented.",
             ],
             trigger_conditions=[
-                "Market sentiment gate should improve from defensive to selective or active for aggressive board-chasing.",
+                "Market-wide break-board rate should stay controlled (low) before aggressive board-chasing.",
                 "First seal time should be early and seal amount should remain strong versus turnover.",
                 "Orderbook quality should remain strong during active trading hours.",
                 "Same-theme candidates should expand or the theme leader should remain sealed.",
