@@ -296,7 +296,7 @@ def test_jvquant_market_gate_from_semantic_query() -> None:
     assert snapshot.break_board_rate == 0.3333
     assert snapshot.leading_themes
     assert gate.data_mode == "live_provider"
-    assert gate.action in {"active", "selective", "defensive", "avoid"}
+    assert gate.limit_up_count >= 0
     assert limitup_pool[0].data_mode == "live_provider"
     assert limitup_pool[0].status == "sealed"
     assert limitup_pool[0].first_limit_up_time == "09:42:18"

@@ -135,7 +135,6 @@ class MarketSnapshot(BaseModel):
     timestamp: str
     data_mode: str = "mock"
     provider: str = "mock"
-    sentiment: str
     limit_up_count: int
     break_board_count: int
     break_board_rate: float = Field(ge=0, le=1)
@@ -148,8 +147,6 @@ class MarketSentimentGate(BaseModel):
     timestamp: str
     data_mode: str = "mock"
     provider: str = "mock"
-    action: MarketAction
-    score: float = Field(ge=0, le=100)
     limit_up_count: int
     break_board_rate: float = Field(ge=0, le=1)
     second_board_success_rate: float = Field(ge=0, le=1)

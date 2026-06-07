@@ -59,7 +59,6 @@ class MockMarketDataAdapter:
             market="A-share",
             trading_day=datetime.now(SH_TZ).date().isoformat(),
             timestamp=_now(),
-            sentiment="warm",
             limit_up_count=48,
             break_board_count=17,
             break_board_rate=0.26,
@@ -74,8 +73,6 @@ class MockMarketDataAdapter:
         return MarketSentimentGate(
             trading_day=datetime.now(SH_TZ).date().isoformat(),
             timestamp=_now(),
-            action="selective",
-            score=68.0,
             limit_up_count=48,
             break_board_rate=0.26,
             second_board_success_rate=0.43,

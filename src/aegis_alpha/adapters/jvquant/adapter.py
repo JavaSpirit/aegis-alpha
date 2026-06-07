@@ -11,7 +11,6 @@ from aegis_alpha.adapters.jvquant import parsers as P
 from aegis_alpha.adapters.jvquant.parsers import float_or_zero as _float_or_zero
 from aegis_alpha.adapters.jvquant.parsers import int_or_zero as _int_or_zero
 from aegis_alpha.adapters.jvquant.queries import JvQuantQueryClient
-from aegis_alpha.adapters.jvquant.market_gate import action_from_score, market_score, sentiment_from_score
 from aegis_alpha.adapters.jvquant.candidates import build_one_candidate
 from aegis_alpha.clock import SH_TZ, now_iso as _now
 from aegis_alpha.models import (
@@ -106,8 +105,6 @@ class JvQuantMarketDataAdapter:
         denominator = limit_up_count + break_board_count
         break_board_rate = round(break_board_count / denominator, 4) if denominator else 0.0
         themes = P._leading_themes(limitup_pool + break_pool)
-        score = market_score(limit_up_count, break_board_rate, len(themes), self.grading_config)
-        sentiment = sentiment_from_score(score, self.grading_config)
 
         total_payload = self._query(
             "主板,非ST,股票代码,股票简称,涨跌幅,价格,成交额,行业",
@@ -121,7 +118,6 @@ class JvQuantMarketDataAdapter:
             timestamp=_now(),
             data_mode="live_provider",
             provider="jvQuant",
-            sentiment=sentiment,
             limit_up_count=limit_up_count,
             break_board_count=break_board_count,
             break_board_rate=break_board_rate,
@@ -135,13 +131,6 @@ class JvQuantMarketDataAdapter:
 
     def get_market_sentiment_gate(self) -> MarketSentimentGate:
         snapshot = self.get_market_snapshot()
-        score = market_score(
-            snapshot.limit_up_count,
-            snapshot.break_board_rate,
-            len(snapshot.leading_themes),
-            self.grading_config,
-        )
-        action = action_from_score(score, snapshot.break_board_rate, self.grading_config)
         risk_flags: list[str] = []
         positive_signals: list[str] = []
 
@@ -174,8 +163,6 @@ class JvQuantMarketDataAdapter:
             timestamp=snapshot.timestamp,
             data_mode="live_provider",
             provider="jvQuant",
-            action=action,
-            score=score,
             limit_up_count=snapshot.limit_up_count,
             break_board_rate=snapshot.break_board_rate,
             second_board_success_rate=0.0,
