@@ -8,7 +8,8 @@ These tests verify the NEW validation guards added to evaluate_agent_replay_resp
 Write FIRST (RED), implement guards, then GREEN.
 """
 
-from aegis_alpha.agent_eval import evaluate_agent_replay_response
+from aegis_alpha.agent_eval import REQUIRED_FACTORS, build_agent_replay_messages, evaluate_agent_replay_response
+from aegis_alpha.models import SignalSnapshot
 
 
 # ---------------------------------------------------------------------------
@@ -331,3 +332,55 @@ def test_complete_5factor_response_with_likelihood_passes() -> None:
     assert check_names["five_factors_present"]["passed"] is True
     assert check_names["promotion_likelihood_present"]["passed"] is True
     assert check_names["grade_present"]["passed"] is True
+
+
+# ---------------------------------------------------------------------------
+# Test 10 (3.3 gap-fill): prompt schema must list ALL REQUIRED_FACTORS
+# ---------------------------------------------------------------------------
+
+def test_prompt_schema_lists_all_required_factors_and_likelihood() -> None:
+    """Anti-contract-drift guard for build_agent_replay_messages.
+
+    The LLM prompt must explicitly name every factor key from REQUIRED_FACTORS
+    and the promotion_likelihood constraint.  If someone renames a factor key
+    in the prompt but not in REQUIRED_FACTORS (or vice versa), the validator
+    would silently pass while the live agent emits wrong keys.
+
+    This test ties the prompt text to the SAME constant the validator uses, so
+    any rename of REQUIRED_FACTORS forces this test to fail immediately.
+
+    SignalSnapshot construction: only `symbol` and `data_timestamp` are required;
+    all other fields have defaults (confirmed from models.py and test_events.py).
+    """
+    snapshot = SignalSnapshot(
+        symbol="600519",
+        data_timestamp="2000-01-01T09:35:00+08:00",
+    )
+
+    messages = build_agent_replay_messages(snapshot, [])
+
+    # Locate the user turn (last message, role=="user")
+    user_msg = next(m for m in reversed(messages) if m["role"] == "user")
+    user_content = user_msg["content"]
+
+    # --- Anti-drift: every REQUIRED_FACTORS key must appear in the prompt ---
+    for factor in REQUIRED_FACTORS:
+        assert factor in user_content, (
+            f"REQUIRED_FACTORS key '{factor}' is missing from the prompt text. "
+            "Update the user message in build_agent_replay_messages to stay in sync "
+            "with REQUIRED_FACTORS, or the live agent will emit wrong keys."
+        )
+
+    # --- promotion_likelihood + its three buckets must be in the prompt ---
+    assert "promotion_likelihood" in user_content, (
+        "promotion_likelihood is not mentioned in the prompt"
+    )
+    for bucket in ("high", "medium", "low"):
+        assert bucket in user_content, (
+            f"Bucket '{bucket}' for promotion_likelihood is missing from the prompt"
+        )
+
+    # --- factor_analysis container key must be in the prompt ---
+    assert "factor_analysis" in user_content, (
+        "factor_analysis is not mentioned in the prompt"
+    )
