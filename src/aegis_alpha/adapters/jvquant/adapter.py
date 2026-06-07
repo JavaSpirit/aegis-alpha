@@ -47,7 +47,6 @@ from aegis_alpha.events import EventDetector, freshness_status, load_event_scori
 from aegis_alpha.measurements.theme_lifecycle import STAGE_LABELS_CN
 from aegis_alpha.extensions.suspended_stocks import is_symbol_suspended
 from aegis_alpha.extensions.weekly_position import compute_weekly_health_score
-from aegis_alpha.grading import CandidateGradingConfig, load_candidate_grading_config
 from aegis_alpha.storage import AegisAlphaStore
 from aegis_alpha.adapters.jvquant_websocket import JvQuantRealtimeClient
 from aegis_alpha.symbols import daily_limit_pct, normalize_symbol
@@ -83,7 +82,6 @@ class JvQuantMarketDataAdapter:
         )
         self._query_cache = self._query_client.cache
         self._query_limiter = self._query_client.limiter
-        self.grading_config: CandidateGradingConfig = load_candidate_grading_config()
 
     @classmethod
     def from_env(cls) -> "JvQuantMarketDataAdapter":
@@ -471,8 +469,6 @@ class JvQuantMarketDataAdapter:
         }
         minute_replay_limit = _int_or_zero(os.environ.get("AEGIS_ALPHA_SECOND_BOARD_MINUTE_REPLAY_LIMIT")) or 12
         theme_counts = Counter(P._theme_from_row(row) for row in rows)
-        gate = self.get_market_sentiment_gate()  # TODO(1D): gate result no longer used in candidate build; remove when market gate is retired.
-
         trading_day = query_timestamp[:10]
         try:
             _suspended_today = self.get_suspended_stocks(trading_day)
@@ -525,7 +521,6 @@ class JvQuantMarketDataAdapter:
                 orderbook_limit=orderbook_limit,
                 minute_replay_enabled=minute_replay_enabled,
                 minute_replay_limit=minute_replay_limit,
-                grading_config=self.grading_config,
                 get_minute_replay=self.get_stock_minute_replay_snapshot,
                 get_orderbook=self.get_stock_orderbook_snapshot,
                 ladder_entries=ladder_entries,

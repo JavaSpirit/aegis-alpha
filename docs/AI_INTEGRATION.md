@@ -4,7 +4,7 @@
 
 Aegis Alpha adds AI through Hermes, not by putting an LLM inside the trading signal engine. Hermes reasons over Aegis Alpha MCP outputs, uses project skills, remembers user preferences, and runs scheduled review workflows.
 
-The program measures facts (derived numbers: float cap, turnover, MA5 slope, T-1 volume ratio, previous-high break, theme lifecycle stage); the AI agent judges from those facts (grade, probability, synthesis). No buy/sell grade is assigned by the program.
+The program measures facts (derived numbers: float cap, turnover, MA5 slope, T-1 volume ratio, previous-high break, theme lifecycle stage); it also reports raw market facts (limit-up count, break-board rate, theme breadth) and fact-derived risk_flags/positive_signals — it does NOT emit a market sentiment label or an action verdict. The AI agent judges market sentiment and trading action from those facts. No buy/sell grade is assigned by the program.
 
 The first project skill is:
 

@@ -296,7 +296,8 @@ def test_jvquant_market_gate_from_semantic_query() -> None:
     assert snapshot.break_board_rate == 0.3333
     assert snapshot.leading_themes
     assert gate.data_mode == "live_provider"
-    assert gate.limit_up_count >= 0
+    assert 0.0 <= gate.break_board_rate <= 1.0
+    assert isinstance(gate.risk_flags, list) and gate.risk_flags
     assert limitup_pool[0].data_mode == "live_provider"
     assert limitup_pool[0].status == "sealed"
     assert limitup_pool[0].first_limit_up_time == "09:42:18"
@@ -412,11 +413,11 @@ def test_time_or_unknown_normalizes_short_form() -> None:
     assert _time_or_unknown("garbage") == "unknown"
 
 
-@pytest.mark.skip(reason="grade-remap backtest re-homed to Phase 7; scoring.py deleted in 1A.4")
+@pytest.mark.skip(reason="grade-remap backtest re-homed to Phase 7; scoring.py + grading.py deleted in 1A.4/1D.3")
 def test_seal_quality_score_uses_normalized_time() -> None:
     from aegis_alpha.adapters.jvquant.parsers import _time_or_unknown
-    from aegis_alpha.adapters.jvquant.scoring import seal_quality_score
-    from aegis_alpha.grading import CandidateGradingConfig
+    from aegis_alpha.adapters.jvquant.scoring import seal_quality_score  # deleted in 1A.4
+    from aegis_alpha.grading import CandidateGradingConfig  # deleted in 1D.3; kept for historical record
 
     config = CandidateGradingConfig()
     score_short = seal_quality_score(

@@ -1,6 +1,6 @@
 # Aegis Alpha
 
-Aegis Alpha is a Hermes companion for A-share trading research and second-board watchlist assistance. It helps install or verify Hermes, then exposes read-only MCP tools for market sentiment gating, second-board candidate monitoring, theme analysis, and candidate explanation.
+Aegis Alpha is a Hermes companion for A-share trading research and second-board watchlist assistance. It helps install or verify Hermes, then exposes read-only MCP tools for raw market facts (limit-up count, break-board rate, theme breadth, premium/promotion rates) plus fact-derived risk_flags/positive_signals; it does NOT emit a sentiment label or an action verdict — the AI agent judges market sentiment and action. It also provides second-board candidate monitoring, theme analysis, and candidate explanation.
 
 The MVP is intentionally conservative:
 
@@ -28,13 +28,14 @@ The first version only provides read-only tools. Future versions can add real da
 The first product focus is a second-board radar:
 
 ```text
-Market sentiment gate
+Raw market facts (limit-up count, break-board rate, theme breadth) + risk_flags/positive_signals
   -> yesterday limit-up pool
   -> second-board candidates
   -> 5-minute speed and big-order inflow
   -> theme co-movement
   -> historical limit-up and gap-up stats
   -> measured facts (speed, float, turnover, MA5 slope, theme lifecycle) and risk explanation
+  [AI agent judges market sentiment and action — program emits facts only]
 ```
 
 ## Requirements
@@ -456,7 +457,7 @@ The MVP exposes these read-only tools:
 
 The output is for research and watchlist use only. It is not investment advice and not an order instruction.
 
-`explain_second_board_candidate(symbol)` focuses on second-board logic: market sentiment gate, 5-minute speed, big-order net inflow ratio, first limit-up time, seal amount, seal-to-turnover ratio, queue-position note, same-theme co-movement, orderbook quality, and three-year historical limit-up/gap-up placeholders.
+`explain_second_board_candidate(symbol)` focuses on second-board logic: raw market facts (break-board rate, limit-up count, theme breadth) reported via `get_market_sentiment_gate` — the program reports facts and risk flags, not a sentiment verdict; 5-minute speed, big-order net inflow ratio, first limit-up time, seal amount, seal-to-turnover ratio, queue-position note, same-theme co-movement, orderbook quality, and three-year historical limit-up/gap-up placeholders.
 
 ## Development Checks
 

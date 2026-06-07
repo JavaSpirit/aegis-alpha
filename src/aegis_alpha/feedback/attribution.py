@@ -36,7 +36,7 @@ class AttributionInputs:
 _HIGH_OPEN_THRESHOLD = 3.0  # 竞价高开 > 3% 视为风险
 _LATE_SEAL_CUTOFF = "10:30:00"
 _SEAL_DECAY_THRESHOLD = 30.0
-_HIGH_BREAK_BOARD_RATE = 0.45
+_HIGH_BREAK_BOARD_RATE = 0.45  # 炸板率 >= 45% 视为高风险市场环境; aligned with jvquant adapter's "break-board rate is high" risk-flag threshold.
 
 
 def _attribution_id(symbol: str, trading_day: str) -> str:
@@ -65,6 +65,7 @@ def attribute_outcome(inputs: AttributionInputs) -> OutcomeAttribution:
 
     primary: OutcomeAttributionTag = "no_clear_attribution"
 
+    # NOTE: this is a single-fact rule (break_board_rate alone). It intentionally REPLACES the old composite program "avoid" label (which also folded in limit_up_count + theme breadth) — the program now measures one fact; the agent judges the rest.
     # Rule 1: high_break_board_environment 优先级最高（结构性的市场环境问题）
     if inputs.market_break_board_rate >= _HIGH_BREAK_BOARD_RATE:
         primary = "high_break_board_environment"

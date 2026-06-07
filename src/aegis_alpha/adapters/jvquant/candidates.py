@@ -7,7 +7,6 @@ from typing import Any, Callable
 from aegis_alpha.adapters.jvquant import parsers as P
 from aegis_alpha.adapters.jvquant.data_quality import build_second_board_data_quality
 from aegis_alpha.clock import SH_TZ
-from aegis_alpha.grading import CandidateGradingConfig
 from aegis_alpha.models import (
     HistoryStats,
     LadderEntry,
@@ -51,7 +50,6 @@ def build_one_candidate(
     orderbook_limit: int,
     minute_replay_enabled: bool,
     minute_replay_limit: int,
-    grading_config: CandidateGradingConfig,
     get_minute_replay: Callable[[str], MinuteReplaySnapshot],
     get_orderbook: Callable[[str], StockOrderbookSnapshot],
     ladder_entries: dict[str, LadderEntry],

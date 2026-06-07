@@ -16,7 +16,9 @@ def test_read_only_tool_shapes() -> None:
     adapter = MockMarketDataAdapter()
 
     assert adapter.get_market_snapshot().limit_up_count >= 0
-    assert adapter.get_market_sentiment_gate().limit_up_count >= 0
+    _gate = adapter.get_market_sentiment_gate()
+    assert 0.0 <= _gate.break_board_rate <= 1.0
+    assert isinstance(_gate.risk_flags, list) and _gate.risk_flags
     assert adapter.get_limitup_pool()
     assert adapter.get_break_board_pool()
     assert adapter.get_stock_realtime_snapshot("600000.SH").symbol == "600000.SH"
