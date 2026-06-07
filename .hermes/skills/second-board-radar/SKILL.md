@@ -1,6 +1,6 @@
 ---
 name: second-board-radar
-description: Use when Hermes is asked to analyze A-share second-board candidates, one-to-two board setups, board-chasing market sentiment, yesterday limit-up pools, theme co-movement, or Aegis Alpha MCP watchlist outputs. Guides Hermes to use Aegis Alpha read-only MCP tools with strict safety boundaries and no deterministic buy/sell instructions.
+description: Use when Hermes is asked to analyze A-share second-board candidates, one-to-two board setups, board-chasing market conditions, yesterday limit-up pools, theme co-movement, or Aegis Alpha MCP watchlist outputs. Guides Hermes to use Aegis Alpha read-only MCP tools with strict safety boundaries and no deterministic buy/sell instructions. The agent MUST walk all 5 factors per candidate and output a bucketed promotion_likelihood (high/medium/low) plus an agent-assigned grade (A/B/C/REJECT).
 license: Proprietary
 metadata:
   hermes:
@@ -26,7 +26,7 @@ Aegis Alpha provides structured data and rule outputs through MCP. Hermes provid
 The correct division of responsibility is:
 
 - Aegis Alpha MCP: data access, scoring inputs, timestamps, provider state, and deterministic signal contracts.
-- Hermes: interpret the outputs, explain tradeoffs, apply this skill, remember user preferences, and prepare review notes.
+- Hermes: interpret the outputs, walk the 5 factors, assign `promotion_likelihood` and `grade`, explain tradeoffs, apply this skill, remember user preferences, and prepare review notes.
 - Human user: final decision.
 - Future risk engine: required before any paper or real order workflow.
 
@@ -90,13 +90,15 @@ Useful supporting tools:
 - `review_candidate_outcome`
 - `record_candidate_outcome`
 
+`get_market_sentiment_gate` returns market FACTS — not an action label. Fields include: `limit_up_count`, `break_board_rate`, `hot_theme_count`, `risk_flags`, `positive_signals`, `conclusion`, `yesterday_limitup_today_premium_pct`, `consecutive_boards_alive_rate`, `first_to_second_promotion_rate`, `second_to_third_promotion_rate`, `max_height_today`. Do NOT treat these as gate commands; the AGENT reads the facts and makes its own environmental judgment.
+
 If these tools are unavailable, first ask Hermes to reload MCP with `/reload-mcp` or inspect the Hermes MCP configuration. Do not fabricate live data.
 
 ## Data Availability And Freshness
 
 If Aegis Alpha MCP times out, returns an error, or provides empty data, explicitly state `Data source unavailable` and halt candidate analysis. Do not guess, interpolate, or backfill missing speed, orderbook, big-order, or theme metrics.
 
-Before grading during active trading hours, verify the timestamp of speed, big-order, and orderbook data. Active trading hours are 09:30-11:30 and 13:00-15:00 Asia/Shanghai. If any required realtime field is delayed by more than 3 minutes, cap the maximum grade at `B`, warn the user, and do not describe the candidate as high-confidence. If `five_min_speed_window` starts with `provider_exact_window:`, report that exact provider window; if it is `provider_latest_rolling_5m`, explain that the provider did not expose the exact five-minute start/end time.
+Before grading during active trading hours, verify the timestamp of speed, big-order, and orderbook data. Active trading hours are 09:30-11:30 and 13:00-15:00 Asia/Shanghai. If any required realtime field is delayed by more than 3 minutes, cap the maximum grade at `B`, cap `promotion_likelihood` away from `high` (i.e. only `medium` or `low`), warn the user, and do not describe the candidate as high-confidence. If `five_min_speed_window` starts with `provider_exact_window:`, report that exact provider window; if it is `provider_latest_rolling_5m`, explain that the provider did not expose the exact five-minute start/end time.
 
 If `five_min_speed_window` starts with `minute_replay_exact_window:` or `minute_replay_partial_window:`, state that Aegis Alpha recalculated the speed from jvQuant minute replay bars. Minute replay is minute-level replay data, not tick-by-tick realtime Level-2. During active trading hours, use `five_min_speed_timestamp` or `minute_replay_timestamp` to check freshness before grading.
 
@@ -105,34 +107,66 @@ Use `get_runner_status` when the user asks whether realtime monitoring is active
 
 ## Standard Workflow
 
-1. Check the market sentiment gate before analyzing individual candidates. The gate now exposes `consecutive_boards_alive_rate`, `first_to_second_promotion_rate`, `second_to_third_promotion_rate`, `yesterday_limitup_today_premium_pct`, and `max_height_today` directly — read these before drilling into candidates. If these emotion fields are all zero with a note explaining they are placeholder, treat them as unavailable rather than as a cold-market signal.
-2. If the gate action is `avoid`, say the environment is unsuitable for board-chasing and stop at a defensive market summary.
-3. If the gate action is `defensive`, only discuss why risk is elevated and list what would need to improve.
-4. If Aegis Alpha data is unavailable, stale beyond the freshness rule, or empty, follow the data availability rule before continuing.
-5. If the gate action is `selective` or `active`, call `get_theme_leaders` and `get_market_emotion` for board-level context, then fetch second-board candidates with `get_second_board_candidates_compact`. Use `get_limit_up_ladder(symbol)` when you need to confirm a single stock's connect-board height; the candidate output already carries `previous_consecutive_boards`, `previous_height_label`, `theme_role`, and `theme_leader_symbol` so you usually do not need an extra call per candidate.
-6. If Aegis Alpha returns recent market events, use them as context for re-scoring candidates, but do not treat event suggestions as order instructions.
-7. For each candidate, analyze only the structured signals returned by Aegis Alpha:
-   market gate, auction metrics (including `auction_pattern` from `get_auction_analysis` when needed), connect-board ladder (`previous_consecutive_boards`, `previous_height_label`), theme role (`theme_role`, `theme_leader_symbol`), 1/3/5/10-minute speed structure, big-order net inflow ratio, concept/topic tags, first/final limit-up time, seal amount, max seal amount, seal-to-turnover ratio, break/reseal count, queue position note, same-theme rising count, orderbook quality, historical touch-limit success rate, and historical gap-up statistics. Reject board-chasing on a `follower` when its theme leader has broken board.
-8. Produce a watchlist report with grades `A`, `B`, `C`, or `REJECT`.
-9. Always include structured trigger conditions and avoid conditions.
-10. Always state both model identity and market-data identity. Keep `llm_provider` / `llm_model` separate from `market_data_mode` / `market_data_provider`.
-11. After every candidate grade, explain the reason in natural Chinese. Prefer the MCP `grade_reason` field when present; if it is absent, synthesize one from the returned metrics without inventing missing data.
-12. Use the full `get_second_board_candidates` only when the compact output is insufficient. If evidence details are needed, prefer `get_second_board_candidate_data_quality(symbol)` over fetching the full candidate pool again, to avoid tool-output truncation.
-13. For multi-hour monitoring, create a watchlist with `create_watchlist(owner=user, label=YYYY-MM-DD label, symbols=A|B|C)` early in the session. Use `update_watchlist_state(watchlist_id, symbol, new_grade, action, note)` whenever a candidate's grade changes during the day. Use `close_watchlist(watchlist_id, note)` at session end to seal the audit trail. List existing watchlists with `list_active_watchlists(owner)`.
-14. Read `get_pending_alerts(limit)` whenever the user starts a new chat to surface anything the runner detected while away. After acting on an alert call `acknowledge_alert(alert_id, note)`. The runner persists alerts for `SEAL_ORDER_DECAY`, `BIG_ORDER_INFLOW_SPIKE`, and `THEME_DIVERGENCE` events; do not re-run the same analysis if the alert is still pending.
-15. After 15:10, run `generate_daily_review(trading_day=today)` to produce the structured review item used by Phase 3 review-and-correction. For weekly pattern audits use `generate_weekly_pattern_report(start_day, end_day)` (max 14-day window recommended).
-16. Use `get_top_themes_today(trading_day, limit)` to surface the leading themes ranked by member count and leader connect-board height, and `get_seal_timeline(symbol)` to inspect intraday seal/break events when a candidate's `theme_role` shows `co_leader` or `follower`.
-17. After collecting at least 5 trading days of outcomes, run `attribute_outcome(symbol, trading_day)` for failed candidates to identify recurring failure patterns. Surface the top primary_tag from recent attributions as a Hermes memory candidate after 3+ similar tags accumulate.
-18. Use `get_history_stats(symbol)` instead of relying on the placeholder three_year_* fields when available. If `confidence` is `insufficient_sample`, treat the historical signal as unavailable and do not narrate a probability.
-19. When the user asks "would tightening rule X improve hit rate?", call `run_backtest(rule_changes_json='{"flip_a_to_b": true}', start_day, end_day)` and report the sealed_rate delta + advice. Never apply a threshold proposal automatically — they always require the human-confirmation flow defined by `record_correction_action_decision`.
-20. P5 数据维度可选用：
+1. Check the market sentiment gate before analyzing individual candidates. Call `get_market_sentiment_gate` and read the FACTS it returns: `limit_up_count`, `break_board_rate`, `hot_theme_count`, `risk_flags`, `positive_signals`, `conclusion`, `yesterday_limitup_today_premium_pct`, `consecutive_boards_alive_rate`, `first_to_second_promotion_rate`, `second_to_third_promotion_rate`, `max_height_today`. If these emotion fields are all zero with a note explaining they are placeholder, treat them as unavailable rather than as a cold-market signal.
+
+2. From the market facts, make your own environmental judgment:
+   - High `break_board_rate` (e.g. > 30%) and/or low `limit_up_count` and/or narrow `hot_theme_count` → environment is hostile; explain why, stay defensive, and do not pursue board-chasing candidates.
+   - Moderate risk flags with some positive signals → cautious selective stance; highlight what would need to improve.
+   - Low `break_board_rate`, healthy `limit_up_count`, broad `hot_theme_count`, positive `first_to_second_promotion_rate` or `consecutive_boards_alive_rate` → environment supports selective board-chasing.
+
+3. If Aegis Alpha data is unavailable, stale beyond the freshness rule, or empty, follow the data availability rule before continuing.
+
+4. If market facts support board-chasing (controlled break-board rate, sufficient limit-up breadth, at least one active hot theme), call `get_theme_leaders` and `get_market_emotion` for board-level context, then fetch second-board candidates with `get_second_board_candidates_compact`. Use `get_limit_up_ladder(symbol)` when you need to confirm a single stock's connect-board height; the candidate output already carries `previous_consecutive_boards`, `previous_height_label`, `theme_role`, and `theme_leader_symbol` so you usually do not need an extra call per candidate.
+
+5. If Aegis Alpha returns recent market events, use them as context for re-scoring candidates, but do not treat event suggestions as order instructions.
+
+6. For EACH candidate, you MUST walk all 5 factors explicitly. Do not produce only a general summary — 不得只给综合总结而跳过任一因子的逐项说明. The 5 required factors are:
+
+   **Factor 1 — 市场情绪 (market_emotion)**: Derived from the market gate facts: `break_board_rate`, `limit_up_count`, `yesterday_limitup_today_premium_pct`, `first_to_second_promotion_rate`, `consecutive_boards_alive_rate`, `hot_theme_count`. State in one Chinese sentence what the market environment implies for this candidate's odds. Example: "涨停42家，炸板率18%，连板存活率62%，市场情绪较好，对二板进攻有支撑。"
+
+   **Factor 2 — 题材所在位置 (theme_position)**: Read `theme_lifecycle_stage` from the candidate. The lifecycle stages are: `launch`(启动) → `fermenting`(发酵) → `climax`(高潮) → `divergence`(分歧) → `ebb`(退潮). CRITICAL RULE: if `theme_lifecycle_stage` is `divergence` or `ebb`, you MUST downweight the candidate even if recent hotness or limit-up rate looks superficially strong. This is because late-stage themes carry high reverse risk — the electric-power theme failure pattern (高位分歧题材仍强推二板) is a known failure mode that this rule is designed to catch. Use `theme_role`, `theme_leader_symbol`, and `get_top_themes_today` for corroboration.
+
+   **Factor 3 — 股本大小 (float_size)**: Use `free_float_market_cap_cny`. Large float reduces the probability of sustained sealing; small float with strong theme is favorable. State the float size and its implication in one Chinese sentence.
+
+   **Factor 4 — 量能 (volume_energy)**: Use `avg_turnover_10d_cny` (10-day average volume baseline), `ma5_slope_degrees` (price trend slope), `prev_day_volume_shrink_ratio` (whether yesterday shrank vs. prior days — a high ratio means volume dried up), and `broke_previous_high` (whether price cleared the prior swing high). State what the volume pattern implies for conviction in one Chinese sentence.
+
+   **Factor 5 — 回封力度 (reseal_strength)**: Use `break_board_count`, `reseal_count`, `max_seal_amount_cny`, `final_seal_time`, and `seal_to_turnover_ratio`. A high `break_board_count` with fast, large `reseal_count` and strong `max_seal_amount_cny` suggests genuine institutional intent to hold the board. A `final_seal_time` near market close with a high `seal_to_turnover_ratio` is a positive sign. State the reseal pattern in one Chinese sentence.
+
+7. After walking all 5 factors, assign `promotion_likelihood` and `grade`:
+   - `promotion_likelihood`: MUST be exactly one of `high` / `medium` / `low`. This represents the bucketed probability of this candidate progressing to the third board (三板). The program validates this field — do not use a decimal, percentage, or any other format.
+   - `grade`: YOUR judgment as the analyst — exactly one of `A`, `B`, `C`, or `REJECT`. This is not produced by the program; the agent assigns it based on the full picture.
+
+8. Produce a watchlist report. For each candidate, the agent assigns the grade and explains the reason. Always include structured trigger conditions and avoid conditions.
+
+9. Always state both model identity and market-data identity. Keep `llm_provider` / `llm_model` separate from `market_data_mode` / `market_data_provider`.
+
+10. After every candidate, explain the reasoning in natural Chinese, synthesized from the 5 factors. Do not rely on any program-emitted `grade_reason` field — the program no longer produces one. Always derive the reason yourself from the returned metrics.
+
+11. Use the full `get_second_board_candidates` only when the compact output is insufficient. If evidence details are needed, prefer `get_second_board_candidate_data_quality(symbol)` over fetching the full candidate pool again, to avoid tool-output truncation.
+
+12. For multi-hour monitoring, create a watchlist with `create_watchlist(owner=user, label=YYYY-MM-DD label, symbols=A|B|C)` early in the session. Use `update_watchlist_state(watchlist_id, symbol, new_grade, action, note)` whenever a candidate's grade changes during the day. Use `close_watchlist(watchlist_id, note)` at session end to seal the audit trail. List existing watchlists with `list_active_watchlists(owner)`.
+
+13. Read `get_pending_alerts(limit)` whenever the user starts a new chat to surface anything the runner detected while away. After acting on an alert call `acknowledge_alert(alert_id, note)`. The runner persists alerts for `SEAL_ORDER_DECAY`, `BIG_ORDER_INFLOW_SPIKE`, and `THEME_DIVERGENCE` events; do not re-run the same analysis if the alert is still pending.
+
+14. After 15:10, run `generate_daily_review(trading_day=today)` to produce the structured review item used by Phase 3 review-and-correction. For weekly pattern audits use `generate_weekly_pattern_report(start_day, end_day)` (max 14-day window recommended).
+
+15. Use `get_top_themes_today(trading_day, limit)` to surface the leading themes ranked by member count and leader connect-board height, and `get_seal_timeline(symbol)` to inspect intraday seal/break events when a candidate's `theme_role` shows `co_leader` or `follower`.
+
+16. After collecting at least 5 trading days of outcomes, run `attribute_outcome(symbol, trading_day)` for failed candidates to identify recurring failure patterns. Surface the top primary_tag from recent attributions as a Hermes memory candidate after 3+ similar tags accumulate.
+
+17. Use `get_history_stats(symbol)` instead of relying on the placeholder three_year_* fields when available. If `confidence` is `insufficient_sample`, treat the historical signal as unavailable and do not narrate a probability.
+
+18. When the user asks "would tightening rule X improve hit rate?", call `run_backtest(rule_changes_json, start_day, end_day)` and report the sealed_rate delta and advice. Never apply a threshold proposal automatically — they always require the human-confirmation flow defined by `record_correction_action_decision`. Note: the threshold-backtest tool is currently being re-homed (Phase 7) and returns unavailable for certain rule change types; do not rely on it until it is re-enabled.
+
+19. P5 数据维度可选用：
     - `get_dragon_tiger(symbol, trading_day)` 在收盘后查看候选股的龙虎榜结构；如席位含 `hot_money_known` 且 `hot_money_alias` 为白名单游资（章盟主、孙哥等），在评级原因里点出资金主体。
     - `get_active_seats_today(trading_day)` 看当天哪几位游资同时进入多只股，用作板块共振辅助证据。
     - `get_limit_down_pool(trading_day)` / `get_st_pool(trading_day)` 在判断市场情绪时观察反向池规模；如 `MARKET_BOTTOM_REVERSAL` 事件出现，将其当作板块见底的辅助语境，不要由它直接推荐买点。
     - 候选契约里 `limitup_driver_type` 与 `intraday_pattern` 在 evidence 里给一句中文备注；`policy` / `earnings` 驱动通常比 `theme` 更稳，`one_word_board` / `platform_breakout` 比 `messy_board` / `false_breakout` 风险更低。
     - `get_capital_flow_slices(symbol, trading_day)` 在复盘失败案例时使用：`tail_30m` 主力净流出说明尾盘机构离场。
-21. P6 进阶能力（按需使用）：
-    - `find_similar_setups(symbol, lookback_days, similarity_threshold)` 在复盘候选时找相似历史样本；当返回的 `similarity ≥ 0.85` 且 `match_grade_at_pick = A`，可作为「这个形态历史上确实经常打成功」的弱证据，但不要替代当下行情判断。
+
+20. P6 进阶能力（按需使用）：
+    - `find_similar_setups(symbol, lookback_days, similarity_threshold)` 在复盘候选时找相似历史样本；当返回的 `similarity ≥ 0.85`，可作为「这个形态历史上确实经常打成功」的弱证据，但不要替代当下行情判断。注意：历史快照的 agent/human 评级（若有记录）为弱参考，若为 None 则完全忽略。
     - `get_new_stock_candidates()` 返回的 `tier_aged_out` 不应再按次新处理；`tier_a_smallcap_recent` 才是典型的次新打板候选。
     - `get_suspended_stocks(trading_day)` 在每次拉候选前检查；候选若出现在停牌列表中应直接 REJECT 并提示数据脏。
     - `query_minute_bars(symbol, start_day, end_day)` 仅在 history-store extras 安装后可用；返回 `data_mode=unavailable` 时直接告诉用户分钟级历史层未启用。
@@ -144,28 +178,35 @@ Use `get_runner_status` when the user asks whether realtime monitoring is active
 
 ## Candidate Interpretation Rules
 
-Use these defaults unless the user's memory or the Aegis Alpha output says otherwise:
+Use these as agent grading heuristics unless the user's memory or the Aegis Alpha output provides specific guidance:
 
-- `A`: market gate is active or selective; same-theme co-movement is strong; orderbook quality is strong; big-order inflow is positive; historical stats are favorable.
-- `B`: watch closely, but at least one important dimension is not ideal.
+- `A`: market facts indicate a supportive environment (low break-board rate, sufficient limit-up breadth, positive promotion rates); same-theme co-movement is strong; `theme_lifecycle_stage` is `launch`, `fermenting`, or `climax`; orderbook quality is strong; big-order inflow is positive; volume energy shows expansion; reseal strength is convincing; historical stats are favorable.
+- `B`: watch closely, but at least one important factor is not ideal (e.g. `theme_lifecycle_stage` is `divergence`, or volume has partially shrunk, or market breadth is mixed).
 - `C`: observation only; do not frame it as actionable.
-- `REJECT`: not in yesterday's valid limit-up pool, market gate is avoid, theme leader broke board, or data quality is insufficient.
+- `REJECT`: not in yesterday's valid limit-up pool; market-wide break-board rate is high and breadth is collapsing (agent's judgment from facts); theme leader broke board; `theme_lifecycle_stage` is `ebb`; or data quality is insufficient.
 
-If speed, big-order, or orderbook timestamps are delayed by more than 3 minutes during active trading hours, maximum grade is `B` even if other signals look strong.
+If speed, big-order, or orderbook timestamps are delayed by more than 3 minutes during active trading hours, maximum grade is `B` and `promotion_likelihood` must not be `high`.
 
 For second-board analysis, prefer fewer candidates with better explanation over broad lists.
 
 ## Output Format
 
-Use this structure for user-facing answers:
+Use this structure for user-facing answers. The `factor_analysis` block and `promotion_likelihood` are MANDATORY for every candidate. Omitting any factor or replacing the factor walk with a general summary is a violation of this skill's contract.
 
 ```text
-市场闸门: active/selective/defensive/avoid
-结论: ...
+市场环境(事实): 涨停N家 炸板率X% 连板存活率Y% 热门题材M个 → 判断: 适合/谨慎/不宜进攻
 
 候选:
-1. 代码 名称 评级
-   评级原因: 用一两句自然语言说明为什么是这个评级，必须点名主要加分项和主要扣分项。
+1. 代码 名称
+   晋级三板概率(分档): high / medium / low
+   综合评级(agent): A / B / C / REJECT
+   因子分析:
+   - 市场情绪: <一句中文说明，基于涨停数/炸板率/溢价率等市场事实>
+   - 题材所在位置: <说明 theme_lifecycle_stage 及其含义；若为 divergence/ebb 须明确点出降权原因>
+   - 股本大小: <说明 free_float_market_cap_cny 及对封板持续性的影响>
+   - 量能: <说明 avg_turnover_10d_cny / ma5_slope_degrees / prev_day_volume_shrink_ratio / broke_previous_high>
+   - 回封力度: <说明 break_board_count / reseal_count / max_seal_amount_cny / final_seal_time / seal_to_turnover_ratio>
+   评级原因: <综合五个维度的自然语言总结，说明主要加分项和主要扣分项>
    竞价数据: auction_change_pct / auction_turnover_cny / auction_turnover_rate
    涨速数据: five_min_speed_pct / five_min_speed_window / five_min_speed_timestamp / data_quality.five_min_speed
    分时回放: minute_replay_trading_day / minute_replay_bar_count / minute_replay_timestamp
@@ -200,8 +241,8 @@ Do not write "buy", "must buy", "sell", "full position", or "guaranteed". Use "�
 - Never request or expose broker credentials, trading passwords, or real order tokens.
 - Never propose real automated trading from this skill.
 - Never treat mock data as real market data.
-- Never ignore the market sentiment gate.
-- Never recommend board-chasing when the gate action is `avoid`.
+- Never ignore the market sentiment gate facts.
+- Never recommend board-chasing when market-wide break-board rate is high or limit-up breadth is collapsing (agent's judgment from facts).
 - Never analyze arbitrary symbols as second-board candidates unless they are in the valid previous-day limit-up pool or the user explicitly asks for a hypothetical review.
 - If data is stale, missing, or inconsistent, downgrade confidence and say so.
 
@@ -216,6 +257,7 @@ Good memory candidates:
 - The user dislikes fast boards without theme co-movement.
 - The user wants less activity when break-board rate is high.
 - The user cares about next-day open and third-day premium after sealed second boards.
+- Late-stage themes (`divergence`/`ebb`) should be downweighted even if short-term hotness looks strong (电力题材高位失败教训).
 
 Do not save raw stock tips, credentials, or one-off market rumors as memory.
 
