@@ -415,22 +415,7 @@ def test_time_or_unknown_normalizes_short_form() -> None:
 
 @pytest.mark.skip(reason="grade-remap backtest re-homed to Phase 7; scoring.py + grading.py deleted in 1A.4/1D.3")
 def test_seal_quality_score_uses_normalized_time() -> None:
-    from aegis_alpha.adapters.jvquant.parsers import _time_or_unknown
-    from aegis_alpha.adapters.jvquant.scoring import seal_quality_score  # deleted in 1A.4
-    from aegis_alpha.grading import CandidateGradingConfig  # deleted in 1D.3; kept for historical record
-
-    config = CandidateGradingConfig()
-    score_short = seal_quality_score(
-        first_limit_up_time="09:45:00",
-        seal_amount_cny=200_000_000,
-        seal_to_turnover_ratio=3.0,
-        config=config,
-    )
-    score_normalized = seal_quality_score(
-        first_limit_up_time=_time_or_unknown("9:45"),
-        seal_amount_cny=200_000_000,
-        seal_to_turnover_ratio=3.0,
-        config=config,
-    )
-    assert score_short > 0
-    assert score_short == score_normalized
+    # Body removed: seal_quality_score (scoring.py) and CandidateGradingConfig (grading.py)
+    # were deleted when program grading was removed. The program no longer computes a
+    # seal-quality score; the AI agent judges. No replacement test — this stays skipped.
+    pass
