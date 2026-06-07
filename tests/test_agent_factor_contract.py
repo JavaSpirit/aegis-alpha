@@ -77,7 +77,6 @@ def test_summary_only_response_fails_factor_check() -> None:
 
 def test_missing_one_factor_fails() -> None:
     """factor_analysis missing reseal_strength → five_factors_present False."""
-    import copy
     factors_incomplete = {k: v for k, v in _VALID_FACTOR_ANALYSIS.items() if k != "reseal_strength"}
     response = {**_BASE_VALID_RESPONSE, "factor_analysis": factors_incomplete}
 
@@ -130,3 +129,39 @@ def test_complete_factor_response_passes() -> None:
     )
 
     assert result["passed"] is True
+
+
+# ---------------------------------------------------------------------------
+# Test 6 (I2): per_symbol partial — one item missing factor_analysis → fail
+# ---------------------------------------------------------------------------
+
+def test_per_symbol_one_item_missing_factors_fails() -> None:
+    """A per_symbol response where item 2 omits factor_analysis (and promotion_likelihood)
+    must NOT slip through — five_factors_present AND promotion_likelihood_present must be False."""
+    content = _json_response({
+        "market_context": "历史回放截面，非真实行情。",
+        "per_symbol": [
+            {
+                "symbol": "600519",
+                "grade": "B",
+                "natural_language_reason": "涨停封单稳定，题材共振明显。",
+                "promotion_likelihood": "medium",
+                "factor_analysis": _VALID_FACTOR_ANALYSIS,
+            },
+            {
+                "symbol": "000001",
+                "grade": "C",
+                "natural_language_reason": "大单净流入低，盘口质量不佳。",
+                # promotion_likelihood and factor_analysis intentionally omitted
+            },
+        ],
+        "overall_conclusion": "600519 观望，000001 不适合。",
+        "disclaimer": "仅供研究观察，不构成投资建议。",
+    })
+
+    result = evaluate_agent_replay_response(content, expected_freshness_status="fresh")
+
+    assert result["passed"] is False
+    check_names = {c["name"]: c for c in result["checks"]}
+    assert check_names["five_factors_present"]["passed"] is False
+    assert check_names["promotion_likelihood_present"]["passed"] is False
