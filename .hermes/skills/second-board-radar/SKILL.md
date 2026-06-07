@@ -126,15 +126,21 @@ Use `get_runner_status` when the user asks whether realtime monitoring is active
 
    **Factor 2 — 题材所在位置 (theme_position)**: Read `theme_lifecycle_stage` from the candidate. The lifecycle stages are: `launch`(启动) → `fermenting`(发酵) → `climax`(高潮) → `divergence`(分歧) → `ebb`(退潮). CRITICAL RULE: if `theme_lifecycle_stage` is `divergence` or `ebb`, you MUST downweight the candidate even if recent hotness or limit-up rate looks superficially strong. This is because late-stage themes carry high reverse risk — the electric-power theme failure pattern (高位分歧题材仍强推二板) is a known failure mode that this rule is designed to catch. Use `theme_role`, `theme_leader_symbol`, and `get_top_themes_today` for corroboration.
 
+   具体降权后果（不得例外，即使其他因子都强）：
+   - `theme_lifecycle_stage=divergence` → grade 最高只能给 B，promotion_likelihood 最高只能 medium。
+   - `theme_lifecycle_stage=ebb` → grade 必须 REJECT，promotion_likelihood 必须 low。
+   - `theme_lifecycle_stage=climax`(高潮)：promotion_likelihood 最高只能 medium，除非量能与回封力度同时很强，才可给 high。climax 阶段是分歧前的最后一档，高潮期兑现风险高，必须在因子说明里点出。
+
    **Factor 3 — 股本大小 (float_size)**: Use `free_float_market_cap_cny`. Large float reduces the probability of sustained sealing; small float with strong theme is favorable. State the float size and its implication in one Chinese sentence.
 
-   **Factor 4 — 量能 (volume_energy)**: Use `avg_turnover_10d_cny` (10-day average volume baseline), `ma5_slope_degrees` (price trend slope), `prev_day_volume_shrink_ratio` (whether yesterday shrank vs. prior days — a high ratio means volume dried up), and `broke_previous_high` (whether price cleared the prior swing high). State what the volume pattern implies for conviction in one Chinese sentence.
+   **Factor 4 — 量能与资金 (volume_energy)**: Use `avg_turnover_10d_cny` (10-day average volume baseline), `ma5_slope_degrees` (price trend slope), `prev_day_volume_shrink_ratio` (whether yesterday shrank vs. prior days — a high ratio means volume dried up), and `broke_previous_high` (whether price cleared the prior swing high). ALSO cover `big_order_net_inflow_ratio` (net big-order inflow as a proportion of turnover — positive means institutional accumulation, negative means distribution) and `orderbook_quality_score` (queue depth and composition quality). An A-grade requires positive big-order inflow AND strong orderbook quality; if either is missing or negative, cap the assessment at B. State the overall volume-and-capital picture in one or two Chinese sentences. Note: the JSON output field key MUST remain `volume_energy` (the validator checks that exact key).
 
    **Factor 5 — 回封力度 (reseal_strength)**: Use `break_board_count`, `reseal_count`, `max_seal_amount_cny`, `final_seal_time`, and `seal_to_turnover_ratio`. A high `break_board_count` with fast, large `reseal_count` and strong `max_seal_amount_cny` suggests genuine institutional intent to hold the board. A `final_seal_time` near market close with a high `seal_to_turnover_ratio` is a positive sign. State the reseal pattern in one Chinese sentence.
 
 7. After walking all 5 factors, assign `promotion_likelihood` and `grade`:
    - `promotion_likelihood`: MUST be exactly one of `high` / `medium` / `low`. This represents the bucketed probability of this candidate progressing to the third board (三板). The program validates this field — do not use a decimal, percentage, or any other format.
    - `grade`: YOUR judgment as the analyst — exactly one of `A`, `B`, `C`, or `REJECT`. This is not produced by the program; the agent assigns it based on the full picture.
+   - 一般对应关系：A→high、B→medium、C/REJECT→low。若 grade 与 promotion_likelihood 出现反差（如 grade=A 但 promotion_likelihood=low），必须在评级原因里明确解释反差原因，不得无声矛盾。
 
 8. Produce a watchlist report. For each candidate, the agent assigns the grade and explains the reason. Always include structured trigger conditions and avoid conditions.
 
@@ -180,10 +186,10 @@ Use `get_runner_status` when the user asks whether realtime monitoring is active
 
 Use these as agent grading heuristics unless the user's memory or the Aegis Alpha output provides specific guidance:
 
-- `A`: market facts indicate a supportive environment (low break-board rate, sufficient limit-up breadth, positive promotion rates); same-theme co-movement is strong; `theme_lifecycle_stage` is `launch`, `fermenting`, or `climax`; orderbook quality is strong; big-order inflow is positive; volume energy shows expansion; reseal strength is convincing; historical stats are favorable.
-- `B`: watch closely, but at least one important factor is not ideal (e.g. `theme_lifecycle_stage` is `divergence`, or volume has partially shrunk, or market breadth is mixed).
+- `A`: market facts indicate a supportive environment (low break-board rate, sufficient limit-up breadth, positive promotion rates); same-theme co-movement is strong; `theme_lifecycle_stage` is `launch` or `fermenting` (climax 见下方天花板规则); orderbook quality is strong; big-order inflow is positive; volume energy shows expansion; reseal strength is convincing; historical stats are favorable.
+- `B`: watch closely, but at least one important factor is not ideal — including but not limited to volume shrinkage, mixed market breadth, or climax-stage theme risk. `theme_lifecycle_stage=divergence` 总是把 grade 限制在 B（即使其他因子都强）。
 - `C`: observation only; do not frame it as actionable.
-- `REJECT`: not in yesterday's valid limit-up pool; market-wide break-board rate is high and breadth is collapsing (agent's judgment from facts); theme leader broke board; `theme_lifecycle_stage` is `ebb`; or data quality is insufficient.
+- `REJECT`: not in yesterday's valid limit-up pool; market-wide break-board rate is high and breadth is collapsing (agent's judgment from facts); theme leader broke board; `theme_lifecycle_stage=ebb`（退潮阶段一律 REJECT，不论封单多大）; or data quality is insufficient.
 
 If speed, big-order, or orderbook timestamps are delayed by more than 3 minutes during active trading hours, maximum grade is `B` and `promotion_likelihood` must not be `high`.
 
@@ -204,7 +210,7 @@ Use this structure for user-facing answers. The `factor_analysis` block and `pro
    - 市场情绪: <一句中文说明，基于涨停数/炸板率/溢价率等市场事实>
    - 题材所在位置: <说明 theme_lifecycle_stage 及其含义；若为 divergence/ebb 须明确点出降权原因>
    - 股本大小: <说明 free_float_market_cap_cny 及对封板持续性的影响>
-   - 量能: <说明 avg_turnover_10d_cny / ma5_slope_degrees / prev_day_volume_shrink_ratio / broke_previous_high>
+   - 量能: <说明 avg_turnover_10d_cny / ma5_slope_degrees / prev_day_volume_shrink_ratio / broke_previous_high / big_order_net_inflow_ratio / orderbook_quality_score>
    - 回封力度: <说明 break_board_count / reseal_count / max_seal_amount_cny / final_seal_time / seal_to_turnover_ratio>
    评级原因: <综合五个维度的自然语言总结，说明主要加分项和主要扣分项>
    竞价数据: auction_change_pct / auction_turnover_cny / auction_turnover_rate
