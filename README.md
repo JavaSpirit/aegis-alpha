@@ -315,6 +315,8 @@ PYTHONPATH=src .venv/bin/python scripts/check_agent_reviews.py --limit 10
 
 See [docs/AGENT_EVALUATION.md](docs/AGENT_EVALUATION.md) for the expected guardrails.
 
+The agent is now required to walk 5 factors per candidate — 市场情绪 / 题材所在位置 / 股本大小 / 量能 / 回封力度 — and output a bucketed `promotion_likelihood` (`high` / `medium` / `low`) plus an agent-assigned `grade` (`A` / `B` / `C` / `REJECT`). A summary-only response that omits any factor walk or omits `promotion_likelihood` fails the offline agent-output validation enforced by `agent_eval.evaluate_agent_replay_response`. See [docs/AI_INTEGRATION.md](docs/AI_INTEGRATION.md) for the honest enforcement boundary.
+
 Each second-board candidate also includes `data_quality`, a per-signal metadata map covering source, source field, timestamp, confidence, grading usability, limitations, and evidence. Evidence entries use `authority` to separate `official_doc`, `observed_probe`, and `internal_inference`. Current jvQuant official capability notes are documented in [docs/JVQUANT_OFFICIAL_INDEX.md](docs/JVQUANT_OFFICIAL_INDEX.md), and observed semantic-query probes are documented in [docs/JVQUANT_FIELD_MAP.md](docs/JVQUANT_FIELD_MAP.md) and [docs/JVQUANT_CAPABILITY_MATRIX.md](docs/JVQUANT_CAPABILITY_MATRIX.md).
 
 Use `get_second_board_candidates_compact(limit)` for routine agent screening, then `get_second_board_candidate_data_quality(symbol)` when an agent only needs evidence details for one candidate; both avoid pulling the full verbose candidate pool and reduce output truncation.
