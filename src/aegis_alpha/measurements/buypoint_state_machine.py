@@ -49,12 +49,14 @@ def step(
     Pure function: returns a NEW BuyPointContext (never mutates the input).
 
     Transition table (each condition is a MEASURED fact):
-      idle        → broke_high    : price > previous_high AND vol_ratio >= breakout_volume_ratio_min
-      broke_high  → pullback      : last_price < breakout_price (retraced)
-      pullback    → aborted       : drawdown from previous_high > pullback_max_drawdown_pct
-      pullback    → re_surge      : price turned UP from pullback_low AND shrink ratio qualifies
-      re_surge    → buy_point_alert: resurge_strength >= resurge_strength_min
-      buy_point_alert, aborted    : terminal — no further transitions
+      idle        → broke_high      : price > previous_high AND vol_ratio >= breakout_volume_ratio_min
+      broke_high  → pullback        : last_price < breakout_price (retraced)
+      broke_high  → aborted         : drawdown from previous_high > pullback_max_drawdown_pct (on first retrace bar)
+      pullback    → aborted         : drawdown from previous_high > pullback_max_drawdown_pct
+      pullback    → re_surge        : price turned UP from pullback_low AND shrink ratio qualifies
+      re_surge    → aborted         : drawdown from previous_high > pullback_max_drawdown_pct (invariant: any state)
+      re_surge    → buy_point_alert : resurge_strength >= resurge_strength_min
+      buy_point_alert, aborted      : terminal — no further transitions
     """
     state = context.state
 
@@ -227,12 +229,31 @@ def step(
     # Transition: re_surge → buy_point_alert (or stay re_surge)
     # -----------------------------------------------------------------------
     if state == "re_surge":
-        # Re-measure resurge strength with the latest bar
-        range_span = context.breakout_price - context.pullback_low
+        # BUG 1 FIX: check drawdown abort guard FIRST, same invariant as pullback.
+        # In ANY non-terminal state, drawdown > max → abort immediately.
+        drawdown_pct = (
+            (context.previous_high - bar.last_price) / context.previous_high * 100.0
+            if context.previous_high > 0 else 0.0
+        )
+        if drawdown_pct > thresholds.pullback_max_drawdown_pct:
+            evidence_entry = (
+                f"砸破位 at {bar.time}: price {bar.last_price} drawdown "
+                f"{drawdown_pct:.2f}% > max {thresholds.pullback_max_drawdown_pct}% — aborted"
+            )
+            return replace(context, state="aborted", evidence=context.evidence + (evidence_entry,))
+
+        # BUG 2 FIX: update pullback_low when a new low is printed in re_surge.
+        # A bar below the recorded pullback_low shifts the real recovery anchor;
+        # using the stale low would overstate resurge_strength in the denominator.
+        new_pullback_low = min(context.pullback_low, bar.last_price)
+
+        # Re-measure resurge strength with the latest bar, anchored from the real low.
+        range_span = context.breakout_price - new_pullback_low
         if range_span > 0:
-            strength = (bar.last_price - context.pullback_low) / range_span
+            strength = (bar.last_price - new_pullback_low) / range_span
             strength = max(0.0, min(1.0, strength))
         else:
+            # invariant: range_span > 0 in normal flow (pullback requires last_price < breakout_price); defensive only
             strength = 1.0
 
         if strength >= thresholds.resurge_strength_min:
@@ -243,13 +264,14 @@ def step(
             return replace(
                 context,
                 state="buy_point_alert",
+                pullback_low=new_pullback_low,
                 resurge_strength=strength,
                 triggered_at=bar.time,
                 evidence=context.evidence + (evidence_entry,),
             )
 
-        # Still building strength
-        return replace(context, resurge_strength=strength)
+        # Still building strength — carry updated pullback_low and latest strength
+        return replace(context, pullback_low=new_pullback_low, resurge_strength=strength)
 
     # Fallback — should not normally be reached
     return context

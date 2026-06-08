@@ -254,3 +254,92 @@ def test_run_purity_deterministic():
     extra_bar = b("09:37", 105.0, 3000.0)
     result_c = step(result_a, extra_bar, THRESHOLDS)
     assert result_c.state == "buy_point_alert"  # terminal, stays
+
+
+# ---------------------------------------------------------------------------
+# Test 10 (regression) — re_surge must abort on deep drawdown
+# ---------------------------------------------------------------------------
+
+def test_resurge_aborts_on_deep_drawdown():
+    """Reach re_surge (weak strength), then a bar crashes >5% below previous_high → "aborted".
+
+    This is the BUG 1 regression lock: the old code had no drawdown guard in re_surge,
+    so a crash bar would be ignored and a later recovery would fire buy_point_alert falsely.
+
+    Setup (prev_high=100, baseline=1000):
+      09:32 price=101, vol=2000  → broke_high  (ratio=2.0 ≥ 1.5)
+      09:34 price=99.0, vol=400  → pullback     (shrink=0.20 ≤ 0.7, drawdown=1% safe)
+      09:36 price=99.9, vol=1800 → re_surge     (strength=0.45 < 0.5, not yet alert)
+      09:38 price=93.0, vol=500  → drawdown=(100-93)/100*100=7.0 > 5.0 → ABORTED
+
+    After abort, even a strong recovery bar must keep state "aborted" (terminal).
+    """
+    bar_breakout = b("09:32", 101.0, 2000.0)
+    bar_pullback = b("09:34", 99.0, 400.0)
+    bar_weak_surge = b("09:36", 99.9, 1800.0)  # strength=0.45 < 0.5 → re_surge
+    bar_crash = b("09:38", 93.0, 500.0)        # drawdown=(100-93)/100=7% > 5% → abort
+    bar_recovery = b("09:40", 103.0, 3000.0)   # would trigger alert if bug present
+
+    ctx = _initial()
+    ctx = step(ctx, bar_breakout, THRESHOLDS)
+    assert ctx.state == "broke_high"
+
+    ctx = step(ctx, bar_pullback, THRESHOLDS)
+    assert ctx.state == "pullback"
+
+    ctx = step(ctx, bar_weak_surge, THRESHOLDS)
+    assert ctx.state == "re_surge", f"expected re_surge, got {ctx.state}"
+    assert abs(ctx.resurge_strength - 0.45) < 1e-9
+
+    ctx = step(ctx, bar_crash, THRESHOLDS)
+    assert ctx.state == "aborted", (
+        f"expected aborted after 7% drawdown in re_surge, got {ctx.state} — "
+        "this is the BUG 1 regression: re_surge must check drawdown abort guard"
+    )
+    assert any("砸破" in e or "abort" in e.lower() for e in ctx.evidence)
+
+    # Terminal: recovery bar must not escape aborted
+    ctx = step(ctx, bar_recovery, THRESHOLDS)
+    assert ctx.state == "aborted", "aborted is terminal — should not recover to buy_point_alert"
+
+
+# ---------------------------------------------------------------------------
+# Test 11 (regression) — re_surge updates pullback_low on new low
+# ---------------------------------------------------------------------------
+
+def test_resurge_new_low_updates_pullback_low():
+    """In re_surge, a bar printing a new low below pullback_low must update pullback_low.
+
+    This is the BUG 2 regression lock: the old code never updated pullback_low in re_surge,
+    leaving a stale anchor in the strength denominator.
+
+    Setup (prev_high=100, baseline=1000):
+      09:32 price=101, vol=2000 → broke_high
+      09:34 price=99.0, vol=400 → pullback (shrink=0.20, pullback_low=99.0)
+      09:36 price=99.9, vol=1800 → re_surge (strength=0.45 < 0.5; pullback_low stays 99.0)
+      09:37 price=98.0, vol=300  → new low in re_surge; pullback_low should update to 98.0
+                                    strength = (98.0 - 98.0) / (101.0 - 98.0) = 0.0
+
+    Assert: after the 09:37 bar, context.pullback_low == 98.0 (updated, not stale 99.0).
+    """
+    bar_breakout = b("09:32", 101.0, 2000.0)
+    bar_pullback = b("09:34", 99.0, 400.0)
+    bar_weak_surge = b("09:36", 99.9, 1800.0)   # re_surge, pullback_low=99.0
+    bar_new_low = b("09:37", 98.0, 300.0)        # new low — must update pullback_low
+
+    ctx = _initial()
+    ctx = step(ctx, bar_breakout, THRESHOLDS)
+    ctx = step(ctx, bar_pullback, THRESHOLDS)
+    assert ctx.pullback_low == 99.0
+
+    ctx = step(ctx, bar_weak_surge, THRESHOLDS)
+    assert ctx.state == "re_surge"
+    assert ctx.pullback_low == 99.0  # hasn't gone lower yet
+
+    ctx = step(ctx, bar_new_low, THRESHOLDS)
+    assert ctx.pullback_low == 98.0, (
+        f"pullback_low should be updated to 98.0 (new low in re_surge), got {ctx.pullback_low} — "
+        "this is the BUG 2 regression: stale anchor corrupts resurge_strength denominator"
+    )
+    # Strength measured from the new real low: (98.0 - 98.0) / (101.0 - 98.0) = 0.0
+    assert ctx.resurge_strength == 0.0
