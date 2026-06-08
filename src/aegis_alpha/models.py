@@ -88,6 +88,14 @@ IntradayPattern = Literal[
     "normal",
     "unknown",
 ]
+BuyPointState = Literal[
+    "idle",
+    "broke_high",       # price cleared the prior high with volume
+    "pullback",         # retraced from the high on shrinking volume
+    "re_surge",         # surged back up toward the high
+    "buy_point_alert",  # the full 过前高→回踩缩量→重新上冲 sequence completed
+    "aborted",          # sequence invalidated (e.g. pullback broke down too far)
+]
 ThemeLifecycleStage = Literal[
     "launch",      # 启动
     "fermenting",  # 发酵
@@ -893,4 +901,34 @@ class HypothesisOutcome(BaseModel):
     hypothetical_grade: str = "C"
     applied_hypothesis: dict[str, Any] = Field(default_factory=dict)
     payload_diff: dict[str, Any] = Field(default_factory=dict)
+    notes: list[str] = Field(default_factory=list)
+
+
+class BuyPointThresholds(BaseModel):
+    """Injectable thresholds for the intraday buy-point state machine.
+
+    Defaults are placeholders; a strategy prior (Phase 5) overrides them.
+    The state machine MEASURES raw ratios; these thresholds decide transitions.
+    """
+    breakout_volume_ratio_min: float = 1.5    # breakout bar volume / baseline volume must exceed this
+    pullback_volume_shrink_max: float = 0.7   # pullback volume / breakout volume must stay below this (缩量)
+    resurge_strength_min: float = 0.5         # re-surge recovery toward the high, 0..1, must exceed this
+    pullback_max_drawdown_pct: float = 5.0    # if pullback drops more than this % below the high, abort
+
+
+class IntradayBuyPointSignal(BaseModel):
+    """Offline-detected intraday buy-point alert. This is an ALERT for research,
+    NOT an order instruction. Contains measured facts only.
+    """
+    symbol: str
+    trading_day: str
+    data_mode: str = "minute_replay"
+    state: BuyPointState = "idle"
+    triggered_at: str = ""               # bar time when buy_point_alert fired, else ""
+    previous_high_price: float = 0.0
+    breakout_volume_ratio: float = 0.0   # measured: breakout bar vol / baseline vol
+    pullback_volume_shrink_ratio: float = 0.0  # measured: pullback vol / breakout vol
+    resurge_strength: float = 0.0        # measured: 0..1 recovery toward the high
+    same_theme_co_pumping_count: int = 0 # how many same-theme names pumping at the surge moment
+    evidence: list[str] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
