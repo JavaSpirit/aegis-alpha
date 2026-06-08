@@ -12,7 +12,6 @@ Design principles:
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING
 
 from aegis_alpha.models import BuyPointState, BuyPointThresholds, MinuteReplayBar
 
@@ -176,7 +175,7 @@ def step(
 
                 evidence_resurge = (
                     f"重新上冲 at {bar.time}: price {bar.last_price}, "
-                    f"strength {strength:.4f}, pullback_low {context.pullback_low}"
+                    f"strength {strength:.4f}, pullback_low {new_pullback_low}"
                 )
 
                 if strength >= thresholds.resurge_strength_min:

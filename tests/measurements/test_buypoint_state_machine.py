@@ -92,24 +92,65 @@ def test_broke_high_to_pullback_on_retrace():
 
 
 # ---------------------------------------------------------------------------
-# Test 4 — pullback aborts on deep breakdown
+# Test 4 — broke_high aborts when the first retrace bar crashes too deep
 # ---------------------------------------------------------------------------
 
-def test_pullback_aborts_on_deep_breakdown():
-    """Pullback drops > 5% below prev_high → "aborted".
+def test_broke_high_aborts_on_deep_retrace():
+    """First bar below breakout_price drops > 5% below prev_high → "aborted" via broke_high branch.
+
+    The crash bar routes through the broke_high→pullback transition gate; the drawdown
+    guard fires there before the state ever becomes "pullback".
 
     Abort check: (previous_high - last_price) / previous_high * 100 > 5.0
-    prev_high = 100. For > 5% below: price < 95.0.
-    So price = 94.0 → drawdown = (100 - 94)/100*100 = 6.0 > 5.0 → aborted.
+    prev_high = 100. price = 94.0 → drawdown = (100 - 94)/100*100 = 6.0 > 5.0 → aborted.
     """
     bar_breakout = b("09:32", 101.0, 2000.0)
-    bar_deep = b("09:34", 94.0, 400.0)   # 6% below prev_high of 100
+    bar_deep = b("09:34", 94.0, 400.0)   # 6% below prev_high; routes through broke_high branch
 
     ctx = _initial()
-    ctx = step(ctx, bar_breakout, THRESHOLDS)   # broke_high
-    ctx = step(ctx, bar_deep, THRESHOLDS)       # should abort (deep breakdown)
+    ctx = step(ctx, bar_breakout, THRESHOLDS)   # → broke_high
+    ctx = step(ctx, bar_deep, THRESHOLDS)       # → aborted (via broke_high abort gate)
     assert ctx.state == "aborted"
     assert any("砸破" in e or "abort" in e.lower() or "aborted" in e.lower() for e in ctx.evidence)
+
+
+# ---------------------------------------------------------------------------
+# Test 4b — pullback STATE aborts when a second bar crashes too deep
+# ---------------------------------------------------------------------------
+
+def test_pullback_state_aborts_on_second_bar_crash():
+    """Genuinely exercises the pullback→aborted path: state must be "pullback" BEFORE the crash.
+
+    The broke_high test above exercises the broke_high abort gate. This test explicitly
+    reaches pullback first (mild retrace within limits), then delivers a second bar that
+    exceeds pullback_max_drawdown_pct from previous_high.
+
+    Hand-trace (prev_high=100, baseline=1000):
+      Bar 09:32 price=101, vol=2000 → broke_high  (vol_ratio=2.0 ≥ 1.5)
+      Bar 09:34 price=98.0, vol=600 → pullback
+        drawdown = (100-98)/100*100 = 2.0 ≤ 5.0 → safe, enters pullback state
+        shrink_ratio = 600/2000 = 0.30
+      Bar 09:36 price=93.0, vol=400 → drawdown = (100-93)/100*100 = 7.0 > 5.0 → aborted
+        This bar is processed inside the pullback branch (not broke_high).
+    """
+    bar_breakout = b("09:32", 101.0, 2000.0)
+    bar_mild_retrace = b("09:34", 98.0, 600.0)   # drawdown=2% — safe; lands in pullback
+    bar_crash = b("09:36", 93.0, 400.0)           # drawdown=7% > 5% — aborted from pullback
+
+    ctx = _initial()
+    ctx = step(ctx, bar_breakout, THRESHOLDS)
+    assert ctx.state == "broke_high"
+
+    ctx = step(ctx, bar_mild_retrace, THRESHOLDS)
+    assert ctx.state == "pullback", (
+        f"bar_mild_retrace must reach pullback (drawdown=2% safe), got {ctx.state}"
+    )  # confirms the crash bar will be processed in the pullback branch, not broke_high
+
+    ctx = step(ctx, bar_crash, THRESHOLDS)
+    assert ctx.state == "aborted", (
+        f"expected aborted from pullback state on 7% drawdown bar, got {ctx.state}"
+    )
+    assert any("砸破" in e or "abort" in e.lower() for e in ctx.evidence)
 
 
 # ---------------------------------------------------------------------------
