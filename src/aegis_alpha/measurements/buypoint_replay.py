@@ -11,6 +11,18 @@ Why a separate module (not in ``buypoint_state_machine.py``):
   preserves high cohesion: the state-machine file never imports model-level
   orchestration types, and the replay file never reimplements state logic.
 
+Baseline window vs machine evaluation
+--------------------------------------
+The opening ``baseline_window`` bars establish the volume baseline (mean volume
+used for all ratio calculations) and are **NOT evaluated for breakouts**.  The
+state machine only runs over ``bars[baseline_window:]``.
+
+Rationale: A-share stocks frequently gap up open above the prior high with the
+day's highest volume.  If opening bars were both used as the volume denominator
+AND evaluated by the machine, the first bar could simultaneously inflate the
+baseline AND satisfy the breakout threshold — circular self-referential logic
+that produces spurious signals before the opening auction even settles.
+
 Returned-list contract
 ----------------------
 * **When at least one buy_point_alert fires**: the list contains exactly one
@@ -41,6 +53,8 @@ from aegis_alpha.models import (
     MinuteReplaySnapshot,
 )
 
+__all__ = ["replay_buypoint"]
+
 
 def replay_buypoint(
     snapshot: MinuteReplaySnapshot,
@@ -58,22 +72,30 @@ def replay_buypoint(
             a volume-confirmed breakout above this level.
         thresholds: Optional injected thresholds.  If *None*, uses
             ``BuyPointThresholds()`` defaults.
-        same_theme_rising_count: Number of same-theme names that were rising at
-            the time of the replay.  Propagated verbatim to every emitted signal
-            as ``same_theme_co_pumping_count``.
-        baseline_window: Number of opening bars used to compute the baseline
-            volume.  The mean volume of the first *baseline_window* bars is used.
-            If there are fewer bars than *baseline_window*, the mean of all
-            available bars is used.
+        same_theme_rising_count: Fixed count for the session, propagated
+            verbatim to all emitted signals as ``same_theme_co_pumping_count``.
+        baseline_window: Number of opening bars used to compute the volume
+            baseline.  Must be >= 1.  These bars establish the mean volume
+            denominator for all ratio calculations and are **not evaluated for
+            breakouts** — the state machine runs over ``bars[baseline_window:]``
+            only.  If there are fewer total bars than *baseline_window*, the
+            mean of all available bars is used as the baseline and the machine
+            has no bars to evaluate (returns ``[]``).
 
     Returns:
         A list of :class:`IntradayBuyPointSignal` objects, one per
         ``buy_point_alert`` that fired during the day, in chronological order.
         Returns ``[]`` if no alert fired (including the case of an empty bar
-        list).
+        list or fewer bars than the baseline window).
 
         ``aborted`` attempts are NOT included in the list.
+
+    Raises:
+        ValueError: If *baseline_window* is 0 or negative.
     """
+    if baseline_window <= 0:
+        raise ValueError(f"baseline_window must be >= 1, got {baseline_window}")
+
     bars = snapshot.bars
     if not bars:
         return []
@@ -82,18 +104,20 @@ def replay_buypoint(
         thresholds = BuyPointThresholds()
 
     # ------------------------------------------------------------------
-    # Compute baseline volume from the opening window
+    # Compute baseline volume from the opening window only.
+    # These bars are NOT fed to the state machine (see module docstring).
     # ------------------------------------------------------------------
     window = bars[:baseline_window]
     baseline_volume = sum(b.volume for b in window) / len(window)
 
     # ------------------------------------------------------------------
-    # Fold step() over bars; restart on each terminal state
+    # Fold step() over post-baseline bars only; restart on each terminal state
     # ------------------------------------------------------------------
+    machine_bars = bars[baseline_window:]
     signals: list[IntradayBuyPointSignal] = []
     ctx = _fresh_context(previous_high=previous_high, baseline_volume=baseline_volume)
 
-    for bar in bars:
+    for bar in machine_bars:
         ctx = step(ctx, bar, thresholds)
 
         if ctx.state in ("buy_point_alert", "aborted"):

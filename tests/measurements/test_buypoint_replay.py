@@ -2,6 +2,10 @@
 
 TDD: written BEFORE the implementation. Run these first to confirm RED,
 then implement replay_buypoint to reach GREEN.
+
+Post-4.3 quality fixes (same commit):
+- test_replay_opening_gap_above_high_not_spurious_breakout: pins FIX 1 (circular baseline).
+- test_replay_baseline_window_zero_raises: pins FIX 2 (input guard).
 """
 from __future__ import annotations
 
@@ -243,3 +247,67 @@ def test_replay_empty_bars_returns_empty():
     snap = snapshot([])
     signals = replay_buypoint(snap, previous_high=10.0, thresholds=DEFAULT_THRESHOLDS)
     assert signals == [], f"Expected [] but got {signals}"
+
+
+# ---------------------------------------------------------------------------
+# Test 7: opening gap above prior high must NOT produce a spurious breakout
+# (pins FIX 1 — circular baseline exclusion)
+# ---------------------------------------------------------------------------
+
+def test_replay_opening_gap_above_high_not_spurious_breakout():
+    """An A-share stock that gaps up OPEN above previous_high on the highest
+    volume of the day — a classic opening auction scenario — must NOT fire a
+    buy_point_alert because the opening bars (inside the baseline window) are
+    excluded from state machine evaluation.
+
+    Without FIX 1 this bar would be simultaneously:
+      - the numerator of its own vol_ratio (breakout_volume = 500)
+      - part of the baseline denominator → baseline = mean([500, 50, 50]) ≈ 200
+      → vol_ratio = 500 / 200 = 2.5 >= 1.5 → spurious broke_high on bar 1
+
+    With FIX 1 the machine only runs over bars[3:], so bar 0 is never evaluated.
+    The rest of the day has no further breakout above previous_high, so no alert.
+    """
+    previous_high = 10.0
+    bars = [
+        # --- Baseline window (indices 0-2): gap-up opening bar is IN here ---
+        b("09:31", 10.50, 500.0),  # gaps up ABOVE previous_high, massive volume
+        b("09:32", 10.20,  50.0),  # subsequent quiet auction bars
+        b("09:33", 10.10,  50.0),
+        # --- Post-baseline bars (indices 3+): machine runs here ---
+        # Price stays near 10.10 — never re-breaks 10.0 with volume
+        b("09:34",  9.90,  60.0),
+        b("09:35",  9.80,  55.0),
+        b("09:36",  9.85,  50.0),
+        b("09:37",  9.90,  45.0),
+    ]
+    snap = snapshot(bars)
+
+    signals = replay_buypoint(
+        snap,
+        previous_high=previous_high,
+        thresholds=DEFAULT_THRESHOLDS,
+        baseline_window=3,
+    )
+
+    alerts = [s for s in signals if s.state == "buy_point_alert"]
+    assert alerts == [], (
+        f"Opening gap bar must not produce a spurious buy_point_alert, "
+        f"but got: {[s.state for s in signals]}. "
+        "Check that baseline bars are excluded from state machine evaluation (FIX 1)."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 8: baseline_window=0 raises ValueError (pins FIX 2 — input guard)
+# ---------------------------------------------------------------------------
+
+def test_replay_baseline_window_zero_raises():
+    """baseline_window=0 (or negative) must raise ValueError, not ZeroDivisionError."""
+    snap = snapshot([b("09:31", 10.0, 100.0)])
+
+    with pytest.raises(ValueError, match="baseline_window must be >= 1"):
+        replay_buypoint(snap, previous_high=10.0, baseline_window=0)
+
+    with pytest.raises(ValueError, match="baseline_window must be >= 1"):
+        replay_buypoint(snap, previous_high=10.0, baseline_window=-1)
