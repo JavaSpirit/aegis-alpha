@@ -38,6 +38,8 @@ Raw market facts (limit-up count, break-board rate, theme breadth) + risk_flags/
   [AI agent judges market sentiment and action — program emits facts only]
 ```
 
+Phase 4 adds offline intraday buy-point detection (`detect_intraday_buypoint`): OFFLINE replay over historical minute bars detecting 过前高→回踩缩量→重新上冲; exposed as a read-only MCP tool returning alert signals only (never an order instruction). Live intraday monitoring is a later phase (Phase 6).
+
 ## Requirements
 
 - Python 3.11+

@@ -67,6 +67,10 @@ that the agent *weighed* them correctly. Correctness evaluation against ground t
 (did the agent's `promotion_likelihood` match the real outcome?) is deferred to a future
 backtesting phase.
 
+## Phase 4 Contract: Offline Intraday Buy-Point Detection
+
+Phase 4 adds `detect_intraday_buypoint(symbol, end_day, previous_high)`: OFFLINE replay over historical minute bars detecting 过前高→回踩缩量→重新上冲, exposed as a read-only MCP tool returning alert signals only (never an order instruction). Live intraday monitoring is a later phase (Phase 6).
+
 ## References
 
 - Hermes Skills: https://hermes-agent.nousresearch.com/docs/user-guide/features/skills
