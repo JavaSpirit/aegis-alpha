@@ -570,6 +570,59 @@ class CandidateExplanation(BaseModel):
     disclaimer: str
 
 
+class MarketEmotionFacts(BaseModel):
+    trading_day: str
+    limit_up_count: int
+    break_board_rate: float
+    second_board_success_rate: float
+    consecutive_boards_alive_rate: float
+    first_to_second_promotion_rate: float
+    second_to_third_promotion_rate: float
+    max_height_today: int
+    hot_theme_count: int
+    conclusion: str
+
+
+class ThemePositionFacts(BaseModel):
+    theme: str
+    theme_lifecycle_stage: ThemeLifecycleStage
+    theme_role: ThemeLeaderRole
+
+
+class FloatSizeFacts(BaseModel):
+    free_float_market_cap_cny: float
+
+
+class VolumeEnergyFacts(BaseModel):
+    turnover_cny: float
+    avg_turnover_10d_cny: float
+    prev_day_volume_shrink_ratio: float
+
+
+class ResealStrengthFacts(BaseModel):
+    break_board_count: int
+    reseal_count: int
+    max_seal_amount_cny: float
+    final_seal_time: str
+
+
+class PromotionDossier(BaseModel):
+    symbol: str
+    name: str
+    data_mode: str = "mock"
+    provider: str = "mock"
+    market_emotion: MarketEmotionFacts
+    theme_position: ThemePositionFacts
+    float_size: FloatSizeFacts
+    volume_energy: VolumeEnergyFacts
+    reseal_strength: ResealStrengthFacts
+    data_timestamp: str = ""
+    disclaimer: str = (
+        "Facts-only research material. No probability or grade is assigned by the program; "
+        "judgment belongs to the agent. Not a buy/sell/order instruction."
+    )
+
+
 class WatchlistEntry(BaseModel):
     symbol: str
     added_at: str
