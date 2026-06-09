@@ -124,6 +124,7 @@ def detect_intraday_buypoint(symbol: str, end_day: str = "", previous_high: floa
 
         if previous_high > 0:
             resolved_high = previous_high
+            previous_high_source = "caller"
         else:
             # Fallback: derive from the maximum last_price of the first
             # baseline_window bars (the opening reference window).
@@ -133,6 +134,7 @@ def detect_intraday_buypoint(symbol: str, end_day: str = "", previous_high: floa
             else:
                 # Zero-bar snapshot — use previous_close as last resort.
                 resolved_high = snapshot.previous_close
+            previous_high_source = "opening_window_fallback"
 
         signals = replay_buypoint(
             snapshot,
@@ -144,6 +146,7 @@ def detect_intraday_buypoint(symbol: str, end_day: str = "", previous_high: floa
             "signals": [s.model_dump() for s in signals],
             "count": len(signals),
             "data_mode": snapshot.data_mode,
+            "previous_high_source": previous_high_source,
             "disclaimer": "Research alert only; not an order instruction.",
         }
 

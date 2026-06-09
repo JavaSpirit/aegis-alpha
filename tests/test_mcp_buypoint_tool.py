@@ -17,8 +17,9 @@ def _setup_mock_provider(monkeypatch):
 
 
 def test_detect_intraday_buypoint_returns_signals_shape(monkeypatch):
-    """Result must be a dict with keys signals/count/data_mode/disclaimer.
+    """Result must be a dict with keys signals/count/data_mode/previous_high_source/disclaimer.
     signals must be a list (may be empty — the mock bars may or may not fire).
+    previous_high_source must be "caller" when previous_high > 0 is supplied.
     """
     _setup_mock_provider(monkeypatch)
     from aegis_alpha.mcp.server import detect_intraday_buypoint
@@ -29,9 +30,14 @@ def test_detect_intraday_buypoint_returns_signals_shape(monkeypatch):
     assert "signals" in result, "'signals' key missing"
     assert "count" in result, "'count' key missing"
     assert "data_mode" in result, "'data_mode' key missing"
+    assert "previous_high_source" in result, "'previous_high_source' key missing"
     assert "disclaimer" in result, "'disclaimer' key missing"
     assert isinstance(result["signals"], list), "'signals' must be a list"
     assert result["count"] == len(result["signals"]), "count must equal len(signals)"
+    # Caller supplied previous_high=12.0 > 0, so source must be "caller".
+    assert result["previous_high_source"] == "caller", (
+        f"Expected 'caller' source but got {result['previous_high_source']!r}"
+    )
 
 
 def test_detect_intraday_buypoint_no_order_language(monkeypatch):
@@ -41,7 +47,11 @@ def test_detect_intraday_buypoint_no_order_language(monkeypatch):
     absent; we assert the directive substrings absent.
 
     Checked:
-    - Chinese directive phrases: 买入, 卖出, 下单, 全仓, 梭哈
+    - Imperative order-directive phrases: 卖出, 下单, 全仓, 梭哈, 买入吧, 去买, 立即买
+      NOTE: bare "买入" is NOT checked here because the state machine's evidence
+      audit trail uses "买入预警" (buy-point alert) as the PATTERN NAME, not as
+      an order instruction. Consistent with test_fired_signal_has_no_order_field
+      in tests/measurements/test_buypoint_replay.py.
     - No signal dict has keys: buy, sell, action, order
     """
     _setup_mock_provider(monkeypatch)
@@ -50,8 +60,8 @@ def test_detect_intraday_buypoint_no_order_language(monkeypatch):
     result = detect_intraday_buypoint("000001", previous_high=12.0)
     dumped = json.dumps(result, ensure_ascii=False)
 
-    # Chinese directive phrases must be absent anywhere in the output.
-    for phrase in ("买入", "卖出", "下单", "全仓", "梭哈"):
+    # Imperative order-directive phrases must be absent anywhere in the output.
+    for phrase in ("卖出", "下单", "全仓", "梭哈", "买入吧", "去买", "立即买"):
         assert phrase not in dumped, f"Order directive phrase '{phrase}' found in output"
 
     # No signal dict should carry an order-related key.

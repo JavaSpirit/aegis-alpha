@@ -345,6 +345,70 @@ def test_resurge_aborts_on_deep_drawdown():
 
 
 # ---------------------------------------------------------------------------
+# Test 10b — degenerate range_span == 0 (defensive branch coverage)
+# ---------------------------------------------------------------------------
+
+def test_degenerate_range_span_zero():
+    """When pullback_low == breakout_price the range_span is 0.
+
+    The defensive branch (state_machine lines ~174 and ~256) sets strength=1.0
+    instead of dividing by zero.  This test exercises that branch and confirms:
+    - The machine does NOT crash (no ZeroDivisionError).
+    - The resulting state is either buy_point_alert (strength=1.0 >= 0.5) or
+      another defined non-error state — never an exception.
+
+    Setup: breakout at price 101, then pullback bar lands exactly AT 101
+    (pullback_low == breakout_price == 101), then a bar above 101 turns the
+    price up.  When the re-surge bar is processed, range_span = 101 - 101 = 0
+    → defensive path fires, strength = 1.0 → buy_point_alert immediately.
+
+    Hand-trace (prev_high=100, baseline=1000):
+      09:32 price=101, vol=2000 → broke_high  (breakout_price=101)
+      09:34 price=101, vol=600  → retrace: price < breakout? No (equal).
+                                   Actually price == breakout_price, NOT < it.
+                                   Machine stays in broke_high.
+    Adjust: we need price < breakout_price for the pullback transition to fire,
+    then have the pullback_low track back up to breakout_price.  Instead we
+    directly construct a BuyPointContext already in pullback state with
+    pullback_low set equal to breakout_price, then deliver one "turned up" bar.
+    """
+    from aegis_alpha.measurements.buypoint_state_machine import BuyPointContext, step
+
+    # Directly construct a context in pullback with pullback_low == breakout_price.
+    # breakout_price = pullback_low = 101.0  →  range_span = 0 in the next step.
+    ctx = BuyPointContext(
+        state="pullback",
+        previous_high=100.0,
+        baseline_volume=1000.0,
+        breakout_price=101.0,
+        breakout_volume=2000.0,
+        breakout_volume_ratio=2.0,
+        pullback_low=101.0,       # equal to breakout_price → range_span == 0
+        pullback_volume=500.0,
+        pullback_volume_shrink_ratio=0.25,
+    )
+
+    # A bar above pullback_low (101.0) triggers the "turned up" branch.
+    # range_span = 101.0 - 101.0 = 0 → defensive strength = 1.0 → buy_point_alert.
+    bar_up = b("09:36", 101.5, 1800.0)
+
+    # Must not raise, and must land in a defined non-error state.
+    result = step(ctx, bar_up, THRESHOLDS)
+
+    assert result.state in ("buy_point_alert", "re_surge", "pullback", "aborted"), (
+        f"Unexpected state after range_span=0 branch: {result.state}"
+    )
+    # With strength=1.0 (defensive) >= resurge_strength_min=0.5, expect buy_point_alert.
+    assert result.state == "buy_point_alert", (
+        f"Expected buy_point_alert via defensive strength=1.0 path, got {result.state}. "
+        "Check the range_span==0 defensive branch in buypoint_state_machine.py."
+    )
+    assert result.resurge_strength == 1.0, (
+        f"Expected strength=1.0 from defensive branch, got {result.resurge_strength}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Test 11 (regression) — re_surge updates pullback_low on new low
 # ---------------------------------------------------------------------------
 
