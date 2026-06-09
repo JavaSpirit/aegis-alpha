@@ -985,3 +985,50 @@ class IntradayBuyPointSignal(BaseModel):
     same_theme_co_pumping_count: int = 0 # how many same-theme names pumping at the surge moment
     evidence: list[str] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 — Strategy Prior (soft-range agent guidance, NEVER a program filter)
+# ---------------------------------------------------------------------------
+
+class StrategyPriorThreshold(BaseModel):
+    """A single measurable metric with a soft ideal range.
+
+    ideal_low / ideal_high are open-ended (None = no bound on that side).
+    The program never rejects a candidate based on this range; the agent reads
+    the rationale and decides.
+    """
+
+    name: str                       # e.g. "avg_turnover_10d"
+    ideal_low: float | None = None  # open-ended on either side
+    ideal_high: float | None = None
+    unit: str = ""                  # "cny" | "degrees" | ...
+    rationale: str                  # one Chinese sentence: why this range is the client's preference
+
+
+class StrategyPrior(BaseModel):
+    """A named strategy prior — pure agent guidance, not a program filter.
+
+    The program exposes this to the agent at query time. The agent compares
+    measured facts against the soft ranges and writes explicit override notes
+    whenever facts differ from the guidance.
+
+    There is intentionally NO pass/fail/filter/score/grade/probability field.
+    override_policy and disclaimer make that contract explicit and machine-readable.
+    """
+
+    prior_id: str                   # e.g. "client_10pt"
+    label: str                      # human label, Chinese ok
+    source: str                     # provenance, e.g. "客户口述 10 点策略"
+    is_active: bool = False         # which prior is active is config/human-controlled
+    thresholds: list[StrategyPriorThreshold] = Field(default_factory=list)
+    guidance_notes: list[str] = Field(default_factory=list)  # NL items the agent must weigh
+    caixin_alignment: str = "placeholder — 本期暂不接入财联社消息源"
+    override_policy: str = (
+        "先验仅为指引。程序绝不因先验通过或拒绝任何标的；当实测事实与先验区间冲突时，"
+        "agent 必须以事实为准并写明覆盖理由。"
+    )
+    disclaimer: str = (
+        "Strategy prior is agent guidance only, not a program filter "
+        "and not a buy/sell/order instruction."
+    )

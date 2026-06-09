@@ -1,0 +1,26 @@
+prior_id: client_10pt
+label: 客户二板买点策略（10 点）
+source: 客户口述策略
+is_active: true
+
+thresholds:
+  - name: avg_turnover_10d
+    ideal_low: 5000000000
+    ideal_high: null
+    unit: cny
+    rationale: 近10日均成交量需大于50亿，确保流动性与资金承接。
+  - name: ma5_slope_degrees
+    ideal_low: 30
+    ideal_high: 60
+    unit: degrees
+    rationale: 5日均线斜率30–60度，趋势向上但不过热。
+
+guidance_notes:
+  - 所属板块近两周多次异动拉升、有持续性（可能需 AI 盘外抓取确认）。
+  - T-1 缩量调整。
+  - T 日早盘拉升快、带量过前期高点（结合盘口实时大单买入占比）。
+  - 回踩砸盘缩量、重新上冲=买入预警点。
+  - 同板块共振拉升加分。
+  - 监控时段 9:30–9:50 与 11:10–11:30。
+
+caixin_alignment: "placeholder — 本期暂不接入财联社消息源"
