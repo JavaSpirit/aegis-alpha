@@ -500,6 +500,28 @@ def get_second_board_candidate_data_quality(symbol: str) -> dict:
 
 
 @mcp.tool
+def get_promotion_dossier(symbol: str) -> dict:
+    """Bundle the five promotion-judgment factors (市场情绪/题材位置/股本/量能/回封力度) for one
+    second-board candidate into a single facts-only dossier. No probability or grade is
+    assigned — judgment belongs to the agent. Not a buy/sell/order instruction."""
+    from aegis_alpha.measurements.promotion_dossier import assemble_promotion_dossier
+
+    def _dossier(adapter: Any) -> dict:
+        normalized = symbol.strip().upper().split(".", 1)[0]
+        gate = adapter.get_market_sentiment_gate()
+        for candidate in adapter.get_second_board_candidates():
+            if candidate.symbol == symbol or candidate.symbol == normalized:
+                return assemble_promotion_dossier(candidate, gate).model_dump()
+        return {
+            "symbol": symbol,
+            "data_mode": "unavailable",
+            "error": "Candidate not found in current second-board pool.",
+        }
+
+    return _call_tool(_dossier)
+
+
+@mcp.tool
 def explain_candidate(symbol: str) -> dict:
     """Explain a watchlist candidate without issuing buy or sell instructions."""
     return _call_tool(lambda adapter: adapter.explain_candidate(symbol).model_dump())
