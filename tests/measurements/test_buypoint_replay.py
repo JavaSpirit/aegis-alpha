@@ -311,3 +311,82 @@ def test_replay_baseline_window_zero_raises():
 
     with pytest.raises(ValueError, match="baseline_window must be >= 1"):
         replay_buypoint(snap, previous_high=10.0, baseline_window=-1)
+
+
+# ---------------------------------------------------------------------------
+# Test 9: a FIRED buy_point_alert carries no order-related fields (Task 4.4)
+# ---------------------------------------------------------------------------
+
+def test_fired_signal_has_no_order_field():
+    """Non-vacuous safety lock: a genuinely FIRED buy_point_alert must carry
+    no order-related key or directive language.
+
+    The signal list MUST be non-empty (asserted first) so the per-signal
+    assertions cannot pass vacuously on an empty list.
+
+    Checked per signal (model_dump()):
+    - no key in {"buy", "sell", "action", "order", "position"}
+    - no *action-form* order directives: 卖出, 下单, 全仓, 梭哈, 买入吧, 去买, 立即买
+      NOTE: "买入" appears legitimately in the evidence audit trail as the pattern
+      label "买入预警" (buy-point alert), which is a MEASUREMENT label, not an order
+      instruction. The safety invariant is that no imperative order phrasing is
+      present (e.g. 下单/全仓/梭哈/卖出). See state machine comment: "ALERT, never
+      a buy/sell instruction."
+
+    Bar sequence reused from test_replay_detects_full_buypoint (known to fire).
+    """
+    import json
+
+    previous_high = 10.0
+    bars = [
+        # Baseline window (3 bars): avg volume = 100
+        b("09:31", 9.80, 100.0),
+        b("09:32", 9.82, 100.0),
+        b("09:33", 9.85, 100.0),
+        # Breakout: price > 10.0, vol_ratio = 200/100 = 2.0 >= 1.5 ✓
+        b("09:34", 10.20, 200.0),
+        # Pullback (缩量): stays above previous_high * 0.95 = 9.50
+        b("09:35", 10.05, 60.0),
+        b("09:36", 9.90,  50.0),
+        # Re-surge: strength = (10.10-9.90)/(10.20-9.90) = 0.667 >= 0.5 ✓
+        b("09:37", 10.10, 80.0),
+    ]
+    snap = snapshot(bars)
+
+    signals = replay_buypoint(
+        snap,
+        previous_high=previous_high,
+        thresholds=DEFAULT_THRESHOLDS,
+        baseline_window=3,
+    )
+
+    # Guard: must have at least one fired alert so the loop below is non-vacuous.
+    alerts = [s for s in signals if s.state == "buy_point_alert"]
+    assert len(alerts) >= 1, (
+        f"Expected at least one buy_point_alert but got states: "
+        f"{[s.state for s in signals]}. "
+        "Bar sequence must fire a signal for this safety test to be meaningful."
+    )
+
+    # Per-signal safety assertions.
+    order_keys = {"buy", "sell", "action", "order", "position"}
+    # Action-form directives that would constitute an actual trade order instruction.
+    # "买入预警" is exempt: it is the technical pattern NAME, not an order.
+    # We test for the imperative / action phrases that would instruct a trade.
+    order_directives = ("卖出", "下单", "全仓", "梭哈", "买入吧", "去买", "立即买")
+
+    for alert in alerts:
+        dumped = alert.model_dump()
+        serialised = json.dumps(dumped, ensure_ascii=False)
+
+        # No order-related key present in the model.
+        present_order_keys = order_keys & set(dumped.keys())
+        assert not present_order_keys, (
+            f"Order-related key(s) {present_order_keys} found in fired signal: {dumped}"
+        )
+
+        # No imperative order-directive phrase anywhere in the serialised signal.
+        for phrase in order_directives:
+            assert phrase not in serialised, (
+                f"Order directive '{phrase}' found in fired signal JSON: {serialised}"
+            )
