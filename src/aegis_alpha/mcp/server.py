@@ -179,6 +179,34 @@ def get_event_scoring_config() -> dict:
 
 
 @mcp.tool
+def get_active_strategy_prior() -> dict:
+    """Return the active strategy prior as agent GUIDANCE (read-only).
+
+    Switching which prior is active is a human/config action; no tool mutates it.
+    The program never rejects or passes a candidate based on a prior — the agent
+    weighs the soft ranges against measured facts and overrides with reasoning.
+    Not a buy/sell/order instruction."""
+    from aegis_alpha.strategy_priors import load_active_strategy_prior
+
+    try:
+        prior = load_active_strategy_prior()
+    except Exception as exc:
+        return {
+            "data_mode": "unavailable",
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+            "disclaimer": "Strategy prior config unavailable. Research output only.",
+        }
+    if prior is None:
+        return {
+            "data_mode": "unavailable",
+            "error": "No active strategy prior configured.",
+            "disclaimer": "Strategy prior is agent guidance only, not a program filter and not a buy/sell/order instruction.",
+        }
+    return prior.model_dump()
+
+
+@mcp.tool
 def get_realtime_connection_status() -> dict:
     """Return realtime provider connection state without starting a raw stream."""
     return _call_tool(lambda adapter: adapter.get_realtime_connection_status().model_dump())
