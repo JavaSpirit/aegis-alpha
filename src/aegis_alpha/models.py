@@ -105,6 +105,7 @@ ThemeLifecycleStage = Literal[
     "unknown",
 ]
 ContrarianPoolKind = Literal["limit_down", "st"]
+PromotionLikelihood = Literal["high", "medium", "low"]
 CapitalFlowSliceWindow = Literal[
     "daily",
     "pre_first_seal_5m",
@@ -803,6 +804,44 @@ class BacktestRun(BaseModel):
     started_at: str = ""
     completed_at: str = ""
     notes: list[str] = Field(default_factory=list)
+
+
+class AgentJudgmentRow(BaseModel):
+    """One agent prediction joined to its realized outcome (facts only)."""
+
+    symbol: str
+    trading_day: str
+    predicted_grade: CandidateGrade | None = None
+    predicted_likelihood: PromotionLikelihood | None = None
+    # realized truth (None = outcome not yet known / not recorded)
+    sealed_second_board: bool | None = None
+    next_day_open_pct: float | None = None
+    next_day_high_pct: float | None = None
+
+
+class AgentJudgmentScorecard(BaseModel):
+    """Calibration metrics for the agent's past judgments vs realized truth.
+
+    Objective metrics only — this is NOT a program re-grade. It measures how
+    well the AGENT's own calls (grade + promotion_likelihood) matched reality.
+    """
+
+    start_day: str
+    end_day: str
+    sample_size: int = 0  # rows with BOTH a prediction and a realized sealed_second_board
+    # Probability calibration: promotion_likelihood vs realized sealed_second_board
+    brier_score: float | None = None  # None when sample_size == 0
+    likelihood_calibration: dict[str, dict[str, float]] = Field(default_factory=dict)
+    # e.g. {"high": {"predicted_rate": 0.8, "realized_seal_rate": 0.66, "n": 12.0}, ...}
+    # Grade hit-rate: realized seal rate per predicted grade bucket
+    grade_hit_rate: dict[str, dict[str, float]] = Field(default_factory=dict)
+    # e.g. {"A": {"realized_seal_rate": 0.7, "n": 10.0}, "B": {...}, ...}
+    rows: list[AgentJudgmentRow] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+    disclaimer: str = (
+        "Objective calibration metrics for the agent's past judgments vs realized outcomes. "
+        "Not a program grade and not a buy/sell/order instruction."
+    )
 
 
 class ThresholdProposal(BaseModel):
