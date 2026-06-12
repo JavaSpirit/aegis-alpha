@@ -14,7 +14,7 @@ import yaml
 
 from aegis_alpha.adapters.factory import create_market_data_adapter
 from aegis_alpha.adapters.jvquant_websocket import JvQuantRealtimeClient
-from aegis_alpha.clock import SH_TZ, now_iso
+from aegis_alpha.clock import SH_TZ, now_dt, now_iso
 from aegis_alpha.config import load_project_env
 from aegis_alpha.events import EventDetector, SignalWindowBuffer, load_event_scoring_config
 from aegis_alpha.extensions.sector_events import (
@@ -249,6 +249,11 @@ class AegisAlphaRunner:
                 self.write_status("STARTING", next_action="connect_websocket")
                 connection = self.client.subscribe(symbols, levels)
             self.persist_buffer_outputs(symbols)
+            try:
+                self.detect_buypoints_in_window(symbols)
+            except Exception:
+                # Buy-point detection is advisory; never kill the runner cycle
+                pass
             state = "RUNNING" if connection.connected and not connection.last_error else "DEGRADED"
             status = self.write_status(state, next_action="listen")
         except Exception as exc:
@@ -355,6 +360,117 @@ class AegisAlphaRunner:
                 theme=event.theme,
             )
             notify_macos(alert)
+
+    def detect_buypoints_in_window(self, symbols: list[str]) -> list:
+        """Window-gated live buy-point replay — runs only inside the configured monitor windows.
+
+        Reads rolling tick data from the buffer, aggregates into minute bars, drives the
+        buy-point state machine (Phase 4), and emits a paper alert for each fired signal.
+
+        This method is read-only with respect to config and orders.  It ONLY writes
+        AgentAlert records and fires desktop notifications.  It never places orders.
+
+        Returns:
+            List of IntradayBuyPointSignal objects for signals that fired this call
+            (may be empty if outside the window, insufficient data, or no pattern).
+        """
+        from aegis_alpha.measurements.buypoint_replay import replay_buypoint
+        from aegis_alpha.measurements.minute_bars import rolling_points_to_minute_bars
+        from aegis_alpha.models import MinuteReplaySnapshot
+        from aegis_alpha.alerts.notifier import notify_macos
+        from aegis_alpha.alerts.store import AlertStore
+
+        now_hhmm = now_dt().strftime("%H:%M")
+        windows = monitor_windows_from_config(self.config)
+        window_name = is_in_monitor_window(now_hhmm, windows)
+        if window_name is None:
+            return []
+
+        trading_day = now_dt().date().isoformat()
+        timestamp = now_iso()
+        alert_store = AlertStore(self.store)
+
+        # Lazily build / reuse the market data adapter (same pattern as _collect_sector_events)
+        if self._sector_events_adapter is None:
+            try:
+                self._sector_events_adapter = create_market_data_adapter()
+            except Exception:
+                pass
+
+        # Try to load all second-board candidates once (best-effort)
+        candidates: list = []
+        if self._sector_events_adapter is not None:
+            try:
+                candidates = self._sector_events_adapter.get_second_board_candidates()
+            except Exception:
+                candidates = []
+
+        fired_signals: list = []
+
+        for symbol in symbols:
+            try:
+                points = self.buffer.rolling_points(symbol)
+                # Need baseline_window=3 + at least 1 eval bar = 4 bars minimum
+                bars = rolling_points_to_minute_bars(points)  # turnover_is_cumulative=True (default)
+                if len(bars) < 4:
+                    continue
+
+                # ------------------------------------------------------------------
+                # Resolve previous_high — fact-first with opening-window fallback
+                # ------------------------------------------------------------------
+                prev_high: float = 0.0
+                prev_high_source: str = ""
+
+                # Normalize symbol for lookup: strip, upper, drop exchange suffix
+                sym_key = symbol.strip().upper().split(".", 1)[0]
+                for candidate in candidates:
+                    cand_key = str(candidate.symbol).strip().upper().split(".", 1)[0]
+                    if cand_key == sym_key and candidate.previous_high_price > 0:
+                        prev_high = candidate.previous_high_price
+                        prev_high_source = "fact"
+                        break
+
+                if prev_high <= 0:
+                    # Fallback: use the high over the first baseline_window bars
+                    baseline_window = 3
+                    opening_bars = bars[:baseline_window]
+                    if opening_bars:
+                        prev_high = max(b.last_price for b in opening_bars)
+                        prev_high_source = "opening_window_fallback"
+
+                if prev_high <= 0:
+                    # Cannot define a breakout level — skip
+                    continue
+
+                snap = MinuteReplaySnapshot(
+                    symbol=symbol,
+                    trading_day=trading_day,
+                    timestamp=timestamp,
+                    bars=bars,
+                )
+                signals = replay_buypoint(snap, previous_high=prev_high)
+
+                for signal in signals:
+                    if signal.state != "buy_point_alert":
+                        continue
+                    fired_signals.append(signal)
+
+                    # Stable dedup key: same symbol + same triggered bar time → no re-alert
+                    event_id = f"buypoint:{symbol}:{signal.triggered_at}"
+                    alert = alert_store.create(
+                        title=f"BUYPOINT_ALERT {symbol}",
+                        body=("; ".join(signal.evidence)[:480] + f" | previous_high_source={prev_high_source}"),
+                        severity="warning",
+                        event_id=event_id,
+                        symbol=symbol,
+                    )
+                    notify_macos(alert)
+
+            except Exception:
+                # Buy-point detection is advisory; runner liveness must not depend on it
+                pass
+
+        return fired_signals
 
     def run_forever(self) -> None:
         signal.signal(signal.SIGTERM, self.request_stop)

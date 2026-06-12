@@ -128,6 +128,11 @@ class SignalWindowBuffer:
         with self._lock:
             return self._seal_amount.get(symbol, 0.0)
 
+    def rolling_points(self, symbol: str) -> list[tuple[str, float, float]]:
+        """Return a thread-safe COPY of the rolling (timestamp, price, turnover) points for a symbol."""
+        with self._lock:
+            return list(self._points.get(symbol, []))
+
     def speed_pct(self, symbol: str, minutes: int) -> float:
         """Return percentage change over the last `minutes` minutes by timestamp."""
         with self._lock:
