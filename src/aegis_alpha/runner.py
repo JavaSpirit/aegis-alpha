@@ -93,6 +93,89 @@ def reconnect_delay_seconds(config: dict, failure_count: int, *, jitter: float |
     return round(delay * (1.0 + jitter_value), 3)
 
 
+# ---------------------------------------------------------------------------
+# Monitor windows — configurable [start, end) HH:MM slices for buy-point gate
+# ---------------------------------------------------------------------------
+
+DEFAULT_MONITOR_WINDOWS: list[dict[str, str]] = [
+    {"name": "open_drive", "start": "09:30", "end": "09:50"},
+    {"name": "late_morning", "start": "11:10", "end": "11:30"},
+]
+
+
+def _hhmm_to_minutes(hhmm: str) -> int | None:
+    """Parse 'HH:MM' to integer minutes since midnight.  Returns None on any parse error."""
+    parts = hhmm.split(":")
+    if len(parts) != 2:
+        return None
+    try:
+        h, m = int(parts[0]), int(parts[1])
+    except ValueError:
+        return None
+    if not (0 <= h <= 23 and 0 <= m <= 59):
+        return None
+    return h * 60 + m
+
+
+def monitor_windows_from_config(config: dict) -> list[dict[str, str]]:
+    """Return configured monitor_windows, or DEFAULT_MONITOR_WINDOWS if absent/empty.
+
+    Each item must be a dict with str keys 'name', 'start', and 'end'.
+    Malformed items (missing any of those keys) are silently skipped.
+    If the resulting validated list is empty, falls back to DEFAULT_MONITOR_WINDOWS.
+    """
+    raw = config.get("monitor_windows")
+    if not raw:
+        return list(DEFAULT_MONITOR_WINDOWS)
+
+    valid: list[dict[str, str]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name")
+        start = item.get("start")
+        end = item.get("end")
+        if name is None or start is None or end is None:
+            continue
+        valid.append({"name": str(name), "start": str(start), "end": str(end)})
+
+    return valid if valid else list(DEFAULT_MONITOR_WINDOWS)
+
+
+def is_in_monitor_window(now_hhmm: str, windows: list[dict[str, str]]) -> str | None:
+    """Return the name of the first window whose [start, end) range contains now_hhmm, else None.
+
+    Args:
+        now_hhmm: Current local time as a zero-padded 'HH:MM' string (24-hour clock).
+                  The runner passes the current Shanghai time here; this function is pure
+                  and NEVER calls datetime.now() internally.
+        windows:  List of window dicts, each with 'name', 'start', 'end' keys (HH:MM strings).
+
+    Returns:
+        The window name (str) when now_hhmm falls in [start, end), None otherwise.
+
+    Boundary convention:
+        start is INCLUSIVE, end is EXCLUSIVE.
+        e.g. window "09:30"–"09:50": "09:30" is inside, "09:50" is outside.
+
+    Malformed now_hhmm (empty string, no colon, invalid digits, out-of-range hours/minutes)
+    returns None without raising.  Malformed window entries are silently skipped.
+    """
+    now_min = _hhmm_to_minutes(now_hhmm)
+    if now_min is None:
+        return None
+
+    for window in windows:
+        start_min = _hhmm_to_minutes(str(window.get("start", "")))
+        end_min = _hhmm_to_minutes(str(window.get("end", "")))
+        if start_min is None or end_min is None:
+            continue
+        if start_min <= now_min < end_min:
+            return str(window.get("name", ""))
+
+    return None
+
+
 class AegisAlphaRunner:
     def __init__(self, config_path: str | Path | None = None, *, connect: bool = True) -> None:
         load_project_env()

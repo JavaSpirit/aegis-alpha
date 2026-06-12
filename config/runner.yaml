@@ -15,6 +15,14 @@ trading_sessions:
     start: "13:00"
     end: "15:15"
 
+monitor_windows:
+  - name: open_drive
+    start: "09:30"
+    end: "09:50"
+  - name: late_morning
+    start: "11:10"
+    end: "11:30"
+
 subscription:
   symbols_env: JVQUANT_SUBSCRIBE_SYMBOLS
   default_symbols:
