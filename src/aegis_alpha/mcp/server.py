@@ -315,6 +315,28 @@ def get_agent_correction_summary(limit: int = 100) -> dict:
 
 
 @mcp.tool
+def get_agent_judgment_scorecard(start_day: str, end_day: str = "") -> dict:
+    """Score the agent's PAST judgments (grade + promotion_likelihood) against realized
+    next-day outcomes over a date window. Returns objective calibration metrics
+    (Brier score, likelihood calibration, grade hit-rate) — not a program grade and
+    not a buy/sell/order instruction."""
+    from aegis_alpha.feedback.agent_scorecard import compute_scorecard
+
+    safe_start = start_day.strip()
+    safe_end = (end_day or start_day).strip()
+    if not safe_start:
+        return {"data_mode": "unavailable", "error": "start_day is required"}
+
+    def _score(store: AegisAlphaStore) -> dict:
+        reviews = store.list_agent_reviews_between(safe_start, safe_end)
+        outcomes = store.list_review_outcomes(start_day=safe_start, end_day=safe_end)
+        scorecard = compute_scorecard(reviews, outcomes, start_day=safe_start, end_day=safe_end)
+        return scorecard.model_dump()
+
+    return _call_store(_score)
+
+
+@mcp.tool
 def create_correction_action_proposals(limit: int = 100) -> dict:
     """Create or update human-reviewable proposals from current correction routing."""
     safe_limit = max(1, min(int(limit or 100), 200))
