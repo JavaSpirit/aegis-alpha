@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 
 CandidateGrade = Literal["A", "B", "C", "REJECT"]
-AgentCorrectionType = Literal["DATA_ERROR", "UNIT_ERROR", "STRATEGY_ERROR", "EXPRESSION_RISK", "OTHER"]
+AgentCorrectionType = Literal["DATA_ERROR", "UNIT_ERROR", "STRATEGY_ERROR", "EXPRESSION_RISK", "CLIENT_OUTCOME", "OTHER"]
 AgentCorrectionActionTarget = Literal["adapter", "scoring_config", "memory", "skill", "review_only"]
 AgentCorrectionActionPriority = Literal["high", "medium", "low"]
 AgentCorrectionActionStatus = Literal["needs_human_review", "ready_to_apply", "collect_more_evidence"]

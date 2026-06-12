@@ -564,6 +564,28 @@ class AegisAlphaStore:
             )
             recommended_next_action = "Patch the Hermes skill wording if this phrasing issue repeats."
 
+        if by_type.get("CLIENT_OUTCOME", 0):
+            client_memory = (
+                "Client-confirmed outcome feedback: when the client verifies a realized result that "
+                "contradicts or confirms an agent judgment, record the durable lesson as project memory "
+                "AFTER human confirmation (e.g. a confirmed theme-lifecycle veto). Aegis Alpha only "
+                "proposes this note; it does not write memory itself."
+            )
+            suggested_memory = suggested_memory or client_memory
+            recommended_actions.append(
+                AgentCorrectionAction(
+                    target="memory",
+                    priority="medium",
+                    status="needs_human_review",   # NOT ready_to_apply — client outcomes need human confirmation
+                    correction_type="CLIENT_OUTCOME",
+                    evidence_count=by_type["CLIENT_OUTCOME"],
+                    reason="Client-confirmed outcomes are durable lessons but must be human-reviewed before becoming memory.",
+                    action="On human approval, ask Hermes to save the suggested memory note. Aegis Alpha does not write memory automatically.",
+                    suggested_patch=client_memory,
+                )
+            )
+            recommended_next_action = "Review the client-outcome feedback; if valid, ask Hermes to save the suggested memory after confirmation."
+
         if by_type.get("OTHER", 0):
             recommended_actions.append(
                 AgentCorrectionAction(
