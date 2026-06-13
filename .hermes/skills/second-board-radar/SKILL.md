@@ -81,6 +81,8 @@ Core tools:
 - `query_minute_bars`
 - `simulate_outcome`
 - `detect_intraday_buypoint`
+- `get_promotion_dossier`
+- `get_agent_judgment_scorecard`
 
 Useful supporting tools:
 
@@ -122,7 +124,9 @@ Use `get_runner_status` when the user asks whether realtime monitoring is active
 
 5. If Aegis Alpha returns recent market events, use them as context for re-scoring candidates, but do not treat event suggestions as order instructions.
 
-6. For EACH candidate, you MUST walk all 5 factors explicitly. Do not produce only a general summary — 不得只给综合总结而跳过任一因子的逐项说明. The 5 required factors are:
+6. **Prefer `get_promotion_dossier(symbol)` to fetch all five factors in one call** — it returns `market_emotion / theme_position / float_size / volume_energy / reseal_strength` bundled as facts (no score), so you cannot accidentally skip a factor. Fall back to the individual tools only if the dossier is unavailable.
+
+   For EACH candidate, you MUST walk all 5 factors explicitly. Do not produce only a general summary — 不得只给综合总结而跳过任一因子的逐项说明. The 5 required factors are:
 
    **Factor 1 — 市场情绪 (market_emotion)**: Derived from the market gate facts: `break_board_rate`, `limit_up_count`, `yesterday_limitup_today_premium_pct`, `first_to_second_promotion_rate`, `consecutive_boards_alive_rate`, `hot_theme_count`. State in one Chinese sentence what the market environment implies for this candidate's odds. Example: "涨停42家，炸板率18%，连板存活率62%，市场情绪较好，对二板进攻有支撑。"
 
@@ -286,6 +290,12 @@ Good memory candidates:
 - Late-stage themes (`divergence`/`ebb`) should be downweighted even if short-term hotness looks strong (电力题材高位失败教训).
 
 Do not save raw stock tips, credentials, or one-off market rumors as memory.
+
+## Judgment Self-Check (Scorecard)
+
+Use `get_agent_judgment_scorecard(start_day, end_day)` to review how well your PAST calls matched reality over a date window. It returns objective calibration metrics — `brier_score` (lower = better-calibrated promotion_likelihood), `likelihood_calibration` (per high/medium/low bucket: predicted vs realized seal rate), and `grade_hit_rate` (realized seal rate per grade) — computed from your stored reviews vs recorded next-day outcomes.
+
+This is a self-calibration mirror, not a program grade and not an order. Read it to spot systematic bias — e.g. if your `high` bucket's realized seal rate is far below 0.8, you are over-confident and should tighten what earns a `high`. When the window has no scored samples, `sample_size` is 0 and `brier_score` is null; do not over-interpret a tiny sample.
 
 ## Scheduled Use
 
