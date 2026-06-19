@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 from aegis_alpha.agent_context import signal_snapshot_agent_context
 from aegis_alpha.agent_eval import evaluate_agent_replay_response
-from aegis_alpha.adapters.jvquant_websocket import summarize_raw_ab_payload, subscription_codes
+from aegis_alpha.adapters.jvquant_websocket import raw_lv2_large_trade_records, summarize_raw_ab_payload, subscription_codes
 from aegis_alpha.events import EventDetector, SignalWindowBuffer, load_event_scoring_config
 from aegis_alpha.models import AgentReview, AgentReviewCorrection, CandidateOutcomeReview, SignalSnapshot
 from aegis_alpha.replay import run_orderbook_replay_fixture
@@ -47,6 +47,45 @@ def test_signal_window_buffer_calculates_speed_and_flow() -> None:
     assert snapshot.speed_5m_pct == 9.0
     assert snapshot.big_order_net_inflow_ratio == 0.12
     assert snapshot.freshness_status == "fresh"
+
+
+def test_signal_window_buffer_tracks_directionless_large_trade_proxy() -> None:
+    buffer = SignalWindowBuffer()
+
+    assert buffer.add_large_trade_proxy(
+        "600000",
+        "2026-05-28T09:31:00+08:00",
+        10.0,
+        200_000,
+        threshold_cny=3_000_000,
+    ) is False
+    assert buffer.add_large_trade_proxy(
+        "600000",
+        "2026-05-28T09:41:00+08:00",
+        10.0,
+        400_000,
+        threshold_cny=3_000_000,
+    ) is True
+    assert buffer.add_large_trade_proxy(
+        "600000",
+        "2026-05-28T10:01:00+08:00",
+        10.0,
+        500_000,
+        threshold_cny=3_000_000,
+    ) is True
+
+    stats = buffer.large_trade_proxy_stats(
+        "600000",
+        trading_day="2026-05-28",
+        window_start="09:31",
+        window_end="10:00",
+    )
+    snapshot = buffer.latest_snapshot("600000")
+
+    assert stats["trade_count"] == 1
+    assert stats["total_amount_cny"] == 4_000_000
+    assert stats["max_trade_amount_cny"] == 4_000_000
+    assert snapshot.big_order_net_inflow_cny == 9_000_000
 
 
 def test_speed_pct_uses_time_window_not_point_count() -> None:
@@ -206,6 +245,53 @@ def test_raw_websocket_payload_summary() -> None:
     assert summary["levels"]["lv2"]["latest_field_counts"] == [4]
     assert summary["levels"]["lv2"]["max_piece_count"] == 2
     assert summary["levels"]["lv10"]["latest_field_counts"] == [46]
+
+
+def test_raw_lv2_large_trade_records_parse_four_field_payload() -> None:
+    records = raw_lv2_large_trade_records(
+        "lv2_002281=09:41:00,61347605,266.200,100|09:42:00,61347606,267.000,200\n"
+        "lv1_002281=09:42:00,267.000"
+    )
+
+    assert records == [
+        {
+            "symbol": "002281",
+            "time": "09:41:00",
+            "trade_id": "61347605",
+            "price": 266.2,
+            "volume": 100.0,
+        },
+        {
+            "symbol": "002281",
+            "time": "09:42:00",
+            "trade_id": "61347606",
+            "price": 267.0,
+            "volume": 200.0,
+        },
+    ]
+
+
+def test_jvquant_lv2_callback_records_large_trade_proxy() -> None:
+    from aegis_alpha.adapters.jvquant_websocket import JvQuantRealtimeClient
+
+    class Deal:
+        time = "09:41:00"
+        price = 10.0
+        volume = 400_000
+
+    class Lv2:
+        code = "600000"
+        deal_list = [Deal()]
+
+    buffer = SignalWindowBuffer()
+    client = JvQuantRealtimeClient(buffer=buffer, big_order_threshold_cny=3_000_000)
+    client._on_ab_lv2(Lv2())
+
+    stats = buffer.large_trade_proxy_stats("600000", window_start="09:31", window_end="10:00")
+
+    assert stats["trade_count"] == 1
+    assert stats["total_amount_cny"] == 4_000_000
+    assert stats["sample_trades"][0]["time"].endswith("T09:41:00+08:00")
 
 
 def test_sqlite_store_roundtrip(tmp_path) -> None:

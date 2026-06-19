@@ -18,7 +18,7 @@ This matrix is generated from configured read-only jvQuant semantic-query probes
 | Feed | Probe | Status | Authority | Observed Shape | Current Use | Limitation |
 |---|---|---:|---|---|---|---|
 | `lv1` | `probe_jvquant_websocket_payload.py --levels lv1` | pending_more_samples | observed_probe | 待盘中多标的采样 | 最新价、涨跌幅、成交额进入本地窗口 | 未完成验收 |
-| `lv2` | `probe_jvquant_websocket_payload.py --levels lv2` | observed | observed_probe | 最新成交样本字段数为 4 | 大额成交金额粗筛 | 当前样本未观察到主动买卖方向 |
+| `lv2` | `probe_jvquant_websocket_payload.py --levels lv2` | observed | observed_probe | 最新成交样本字段数为 4；2026-06-18 盘后对 `002281` 复核仍为 `time/trade_id/price/volume` | 大额成交金额粗筛 | 当前样本未观察到主动买卖方向，不能计算主动大单买入占比 |
 | `lv10` | `probe_jvquant_websocket_payload.py --levels lv10` | pending_more_samples | observed_probe | 历史单元测试覆盖 46 字段形状；需盘中复核 | 十档买卖量、盘口质量、封单估算 | 排单位置和真实队列需要更权威字段确认 |
 
 ## Derived Realtime Signals

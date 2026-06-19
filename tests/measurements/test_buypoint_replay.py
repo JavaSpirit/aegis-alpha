@@ -298,6 +298,37 @@ def test_replay_opening_gap_above_high_not_spurious_breakout():
     )
 
 
+def test_replay_opening_breakout_can_alert_after_pullback_and_resurge():
+    """Opening-window breakout is a candidate, not an immediate alert.
+
+    The first three bars cross previous_high, then later bars produce the actual
+    shrink-pullback and resurge confirmation. This pins the user's 09:30-10:00
+    fast-break use case without reintroducing an opening-bar-only false signal.
+    """
+    previous_high = 10.0
+    bars = [
+        b("09:31", 10.20, 300.0),
+        b("09:32", 10.60, 500.0),  # opening breakout candidate, not an alert
+        b("09:33", 10.40, 200.0),
+        b("09:34", 10.10, 120.0),  # pullback vs opening breakout, shrink = 0.24
+        b("09:35", 9.95, 80.0),    # deeper low, still within drawdown guard
+        b("09:36", 10.35, 130.0),  # resurge strength > 0.5
+    ]
+    snap = snapshot(bars)
+
+    signals = replay_buypoint(
+        snap,
+        previous_high=previous_high,
+        thresholds=DEFAULT_THRESHOLDS,
+        baseline_window=3,
+    )
+
+    alerts = [signal for signal in signals if signal.state == "buy_point_alert"]
+    assert len(alerts) == 1
+    assert alerts[0].triggered_at == "09:36"
+    assert any("开盘窗口过前高" in entry for entry in alerts[0].evidence)
+
+
 # ---------------------------------------------------------------------------
 # Test 8: baseline_window=0 raises ValueError (pins FIX 2 — input guard)
 # ---------------------------------------------------------------------------

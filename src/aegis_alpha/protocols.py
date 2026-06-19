@@ -57,6 +57,7 @@ class MarketDataAdapter(Protocol):
         symbol: str,
         end_day: str | None = None,
         limit_days: int = 1,
+        max_bars: int = 30,
     ) -> MinuteReplaySnapshot: ...
 
     def get_recent_market_events(self, limit: int = 20, event_type: str | None = None) -> list[MarketEvent]: ...
@@ -86,6 +87,78 @@ class MarketDataAdapter(Protocol):
     def get_auction_analysis(self, symbol: str, trading_day: str = "") -> AuctionAnalysis: ...
 
     def get_second_board_candidates(self) -> list[SecondBoardCandidate]: ...
+
+    def get_historical_second_board_candidates(self, trading_day: str, limit: int = 50) -> list[dict[str, Any]]: ...
+
+    def get_historical_first_board_watchlist(self, as_of_day: str, limit: int = 50) -> list[dict[str, Any]]: ...
+
+    def get_strategy_watchlist(self, as_of_day: str, limit: int = 50) -> list[dict[str, Any]]: ...
+
+    def get_theme_continuity(self, theme: str, as_of_day: str, lookback_days: int = 14) -> dict[str, Any]: ...
+
+    def run_historical_strategy_replay(
+        self,
+        as_of_day: str,
+        target_day: str,
+        symbols: list[str] | None = None,
+        limit: int = 10,
+        window_start: str = "",
+        window_end: str = "",
+    ) -> dict[str, Any]: ...
+
+    def run_historical_trigger_validation(
+        self,
+        end_day: str,
+        lookback_days: int = 5,
+        limit: int = 20,
+        window_start: str = "09:31",
+        window_end: str = "10:00",
+    ) -> dict[str, Any]: ...
+
+    def get_intraday_theme_copump(
+        self,
+        symbol: str,
+        as_of_day: str,
+        target_day: str,
+        trigger_time: str = "",
+        window_start: str = "09:31",
+        window_end: str = "10:00",
+        peer_limit: int = 20,
+    ) -> dict[str, Any]: ...
+
+    def get_intraday_orderflow_confirmation(
+        self,
+        symbol: str,
+        trading_day: str,
+        trigger_time: str = "",
+        window_start: str = "09:31",
+        window_end: str = "10:00",
+    ) -> dict[str, Any]: ...
+
+    def sample_realtime_large_trade_proxy(
+        self,
+        symbol: str,
+        duration_seconds: float = 8.0,
+        threshold_cny: float = 3_000_000.0,
+        window_start: str = "",
+        window_end: str = "",
+    ) -> dict[str, Any]: ...
+
+    def simulate_historical_orderflow_proxy(
+        self,
+        symbol: str,
+        trading_day: str,
+        window_start: str = "09:31",
+        window_end: str = "10:00",
+        volume_ratio_threshold: float = 1.5,
+    ) -> dict[str, Any]: ...
+
+    def get_second_board_next_day_outcomes(
+        self,
+        trading_day: str,
+        symbols: list[str] | None = None,
+        limit: int = 50,
+    ) -> dict[str, Any]: ...
 
     def get_history_stats(self, symbol: str) -> HistoryStats: ...
 

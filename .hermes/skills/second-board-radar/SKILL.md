@@ -39,12 +39,25 @@ Core tools:
 - `get_market_sentiment_gate`
 - `get_market_emotion`
 - `get_theme_leaders`
+- `get_theme_continuity`
 - `get_top_themes_today`
 - `get_limit_up_ladder`
 - `get_auction_analysis`
 - `get_seal_timeline`
 - `get_second_board_candidates_compact`
 - `get_second_board_candidates`
+- `get_historical_second_board_candidates`
+- `get_historical_first_board_watchlist`
+- `get_strategy_watchlist`
+- `get_daily_strategy_candidate_pool`
+- `run_historical_strategy_replay`
+- `run_historical_trigger_validation`
+- `get_intraday_theme_copump`
+- `get_intraday_orderflow_confirmation`
+- `sample_realtime_large_trade_proxy`
+- `simulate_historical_orderflow_proxy`
+- `get_strategy_decision_packet`
+- `get_second_board_next_day_outcomes`
 - `get_second_board_candidate_data_quality`
 - `explain_second_board_candidate`
 - `get_stock_realtime_snapshot`
@@ -96,6 +109,32 @@ Useful supporting tools:
 
 `get_market_sentiment_gate` returns market FACTS — not an action label. Fields include: `limit_up_count`, `break_board_rate`, `hot_theme_count`, `risk_flags`, `positive_signals`, `conclusion`, `yesterday_limitup_today_premium_pct`, `consecutive_boards_alive_rate`, `first_to_second_promotion_rate`, `second_to_third_promotion_rate`, `max_height_today`. Do NOT treat these as gate commands; the AGENT reads the facts and makes its own environmental judgment.
 
+`get_historical_first_board_watchlist(as_of_day)` returns only facts that should be knowable at that historical close, for strict replay questions such as "站在 2026-06-16 收盘，选出明日最值得观察的二板 Top3". Use this before making the Top3 judgment. Do not call target-day second-board tools until after you have clearly separated a post-hoc validation step.
+
+`get_daily_strategy_candidate_pool(as_of_day, limit)` is the preferred first step for the user's final workflow: close-day facts -> agent selects observation TopN -> target-day trigger facts. It returns a facts-only daily pool from first-board and large-turnover trend seeds, with 10-day turnover, T-1/as-of-day shrink, previous-high facts, market-internal theme continuity, source counts, coverage, and explicit data gaps. It does NOT rank by alpha, grade, score, or probability. Provider order is not an agent ranking.
+
+`get_strategy_watchlist(as_of_day)` is the lower-level strict replay entrypoint for the user's broad trend strategy. It returns `{result_count, candidates, data_gaps}` where candidates come from merged first-board and large-turnover trend seeds, then expose 10-day turnover baseline, T-1/as-of-day shrink, previous-high break, candidate source, and partial same-theme breadth. It still does not return program scores, probabilities, or grades. Prefer `get_daily_strategy_candidate_pool` for daily TopN selection unless you need the older compact shape. Do not treat MA5 slope as part of the user's current strategy; that rule is intentionally removed for now.
+
+`get_theme_continuity(theme, as_of_day, lookback_days)` returns market-internal two-week continuity facts for a theme: active days, burst days, total limit-ups, max daily count, recent counts, and a descriptive label such as weak/emerging/persistent/fading. It does NOT check off-platform news or CLS popups, and it is not a buy/sell score.
+
+`run_historical_strategy_replay(as_of_day, target_day, symbols, limit, window_start, window_end)` replays the user's intraday pattern over historical minute bars for the as-of strategy watchlist: opening-window break above previous high, volume-shrunken pullback, and resurge alert. Use `window_start="09:31", window_end="10:00"` when the user asks to stand at 9-10am. It returns research alert facts only. Each result includes `pattern_diagnostics` with crossed-previous-high facts, opening-window cross facts, volume-confirmed breakout status, and `no_signal_reason`; use this to explain why a stock did not trigger. It does not include future outcome labels and does not check historical Level-2 big-order ratio, CLS popups, or off-platform news.
+
+`run_historical_trigger_validation(end_day, lookback_days, limit, window_start, window_end)` runs a compact historical validation table over recent trading days. For each target day it uses the previous trading day's strategy watchlist, replays the requested intraday window, counts trigger/no-trigger reasons, and appends post-trigger outcome labels. Treat post-trigger labels as calibration only; never use them as as-of decision inputs.
+
+In validation output, `intraday_theme_copump` is the closest current proxy for the user's "同板块一起拉升" condition. It counts same-theme names inside the strategy watchlist sample that had crossed previous high or triggered before this signal time. Use it as a supportive co-pump fact, but say explicitly that it is not full-market realtime sector breadth.
+
+`get_intraday_theme_copump(symbol, as_of_day, target_day, trigger_time, window_start, window_end, peer_limit)` checks same-theme peers from the full strategy watchlist, not just the displayed validation sample. Use it when the user asks whether a specific trigger had sector/theme co-pump. It is still a proxy: direct full-market industry-member breadth is not reliable from current jvQuant semantic queries.
+
+`get_intraday_orderflow_confirmation(symbol, trading_day, trigger_time, window_start, window_end)` checks whether order-flow confirmation is available around a replay/live trigger. Current jvQuant historical wiring does NOT provide verified minute-level active big-order buy ratio; the tool exposes that as `historical_big_order_buy_ratio_available=false` and may return only a weak daily capital-flow proxy (`主力净额` / `超大单净额` / `大单净额` divided by daily turnover). It also exposes `realtime_orderflow_capability`: current `lv2` can support a directionless large-trade amount proxy, but `active_trade_side_available=false`, so `can_compute_big_order_buy_ratio=false`. Do not convert this proxy into a trigger-window buy-ratio claim. Use it to name the missing盘口资金 condition clearly and to provide weak context when daily flow is available.
+
+`sample_realtime_large_trade_proxy(symbol, duration_seconds, threshold_cny, window_start, window_end)` opens a short read-only lv2 sample and returns `directionless_large_trade_amount_cny` stats: trade count, total amount, max trade amount, and recent sample trades above the threshold. This is a weak盘口活跃度 proxy only. It cannot classify active buy vs active sell and must never be described as `big_order_buy_ratio`. If `sample_available=false` or `raw_message_count=0`, say the realtime provider did not deliver lv2 messages during the sample; do not interpret zero trade count as a true absence of large trades.
+
+`simulate_historical_orderflow_proxy(symbol, trading_day, window_start, window_end, volume_ratio_threshold)` simulates weak盘口活跃度 from historical minute bars. It flags minutes whose volume is elevated versus the opening baseline. This is useful when the user asks to simulate without market hours, but it is NOT historical Level-2, NOT tick-level large trades, and NOT active buy/sell direction.
+
+`get_strategy_decision_packet(as_of_day, target_day, symbols, limit, window_start, window_end, include_minute_volume_proxy, include_full_theme_copump)` is the preferred end-to-end fact bundle when the user wants a full strategy-style answer. It reduces tool-wandering by bundling as-of strategy facts, target-day replay, packet-local same-theme co-pump, and order-flow availability/proxy facts. It does NOT assign grades or scores; Hermes must still make the Top3/grade/promotion_likelihood judgment. Keep `include_minute_volume_proxy=false` unless the user explicitly wants offline simulation. Keep `include_full_theme_copump=false` by default; turn it on only when the user asks for broader same-theme replay because it is slower.
+
+`get_historical_second_board_candidates(trading_day)` and `get_second_board_next_day_outcomes(trading_day, symbols)` return historical FACTS and objective T+1 labels. They do not return program scores, probabilities, or grades. Use them when the user asks whether the approach is usable, asks for replay/backtest-like evidence, asks why a judgment failed, or asks for historical comparison before trusting a live candidate. These are post-hoc tools for a known trading day; they are not valid as the initial candidate pool for an as-of-close replay.
+
 If these tools are unavailable, first ask Hermes to reload MCP with `/reload-mcp` or inspect the Hermes MCP configuration. Do not fabricate live data.
 
 ## Data Availability And Freshness
@@ -139,7 +178,7 @@ Use `get_runner_status` when the user asks whether realtime monitoring is active
 
    **Factor 3 — 股本大小 (float_size)**: Use `free_float_market_cap_cny`. Large float reduces the probability of sustained sealing; small float with strong theme is favorable. State the float size and its implication in one Chinese sentence.
 
-   **Factor 4 — 量能与资金 (volume_energy)**: Use `avg_turnover_10d_cny` (10-day average volume baseline), `ma5_slope_degrees` (price trend slope), `prev_day_volume_shrink_ratio` (whether yesterday shrank vs. prior days — a high ratio means volume dried up), and `broke_previous_high` (whether price cleared the prior swing high). ALSO cover `big_order_net_inflow_ratio` (net big-order inflow as a proportion of turnover — positive means institutional accumulation, negative means distribution) and `orderbook_quality_score` (queue depth and composition quality). An A-grade requires positive big-order inflow AND strong orderbook quality; if either is missing or negative, cap the assessment at B. State the overall volume-and-capital picture in one or two Chinese sentences. Note: the JSON output field key MUST remain `volume_energy` (the validator checks that exact key).
+   **Factor 4 — 量能与资金 (volume_energy)**: Use `avg_turnover_10d_cny` (10-day average turnover baseline), `prev_day_volume_shrink_ratio` (whether T-1/as-of-day shrank vs. the prior baseline), and `broke_previous_high` (whether price cleared the prior swing high). ALSO cover `big_order_net_inflow_ratio` (net big-order inflow as a proportion of turnover — positive means institutional accumulation, negative means distribution) and `orderbook_quality_score` (queue depth and composition quality). An A-grade requires positive big-order inflow AND strong orderbook quality; if either is missing or negative, cap the assessment at B. State the overall volume-and-capital picture in one or two Chinese sentences. Note: the JSON output field key MUST remain `volume_energy` (the validator checks that exact key).
 
    **Factor 5 — 回封力度 (reseal_strength)**: Use `break_board_count`, `reseal_count`, `max_seal_amount_cny`, `final_seal_time`, and `seal_to_turnover_ratio`. A high `break_board_count` with fast, large `reseal_count` and strong `max_seal_amount_cny` suggests genuine institutional intent to hold the board. A `final_seal_time` near market close with a high `seal_to_turnover_ratio` is a positive sign. State the reseal pattern in one Chinese sentence.
 
@@ -178,7 +217,7 @@ Use `get_runner_status` when the user asks whether realtime monitoring is active
     - `get_capital_flow_slices(symbol, trading_day)` 在复盘失败案例时使用：`tail_30m` 主力净流出说明尾盘机构离场。
 
 20. P4 盘中买点离线回放（Phase 4，按需使用）：
-    - `detect_intraday_buypoint(symbol, end_day, previous_high)` 返回盘中买点形态的离线回放告警（过前高→回踩缩量→重新上冲）。这是研究告警，不是下单指令。当前为离线历史回放（实盘盘中监控是后续阶段）；阈值用默认值，策略 prior（后续阶段）会让 30-60° 斜率 / 均量 > 50 亿等阈值可切换。把返回的 `signals` 当作观察证据，结合五因子判断，不要据此直接下单。若未传 `previous_high`，工具会用开盘前 3 根 bar 的最高 `last_price` 作为保守替代；传入明确前高更准确。
+    - `detect_intraday_buypoint(symbol, end_day, previous_high)` 返回盘中买点形态的离线回放告警（过前高→回踩缩量→重新上冲）。这是研究告警，不是下单指令。当前为离线历史回放（实盘盘中监控是后续阶段）；阈值用默认值，策略 prior（后续阶段）会让均量 > 50 亿等阈值可切换。把返回的 `signals` 当作观察证据，结合五因子判断，不要据此直接下单。若未传 `previous_high`，工具会用开盘前 3 根 bar 的最高 `last_price` 作为保守替代；传入明确前高更准确。
 
 21. P6 进阶能力（按需使用）：
     - `find_similar_setups(symbol, lookback_days, similarity_threshold)` 在复盘候选时找相似历史样本；当返回的 `similarity ≥ 0.85`，可作为「这个形态历史上确实经常打成功」的弱证据，但不要替代当下行情判断。注意：历史快照的 agent/human 评级（若有记录）为弱参考，若为 None 则完全忽略。
@@ -191,14 +230,29 @@ Use `get_runner_status` when the user asks whether realtime monitoring is active
     - 停牌过滤已在 P7 自动接入候选拉取链路 — 候选列表中不会再出现停牌股；如人工手动评估某只票，仍可调 `get_suspended_stocks(trading_day)` 复核。
     - `simulate_outcome` 的 `hypothetical_grade` 现在来自完整 candidate_grade 重算，不再受限于 P7 的 `seal_amount_cny` / `five_min_speed_pct` 两字段启发。
 
+22. 历史 replay / 可用性验证（按需使用）：
+    - 严格 as-of replay：当用户说「站在 YYYY-MM-DD 收盘，选明日最值得观察的二板 Top3」或「生成明日观察池」时，优先调用 `get_daily_strategy_candidate_pool(as_of_day=YYYY-MM-DD)`。如果该工具不可用，才退回 `get_strategy_watchlist(as_of_day=YYYY-MM-DD)`；再不可用才退回 `get_historical_first_board_watchlist(as_of_day=YYYY-MM-DD)`，并明确说明策略字段不足。在给出 Top3 之前，不要调用 `get_historical_second_board_candidates(target_day)`，不要读取 `target_day` 的涨跌幅、封板结果或 T+1 outcome。
+    - 严格 as-of replay 的初始 Top3 阶段只使用 `get_daily_strategy_candidate_pool` / `get_strategy_watchlist` / `get_historical_first_board_watchlist` 返回的事实池。跳过标准实时工作流里的 `get_market_sentiment_gate`、`get_active_strategy_prior`、`get_theme_leaders`、`get_promotion_dossier`、实时盘口/分钟回放等工具，除非用户在 Top3 之后明确要求补充验证。
+    - 对每只入选标的，必须逐条说明：近10日均成交额是否大于50亿、T-1/as-of-day是否缩量、T日是否突破前高、板块持续性数据是否充分、候选来自 `first_board_watchlist` 还是 `large_turnover_trend_seed`。`theme_continuity.continuity_label` 只能作为市场内板块持续性事实；盘外新闻/财联社若未接入，必须列为缺口，不得脑补。当前策略暂不使用“5日均线斜率30°到60°”。
+    - 当用户问「这个方向能不能验证」「为什么 agent 这么判断」「今天二板环境与历史相似吗」时，先调用 `get_historical_second_board_candidates(trading_day)` 取历史候选事实，再调用 `get_second_board_next_day_outcomes(trading_day, symbols)` 取 T+1 结果。
+    - 你的任务是用历史事实校准自己的判断，不要要求程序提供评分权重。程序只给数据；agent 给 `promotion_likelihood` 和 `grade`。
+    - 对比至少三个朴素基准：封单额优先、封成比/封成比近似优先、首次封板时间优先。先列出这三个基准 Top3，再给你的 agent Top3。
+    - 反机械排序规则：如果你的 Top3 与任一朴素基准 Top3 完全相同，必须重新评估。若重新评估后仍保持一致，必须明说「当前判断主要等同于某某基准排序，尚未体现额外 alpha」，并把整体置信度降到 exploratory/low-confidence。
+    - 入选解释必须是相对解释：每只入选标的至少说明一个「它胜过某只高封单额/高封成比/更早封板但落选标的」的理由。如果说不出相对优势，不要把它列为 A。
+    - 封成比/封单额只能作为封板质量证据，不得作为唯一或主排序理由。在 strict as-of replay 的 Top3 生成阶段，不要引用同一 replay 的未来失败/成功案例；这些只能在明确标注为 post-hoc validation 的段落里使用。
+    - 输出历史 replay 结论时，区分「胜过候选池平均」和「胜过简单基准」。前者只能说明有基础筛选价值；后者才说明 agent 判断可能有额外价值。
+    - 不要从单日 replay 推断稳定胜率。若样本少于 10 个交易日，结论必须标为 exploratory。
+    - 盘中历史 replay：当用户要求“用已发生数据模拟当时事实”或“模拟买点触发”时，优先调用 `get_strategy_decision_packet(as_of_day, target_day, symbols, limit, window_start, window_end, include_minute_volume_proxy=false, include_full_theme_copump=false)`，除非用户只要求单只票的原始 replay。输出必须分清：收盘观察池事实、target_day 分钟级触发事实、packet-local 同题材共振事实、缺失数据（历史大单买入占比/财联社/盘外新闻）、以及是否出现 research alert。不要把 research alert 写成买入指令。
+    - 历史样本验证：当用户要求“验证可用性”“跑一段历史样本”“看看触发器命中率/误报”时，调用 `run_historical_trigger_validation(end_day, lookback_days, limit, window_start, window_end)`。必须区分 replay 触发事实和 post-trigger outcome；后者只能用于校准。
+
 ## Strategy Prior
 
 Call `get_active_strategy_prior` once per session to load the active strategy prior (currently `client_10pt` — 客户口述的二板买点策略). The prior is **GUIDANCE, not a filter**. It carries soft ideal ranges and qualitative notes the client cares about. The program never accepts or rejects a candidate based on the prior; YOU weigh each candidate's measured facts against the prior and decide.
 
 How to use it:
 
-- **Soft ranges (`thresholds`)**: each threshold has `ideal_low`/`ideal_high`/`unit`/`rationale`. Compare the candidate's measured fact to the ideal range and report the comparison in your factor write-up. Current ranges: 近10日均成交量 ideal ≥ 50亿 (`avg_turnover_10d`); 5日均线斜率 ideal 30–60° (`ma5_slope_degrees`).
-- **Override-with-reasoning (MANDATORY)**: a candidate OUTSIDE a prior's ideal range is NOT auto-rejected. If facts justify it, keep the candidate and state the override explicitly — e.g. "5日斜率 72°，超出先验 30–60° 区间，但题材处于发酵期且回封力度强，故仍保留为 B，理由：……". Likewise, being INSIDE every range does NOT guarantee a high grade — the 5-factor judgment still governs. Never treat a prior range as a pass/fail gate.
+- **Soft ranges (`thresholds`)**: each threshold has `ideal_low`/`ideal_high`/`unit`/`rationale`. Compare the candidate's measured fact to the ideal range and report the comparison in your factor write-up. Current active range for this strategy: 近10日均成交额 ideal ≥ 50亿 (`avg_turnover_10d`). Ignore MA5 slope for now even if an older prior or candidate object contains it.
+- **Override-with-reasoning (MANDATORY)**: a candidate OUTSIDE a prior's ideal range is NOT auto-rejected. If facts justify it, keep the candidate and state the override explicitly. Likewise, being INSIDE every active range does NOT guarantee a high grade — the 5-factor judgment still governs. Never treat a prior range as a pass/fail gate.
 - **Guidance notes (`guidance_notes`)**: qualitative items to weave into your reasoning — 板块两周持续性（可能需你做盘外信息确认）、T-1 缩量、T 日带量过前高、回踩缩量后重新上冲=买入预警点、同板块共振加分、重点监控时段 9:30–9:50 与 11:10–11:30。
 - **板块两周持续性** is an agent task GUIDED by the prior: when the prior flags it, you should seek out-of-platform corroboration (盘外抓取) of whether the sector has shown repeated multi-day strength over the past two weeks, and say so — do not fabricate it if you cannot confirm.
 - **财联社消息**: `caixin_alignment` is a placeholder this cycle (本期暂不接入财联社消息源). Do not claim a 财联社 alignment signal exists; treat it as not-yet-available.
@@ -233,7 +287,7 @@ Use this structure for user-facing answers. The `factor_analysis` block and `pro
    - 市场情绪: <一句中文说明，基于涨停数/炸板率/溢价率等市场事实>
    - 题材所在位置: <说明 theme_lifecycle_stage 及其含义；若为 divergence/ebb 须明确点出降权原因>
    - 股本大小: <说明 free_float_market_cap_cny 及对封板持续性的影响>
-   - 量能: <说明 avg_turnover_10d_cny / ma5_slope_degrees / prev_day_volume_shrink_ratio / broke_previous_high / big_order_net_inflow_ratio / orderbook_quality_score>
+   - 量能: <说明 avg_turnover_10d_cny / prev_day_volume_shrink_ratio / broke_previous_high / big_order_net_inflow_ratio / orderbook_quality_score>
    - 回封力度: <说明 break_board_count / reseal_count / max_seal_amount_cny / final_seal_time / seal_to_turnover_ratio>
    评级原因: <综合五个维度的自然语言总结，说明主要加分项和主要扣分项>
    竞价数据: auction_change_pct / auction_turnover_cny / auction_turnover_rate

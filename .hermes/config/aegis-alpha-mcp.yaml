@@ -32,6 +32,7 @@ mcp_servers:
         - get_stock_history_limitup_stats
         - get_theme_strength
         - get_theme_leaders
+        - get_theme_continuity
         - get_limit_up_ladder
         - get_market_emotion
         - get_auction_analysis
@@ -56,7 +57,20 @@ mcp_servers:
         - get_st_pool
         - get_second_board_candidates
         - get_second_board_candidates_compact
+        - get_historical_second_board_candidates
+        - get_historical_first_board_watchlist
+        - get_strategy_watchlist
+        - get_daily_strategy_candidate_pool
+        - run_historical_strategy_replay
+        - run_historical_trigger_validation
+        - get_intraday_theme_copump
+        - get_intraday_orderflow_confirmation
+        - sample_realtime_large_trade_proxy
+        - simulate_historical_orderflow_proxy
+        - get_strategy_decision_packet
+        - get_second_board_next_day_outcomes
         - get_second_board_candidate_data_quality
+        - get_promotion_dossier
         - explain_candidate
         - explain_second_board_candidate
         - get_capital_flow_slices

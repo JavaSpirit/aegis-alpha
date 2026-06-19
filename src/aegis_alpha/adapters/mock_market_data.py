@@ -152,27 +152,31 @@ class MockMarketDataAdapter:
         symbol: str,
         end_day: str | None = None,
         limit_days: int = 1,
+        max_bars: int = 30,
     ) -> MinuteReplaySnapshot:
         trading_day = end_day or "2026-05-26"
         bars = [
-            MinuteReplayBar(time="10:10", last_price=12.01, average_price=11.92, volume=210_000),
-            MinuteReplayBar(time="10:11", last_price=12.08, average_price=11.95, volume=280_000),
-            MinuteReplayBar(time="10:12", last_price=12.16, average_price=11.99, volume=330_000),
-            MinuteReplayBar(time="10:13", last_price=12.22, average_price=12.03, volume=410_000),
-            MinuteReplayBar(time="10:14", last_price=12.28, average_price=12.06, volume=500_000),
-            MinuteReplayBar(time="10:15", last_price=12.34, average_price=12.10, volume=640_000),
+            MinuteReplayBar(time="10:10", last_price=11.80, average_price=11.80, volume=100_000),
+            MinuteReplayBar(time="10:11", last_price=11.90, average_price=11.85, volume=100_000),
+            MinuteReplayBar(time="10:12", last_price=11.95, average_price=11.88, volume=100_000),
+            MinuteReplayBar(time="10:13", last_price=12.20, average_price=12.02, volume=260_000),
+            MinuteReplayBar(time="10:14", last_price=12.05, average_price=12.03, volume=120_000),
+            MinuteReplayBar(time="10:15", last_price=12.16, average_price=12.07, volume=80_000),
+            MinuteReplayBar(time="10:16", last_price=12.24, average_price=12.10, volume=90_000),
         ]
+        safe_max_bars = max(0, int(max_bars or 0))
+        selected_bars = bars[-safe_max_bars:] if safe_max_bars > 0 else bars
         return MinuteReplaySnapshot(
             symbol=symbol,
             name="示例股票",
-            timestamp=f"{trading_day}T10:15:00+08:00",
+            timestamp=f"{trading_day}T10:16:00+08:00",
             data_mode="minute_replay",
             provider="mock",
             trading_day=trading_day,
             previous_close=11.22,
-            last_price=12.34,
+            last_price=12.24,
             minute_count=len(bars),
-            bars=bars,
+            bars=selected_bars,
             speed_pct_by_window={
                 "1m": 0.4886,
                 "3m": 1.4803,
@@ -188,6 +192,7 @@ class MockMarketDataAdapter:
             notes=[
                 "Mock minute replay data only.",
                 f"requested_limit_days={limit_days}",
+                f"returned_bar_count={len(selected_bars)}",
             ],
         )
 
@@ -652,6 +657,628 @@ class MockMarketDataAdapter:
             )
 
         return resolved
+
+    def get_historical_second_board_candidates(self, trading_day: str, limit: int = 50) -> list[dict]:
+        safe_day = trading_day.strip() or "2026-05-26"
+        rows = [
+            {
+                "symbol": "002230",
+                "name": "科大讯飞",
+                "trading_day": safe_day,
+                "prev_day": "2026-05-25",
+                "next_day": "2026-05-27",
+                "provider": "mock",
+                "data_mode": "mock",
+                "change_pct": 9.88,
+                "first_limit_up_time": "09:56:12",
+                "seal_amount_text": "1.28亿",
+                "seal_amount_cny": 128_000_000.0,
+                "seal_volume_text": "688.00万",
+                "seal_volume_shares": 6_880_000.0,
+                "seal_to_turnover_ratio": 1.65,
+                "close_price": 14.6,
+                "turnover_text": "8.00亿",
+                "turnover_cny": 800_000_000.0,
+                "theme": "AI应用",
+                "source_fields": ["mock"],
+                "notes": ["Mock facts-only historical candidate row; no program grade."],
+            },
+            {
+                "symbol": "300024",
+                "name": "机器人",
+                "trading_day": safe_day,
+                "prev_day": "2026-05-25",
+                "next_day": "2026-05-27",
+                "provider": "mock",
+                "data_mode": "mock",
+                "change_pct": 6.85,
+                "first_limit_up_time": "10:22:31",
+                "seal_amount_text": "4200.00万",
+                "seal_amount_cny": 42_000_000.0,
+                "seal_volume_text": "230.00万",
+                "seal_volume_shares": 2_300_000.0,
+                "seal_to_turnover_ratio": 0.82,
+                "close_price": 17.5,
+                "turnover_text": "3.80亿",
+                "turnover_cny": 380_000_000.0,
+                "theme": "机器人",
+                "source_fields": ["mock"],
+                "notes": ["Mock facts-only historical candidate row; no program grade."],
+            },
+        ]
+        return rows[: max(1, min(int(limit or 50), 200))]
+
+    def get_historical_first_board_watchlist(self, as_of_day: str, limit: int = 50) -> list[dict]:
+        safe_day = as_of_day.strip() or "2026-05-25"
+        rows = [
+            {
+                "symbol": "002230",
+                "name": "科大讯飞",
+                "as_of_day": safe_day,
+                "prev_day": "2026-05-24",
+                "target_second_board_day": "2026-05-26",
+                "provider": "mock",
+                "data_mode": "mock",
+                "previous_day_limit_up": False,
+                "first_board_confirmed": True,
+                "change_pct": 10.01,
+                "first_limit_up_time": "09:43:18",
+                "seal_amount_text": "1.12亿",
+                "seal_amount_cny": 112_000_000.0,
+                "seal_volume_text": "610.00万",
+                "seal_volume_shares": 6_100_000.0,
+                "seal_to_turnover_ratio": 1.42,
+                "close_price": 13.29,
+                "turnover_text": "7.90亿",
+                "turnover_cny": 790_000_000.0,
+                "theme": "AI应用",
+                "source_fields": ["mock"],
+                "notes": ["Mock facts-only first-board watchlist row; no program grade."],
+            },
+            {
+                "symbol": "300024",
+                "name": "机器人",
+                "as_of_day": safe_day,
+                "prev_day": "2026-05-24",
+                "target_second_board_day": "2026-05-26",
+                "provider": "mock",
+                "data_mode": "mock",
+                "previous_day_limit_up": False,
+                "first_board_confirmed": True,
+                "change_pct": 20.0,
+                "first_limit_up_time": "10:15:31",
+                "seal_amount_text": "3600.00万",
+                "seal_amount_cny": 36_000_000.0,
+                "seal_volume_text": "190.00万",
+                "seal_volume_shares": 1_900_000.0,
+                "seal_to_turnover_ratio": 0.76,
+                "close_price": 16.38,
+                "turnover_text": "4.70亿",
+                "turnover_cny": 470_000_000.0,
+                "theme": "机器人",
+                "source_fields": ["mock"],
+                "notes": ["Mock facts-only first-board watchlist row; no program grade."],
+            },
+        ]
+        return rows[: max(1, min(int(limit or 50), 200))]
+
+    def get_strategy_watchlist(self, as_of_day: str, limit: int = 50) -> list[dict]:
+        rows = [
+            {
+                **row,
+                "candidate_sources": ["first_board_watchlist"],
+                "strategy_seed_reasons": ["as_of_day_first_board"],
+                "strategy_seed_queries": [row.get("query", "")],
+            }
+            for row in self.get_historical_first_board_watchlist(as_of_day, limit)
+        ]
+        rows.append(
+            {
+                "symbol": "300475",
+                "name": "香农芯创",
+                "as_of_day": as_of_day,
+                "prev_day": "2026-05-24",
+                "target_second_board_day": "2026-05-26",
+                "provider": "mock",
+                "data_mode": "mock",
+                "change_pct": 0.6,
+                "close_price": 38.4,
+                "as_of_high_price": 39.2,
+                "turnover_text": "42.00亿",
+                "turnover_cny": 4_200_000_000.0,
+                "theme": "半导体",
+                "source_fields": ["mock"],
+                "candidate_sources": ["large_turnover_trend_seed"],
+                "strategy_seed_reasons": ["as_of_day_turnover_seed"],
+                "strategy_seed_queries": ["mock large-turnover seed"],
+                "notes": ["Mock broad trend strategy row; no program grade."],
+            }
+        )
+        enriched = []
+        theme_counts = {}
+        for row in rows:
+            theme = row.get("theme", "unknown")
+            theme_counts[theme] = theme_counts.get(theme, 0) + 1
+        first_board_theme_counts = {}
+        for row in rows:
+            if "first_board_watchlist" not in row.get("candidate_sources", []):
+                continue
+            theme = row.get("theme", "unknown")
+            first_board_theme_counts[theme] = first_board_theme_counts.get(theme, 0) + 1
+        canned = {
+            "002230": {
+                "avg_turnover_10d_cny": 6_200_000_000.0,
+                "avg_turnover_10d_pass": True,
+                "as_of_turnover_cny": 3_100_000_000.0,
+                "prev_day_turnover_cny": 3_100_000_000.0,
+                "prev_day_volume_shrink_ratio": 0.5,
+                "prev_day_shrink": True,
+                "previous_high_price": 13.1,
+                "broke_previous_high": True,
+                "as_of_high_broke_previous_high": True,
+            },
+            "300024": {
+                "avg_turnover_10d_cny": 2_400_000_000.0,
+                "avg_turnover_10d_pass": False,
+                "as_of_turnover_cny": 2_900_000_000.0,
+                "prev_day_turnover_cny": 2_900_000_000.0,
+                "prev_day_volume_shrink_ratio": 1.21,
+                "prev_day_shrink": False,
+                "previous_high_price": 18.2,
+                "broke_previous_high": False,
+                "as_of_high_broke_previous_high": False,
+            },
+            "300475": {
+                "avg_turnover_10d_cny": 6_300_000_000.0,
+                "avg_turnover_10d_pass": True,
+                "as_of_turnover_cny": 4_200_000_000.0,
+                "prev_day_turnover_cny": 4_200_000_000.0,
+                "prev_day_volume_shrink_ratio": 0.67,
+                "prev_day_shrink": True,
+                "previous_high_price": 39.0,
+                "broke_previous_high": False,
+                "as_of_high_broke_previous_high": True,
+            },
+        }
+        for row in rows:
+            symbol = row.get("symbol", "")
+            theme = row.get("theme", "unknown")
+            facts = canned.get(symbol, {})
+            continuity = self.get_theme_continuity(theme, row.get("as_of_day", as_of_day))
+            enriched.append(
+                {
+                    **row,
+                    "strategy_data_mode": "mock",
+                    "strategy_error": "",
+                    **facts,
+                    "strategy_filter_pass": bool(facts.get("avg_turnover_10d_pass")),
+                    "same_theme_strategy_seed_count": theme_counts.get(theme, 0),
+                    "same_theme_first_board_count": first_board_theme_counts.get(theme, 0),
+                    "theme_continuity": {
+                        **continuity,
+                        "same_theme_strategy_seed_count": theme_counts.get(theme, 0),
+                        "same_theme_first_board_count": first_board_theme_counts.get(theme, 0),
+                    },
+                    "strategy_coverage": {
+                        "avg_turnover_10d": True,
+                        "prev_day_shrink": True,
+                        "previous_high_break": True,
+                        "theme_two_week_continuity": True,
+                        "intraday_big_order_ratio": False,
+                        "cls_news_alignment": False,
+                    },
+                    "strategy_notes": ["Mock strategy facts; no program grade or probability."],
+                }
+            )
+        return [row for row in enriched if row["strategy_filter_pass"]][: max(1, min(int(limit or 50), 100))]
+
+    def get_strategy_items_for_symbols(self, as_of_day: str, symbols: list[str]) -> list[dict]:
+        requested = {item.strip().split(".", 1)[0] for item in symbols if item.strip()}
+        return [
+            item for item in self.get_strategy_watchlist(as_of_day, 100)
+            if str(item.get("symbol") or "").split(".", 1)[0] in requested
+        ]
+
+    def get_theme_continuity(self, theme: str, as_of_day: str, lookback_days: int = 14) -> dict:
+        safe_theme = theme.strip() or "unknown"
+        safe_day = as_of_day.strip() or "2026-05-25"
+        canned = {
+            "AI应用": {
+                "active_days": 6,
+                "burst_days": 3,
+                "total_limit_ups": 14,
+                "max_daily_limit_ups": 5,
+                "last_3_counts": [2, 4, 5],
+                "continuity_label": "persistent",
+            },
+            "机器人": {
+                "active_days": 3,
+                "burst_days": 1,
+                "total_limit_ups": 5,
+                "max_daily_limit_ups": 2,
+                "last_3_counts": [0, 2, 1],
+                "continuity_label": "emerging",
+            },
+        }
+        facts = canned.get(
+            safe_theme,
+            {
+                "active_days": 1,
+                "burst_days": 0,
+                "total_limit_ups": 1,
+                "max_daily_limit_ups": 1,
+                "last_3_counts": [0, 0, 1],
+                "continuity_label": "weak",
+            },
+        )
+        return {
+            "data_mode": "mock",
+            "theme": safe_theme,
+            "as_of_day": safe_day,
+            "lookback_trading_days": max(1, min(int(lookback_days or 14), 30)),
+            **facts,
+            "daily_counts": [],
+            "sample_leaders": {},
+            "off_platform_news_checked": False,
+            "cls_news_checked": False,
+            "notes": ["Mock market-internal theme continuity; no off-platform news source."],
+        }
+
+    def run_historical_strategy_replay(
+        self,
+        as_of_day: str,
+        target_day: str,
+        symbols: list[str] | None = None,
+        limit: int = 10,
+        window_start: str = "",
+        window_end: str = "",
+    ) -> dict:
+        from aegis_alpha.measurements.historical_strategy_replay import (
+            run_historical_strategy_replay_from_items,
+        )
+
+        safe_as_of = as_of_day.strip() or "2026-05-25"
+        safe_target = target_day.strip() or "2026-05-26"
+        requested = {item.strip().split(".", 1)[0] for item in (symbols or []) if item.strip()}
+        lookup_limit = 100 if requested else limit
+        items = self.get_strategy_watchlist(safe_as_of, lookup_limit)
+        if requested:
+            items = [item for item in items if str(item.get("symbol") or "").split(".", 1)[0] in requested]
+        result = run_historical_strategy_replay_from_items(
+            as_of_day=safe_as_of,
+            target_day=safe_target,
+            strategy_items=items,
+            get_snapshot=lambda symbol, day: self.get_stock_minute_replay_snapshot(
+                symbol,
+                day,
+                1,
+                max_bars=240,
+            ),
+            window_start=window_start.strip(),
+            window_end=window_end.strip(),
+        )
+        if requested:
+            returned = {str(item.get("symbol") or "").split(".", 1)[0] for item in result.get("results", [])}
+            result["requested_symbols"] = sorted(requested)
+            result["missing_requested_symbols"] = sorted(requested - returned)
+        return result
+
+    def run_historical_trigger_validation(
+        self,
+        end_day: str,
+        lookback_days: int = 5,
+        limit: int = 20,
+        window_start: str = "09:31",
+        window_end: str = "10:00",
+    ) -> dict:
+        replay = self.run_historical_strategy_replay(
+            "2026-05-25",
+            "2026-05-26",
+            symbols=None,
+            limit=limit,
+            window_start=window_start,
+            window_end=window_end,
+        )
+        triggered = [
+            {
+                "symbol": item.get("symbol", ""),
+                "name": item.get("name", ""),
+                "theme": item.get("theme", "unknown"),
+                "triggered_at": item.get("first_triggered_at", ""),
+                "breakout_volume_ratio": (item.get("signals") or [{}])[0].get("breakout_volume_ratio", 0.0),
+                "pullback_volume_shrink_ratio": (item.get("signals") or [{}])[0].get(
+                    "pullback_volume_shrink_ratio", 0.0
+                ),
+                "resurge_strength": (item.get("signals") or [{}])[0].get("resurge_strength", 0.0),
+                "intraday_theme_copump": {
+                    "theme": item.get("theme", "unknown"),
+                    "universe": "same_theme_strategy_watchlist_candidates",
+                    "same_theme_candidate_count": 1,
+                    "crossed_previous_high_by_trigger_count": 0,
+                    "triggered_by_trigger_count": 0,
+                    "opening_breakout_by_trigger_count": 0,
+                    "crossed_symbols": [],
+                    "triggered_symbols": [],
+                    "notes": ["Mock market-internal co-pump proxy."],
+                },
+                "post_signal_outcome": {
+                    "ok": True,
+                    "trigger_price": 10.1,
+                    "post_trigger_high_pct": 3.2,
+                    "post_trigger_low_pct": -1.1,
+                    "close_pct_from_trigger": 1.8,
+                    "closed_above_trigger": True,
+                },
+            }
+            for item in replay.get("results", [])
+            if int(item.get("signal_count") or 0) > 0
+        ]
+        reason_counts = {}
+        for item in replay.get("results", []):
+            reason = (item.get("pattern_diagnostics") or {}).get("no_signal_reason", "unknown")
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
+        return {
+            "end_day": end_day.strip() or "2026-05-26",
+            "lookback_days": max(1, min(int(lookback_days or 5), 10)),
+            "trading_days": ["2026-05-25", "2026-05-26"],
+            "window": {"start": window_start, "end": window_end},
+            "limit_per_day": max(1, min(int(limit or 20), 50)),
+            "data_mode": "historical_validation",
+            "day_count": 1,
+            "candidate_count": replay.get("result_count", 0),
+            "triggered_count": len(triggered),
+            "trigger_rate": round(len(triggered) / replay.get("result_count", 1), 4),
+            "closed_above_trigger_count": len(triggered),
+            "closed_above_trigger_rate": 1.0 if triggered else 0.0,
+            "no_signal_reason_counts": reason_counts,
+            "validations": [
+                {
+                    "as_of_day": "2026-05-25",
+                    "target_day": "2026-05-26",
+                    "candidate_count": replay.get("result_count", 0),
+                    "triggered_count": len(triggered),
+                    "trigger_rate": round(len(triggered) / replay.get("result_count", 1), 4),
+                    "no_signal_reason_counts": reason_counts,
+                    "triggered": triggered,
+                }
+            ],
+            "notes": ["Mock historical validation."],
+        }
+
+    def get_intraday_theme_copump(
+        self,
+        symbol: str,
+        as_of_day: str,
+        target_day: str,
+        trigger_time: str = "",
+        window_start: str = "09:31",
+        window_end: str = "10:00",
+        peer_limit: int = 20,
+    ) -> dict:
+        safe_symbol = symbol.strip().split(".", 1)[0] or "002230"
+        return {
+            "symbol": safe_symbol,
+            "name": "科大讯飞" if safe_symbol == "002230" else "mock",
+            "as_of_day": as_of_day.strip() or "2026-05-25",
+            "target_day": target_day.strip() or "2026-05-26",
+            "window": {"start": window_start, "end": window_end},
+            "trigger_time": trigger_time.strip() or "09:41",
+            "theme": "AI应用",
+            "data_mode": "historical_theme_copump",
+            "universe": "same_theme_full_strategy_watchlist_candidates",
+            "same_theme_candidate_count": 2,
+            "copump": {
+                "theme": "AI应用",
+                "universe": "same_theme_full_strategy_watchlist_candidates",
+                "same_theme_candidate_count": 2,
+                "crossed_previous_high_by_trigger_count": 1,
+                "triggered_by_trigger_count": 1,
+                "opening_breakout_by_trigger_count": 1,
+                "crossed_symbols": ["300475"],
+                "triggered_symbols": ["300475"],
+                "notes": ["Mock same-theme strategy-watchlist co-pump proxy."],
+            },
+            "peer_details": [
+                {
+                    "symbol": "300475",
+                    "name": "香农芯创",
+                    "first_cross_time": "09:32",
+                    "opening_window_crossed_previous_high": True,
+                    "signal_count": 1,
+                    "first_triggered_at": "09:37",
+                    "no_signal_reason": "signal_triggered",
+                }
+            ],
+            "notes": [
+                "Mock full strategy-watchlist same-theme co-pump.",
+                "This is not full-market sector breadth.",
+            ],
+        }
+
+    def get_intraday_orderflow_confirmation(
+        self,
+        symbol: str,
+        trading_day: str,
+        trigger_time: str = "",
+        window_start: str = "09:31",
+        window_end: str = "10:00",
+    ) -> dict[str, Any]:
+        safe_symbol = symbol.strip().split(".", 1)[0] or "002230"
+        return {
+            "symbol": safe_symbol,
+            "trading_day": trading_day.strip() or "2026-05-26",
+            "window": {"start": window_start, "end": window_end},
+            "trigger_time": trigger_time.strip() or "09:41",
+            "data_mode": "historical_orderflow_proxy",
+            "provider": "mock",
+            "orderflow_available": False,
+            "historical_big_order_buy_ratio_available": False,
+            "can_compute_big_order_buy_ratio": False,
+            "big_order_buy_ratio": None,
+            "active_buy_strength": "unavailable",
+            "realtime_orderflow_capability": {
+                "lv2_large_trade_proxy_available": True,
+                "active_trade_side_available": False,
+                "can_compute_big_order_buy_ratio": False,
+                "observed_lv2_fields": ["time", "trade_id", "price", "volume"],
+                "closest_realtime_metric": "directionless_large_trade_amount_cny",
+                "large_trade_threshold_cny": 3_000_000.0,
+            },
+            "daily_capital_flow_available": True,
+            "daily_capital_flow": {
+                "window": "daily",
+                "big_order_net_inflow_cny": 8_000_000.0,
+                "main_capital_net_inflow_cny": 12_000_000.0,
+                "retail_capital_net_inflow_cny": -3_000_000.0,
+                "turnover_cny": 100_000_000.0,
+                "big_order_net_inflow_ratio": 0.08,
+                "main_capital_net_inflow_ratio": 0.12,
+                "direction": "positive",
+            },
+            "data_gaps": [
+                "historical_minute_level_active_big_order_buy_ratio",
+                "historical_orderbook_trade_direction",
+            ],
+            "notes": [
+                "Mock daily capital-flow proxy; no historical minute-level active-buy ratio.",
+                "Agent should treat this as weak confirmation only.",
+            ],
+        }
+
+    def sample_realtime_large_trade_proxy(
+        self,
+        symbol: str,
+        duration_seconds: float = 8.0,
+        threshold_cny: float = 3_000_000.0,
+        window_start: str = "",
+        window_end: str = "",
+    ) -> dict[str, Any]:
+        safe_symbol = symbol.strip().split(".", 1)[0] or "002230"
+        return {
+            "symbol": safe_symbol,
+            "provider": "mock",
+            "data_mode": "realtime_large_trade_proxy",
+            "duration_seconds": max(0.0, float(duration_seconds or 0.0)),
+            "threshold_cny": float(threshold_cny or 3_000_000.0),
+            "window": {"start": window_start, "end": window_end},
+            "sample_available": True,
+            "raw_message_count": 1,
+            "active_trade_side_available": False,
+            "can_compute_big_order_buy_ratio": False,
+            "proxy_metric": "directionless_large_trade_amount_cny",
+            "stats": {
+                "symbol": safe_symbol,
+                "window": {"start": window_start, "end": window_end},
+                "trade_count": 2,
+                "total_amount_cny": 18_000_000.0,
+                "max_trade_amount_cny": 10_000_000.0,
+                "first_trade_time": "2026-05-26T09:41:00+08:00",
+                "last_trade_time": "2026-05-26T09:42:00+08:00",
+                "sample_trades": [
+                    {
+                        "time": "2026-05-26T09:41:00+08:00",
+                        "amount_cny": 8_000_000.0,
+                        "price": 20.0,
+                        "volume": 400_000.0,
+                    },
+                    {
+                        "time": "2026-05-26T09:42:00+08:00",
+                        "amount_cny": 10_000_000.0,
+                        "price": 20.0,
+                        "volume": 500_000.0,
+                    },
+                ],
+            },
+            "notes": [
+                "Mock directionless large-trade proxy; it cannot classify active buy vs active sell.",
+            ],
+        }
+
+    def simulate_historical_orderflow_proxy(
+        self,
+        symbol: str,
+        trading_day: str,
+        window_start: str = "09:31",
+        window_end: str = "10:00",
+        volume_ratio_threshold: float = 1.5,
+    ) -> dict[str, Any]:
+        safe_symbol = symbol.strip().split(".", 1)[0] or "002230"
+        return {
+            "symbol": safe_symbol,
+            "name": "mock",
+            "trading_day": trading_day.strip() or "2026-05-26",
+            "data_mode": "historical_minute_volume_proxy",
+            "proxy_source": "minute_volume",
+            "window": {"start": window_start, "end": window_end},
+            "minute_count": 30,
+            "baseline_window": 3,
+            "baseline_volume": 100.0,
+            "volume_ratio_threshold": float(volume_ratio_threshold or 1.5),
+            "active_trade_side_available": False,
+            "can_compute_big_order_buy_ratio": False,
+            "spike_minute_count": 2,
+            "spike_minutes": [
+                {"time": "09:37", "price": 10.6, "volume": 220.0, "volume_ratio": 2.2},
+                {"time": "09:41", "price": 10.9, "volume": 260.0, "volume_ratio": 2.6},
+            ],
+            "first_spike_time": "09:37",
+            "last_spike_time": "09:41",
+            "max_volume_ratio": 2.6,
+            "max_volume_time": "09:41",
+            "notes": [
+                "Mock historical minute-volume proxy; not tick-level large trades.",
+            ],
+        }
+
+    def get_second_board_next_day_outcomes(
+        self,
+        trading_day: str,
+        symbols: list[str] | None = None,
+        limit: int = 50,
+    ) -> dict:
+        safe_day = trading_day.strip() or "2026-05-26"
+        requested = [item.strip().split(".", 1)[0] for item in (symbols or []) if item.strip()]
+        if not requested:
+            requested = [item["symbol"] for item in self.get_historical_second_board_candidates(safe_day, limit)]
+        requested = requested[: max(1, min(int(limit or 50), 200))]
+        canned = {
+            "002230": (2.1, 10.02, 9.98),
+            "300024": (-1.2, 4.8, -2.6),
+        }
+        outcomes = []
+        for symbol in requested:
+            open_pct, high_pct, close_pct = canned.get(symbol, (0.0, 0.0, 0.0))
+            outcomes.append(
+                {
+                    "symbol": symbol,
+                    "trading_day": safe_day,
+                    "next_day": "2026-05-27",
+                    "provider": "mock",
+                    "data_mode": "mock",
+                    "ok": True,
+                    "current_close": 10.0,
+                    "next_day_open_pct": open_pct,
+                    "next_day_high_pct": high_pct,
+                    "next_day_low_pct": min(open_pct, close_pct),
+                    "next_day_close_pct": close_pct,
+                    "provider_next_day_change_pct": close_pct,
+                    "daily_limit_pct": 20.0 if symbol.startswith("300") else 10.0,
+                    "touched_limit_up": high_pct >= (20.0 if symbol.startswith("300") else 10.0) - 0.2,
+                    "sealed_next_day": close_pct >= (20.0 if symbol.startswith("300") else 10.0) - 0.2,
+                    "broke_after_touch": high_pct >= (20.0 if symbol.startswith("300") else 10.0) - 0.2
+                    and close_pct < (20.0 if symbol.startswith("300") else 10.0) - 0.2,
+                    "notes": ["Mock next-day label for contract tests."],
+                }
+            )
+        return {
+            "trading_day": safe_day,
+            "next_day": "2026-05-27",
+            "provider": "mock",
+            "data_mode": "mock",
+            "symbols": requested,
+            "outcomes": outcomes,
+            "notes": ["Mock facts-only next-day labels; no program grade."],
+        }
 
     def _mock_second_board_data_quality(self) -> dict[str, SignalMetadata]:
         timestamp = "2026-05-26T10:15:00+08:00"

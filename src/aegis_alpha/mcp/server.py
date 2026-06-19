@@ -48,6 +48,122 @@ def _filter_second_board_candidates(candidates: list[Any], break_filter: str = "
     return candidates
 
 
+def _compact_theme_continuity(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        "lookback_days": value.get("lookback_trading_days", 0),
+        "active_days": value.get("active_days", 0),
+        "burst_days": value.get("burst_days", 0),
+        "total_limit_ups": value.get("total_limit_ups", 0),
+        "max_daily_limit_ups": value.get("max_daily_limit_ups", 0),
+        "last_3_counts": value.get("last_3_counts", []),
+        "continuity_label": value.get("continuity_label", "unknown"),
+        "same_theme_strategy_seed_count": value.get("same_theme_strategy_seed_count", 0),
+        "same_theme_first_board_count": value.get("same_theme_first_board_count", 0),
+        "off_platform_news_checked": value.get("off_platform_news_checked", False),
+        "cls_news_checked": value.get("cls_news_checked", False),
+    }
+
+
+def _compact_strategy_watchlist_item(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "symbol": item.get("symbol", ""),
+        "name": item.get("name", ""),
+        "candidate_sources": item.get("candidate_sources", []),
+        "change_pct": item.get("change_pct", 0.0),
+        "theme": item.get("theme", "unknown"),
+        "avg_turnover_10d_cny": item.get("avg_turnover_10d_cny", 0.0),
+        "avg_turnover_10d_pass": item.get("avg_turnover_10d_pass", False),
+        "as_of_turnover_cny": item.get("as_of_turnover_cny", 0.0),
+        "prev_day_volume_shrink_ratio": item.get("prev_day_volume_shrink_ratio", 0.0),
+        "prev_day_shrink": item.get("prev_day_shrink", False),
+        "previous_high_price": item.get("previous_high_price", 0.0),
+        "broke_previous_high": item.get("broke_previous_high", False),
+        "as_of_high_broke_previous_high": item.get("as_of_high_broke_previous_high", False),
+        "same_theme_strategy_seed_count": item.get("same_theme_strategy_seed_count", 0),
+        "same_theme_first_board_count": item.get("same_theme_first_board_count", 0),
+        "theme_continuity": _compact_theme_continuity(item.get("theme_continuity")),
+    }
+
+
+def _daily_strategy_candidate_item(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **_compact_strategy_watchlist_item(item),
+        "as_of_day": item.get("as_of_day", ""),
+        "prev_day": item.get("prev_day", ""),
+        "target_second_board_day": item.get("target_second_board_day", ""),
+        "provider": item.get("provider", ""),
+        "data_mode": item.get("data_mode", ""),
+        "strategy_data_mode": item.get("strategy_data_mode", ""),
+        "strategy_error": item.get("strategy_error", ""),
+        "strategy_seed_reasons": item.get("strategy_seed_reasons", []),
+        "close_price": item.get("close_price", 0.0),
+        "as_of_high_price": item.get("as_of_high_price", 0.0),
+        "current_close": item.get("current_close", item.get("close_price", 0.0)),
+        "current_high": item.get("current_high", item.get("as_of_high_price", 0.0)),
+        "turnover_cny": item.get("turnover_cny", item.get("as_of_turnover_cny", 0.0)),
+        "prev_day_turnover_cny": item.get("prev_day_turnover_cny", 0.0),
+        "strategy_filter_pass": item.get("strategy_filter_pass", False),
+        "strategy_coverage": item.get("strategy_coverage", {}),
+        "strategy_notes": item.get("strategy_notes", item.get("notes", [])),
+    }
+
+
+def _time_lte(value: str, boundary: str) -> bool:
+    return bool(value and boundary and value <= boundary)
+
+
+def _packet_theme_copump(
+    item: dict[str, Any],
+    day_results: list[dict[str, Any]],
+    *,
+    trigger_time: str,
+) -> dict[str, Any]:
+    symbol = str(item.get("symbol") or "").split(".", 1)[0]
+    theme = str(item.get("theme") or "unknown")
+    same_theme = [
+        result
+        for result in day_results
+        if str(result.get("symbol") or "").split(".", 1)[0] != symbol
+        and str(result.get("theme") or "unknown") == theme
+    ]
+    crossed = []
+    triggered = []
+    opening = []
+    for peer in same_theme:
+        diagnostics = peer.get("pattern_diagnostics") or {}
+        first_cross_time = str(diagnostics.get("first_cross_time") or "")
+        first_triggered_at = str(peer.get("first_triggered_at") or "")
+        opening_cross_time = str(diagnostics.get("opening_window_cross_time") or "")
+        if _time_lte(first_cross_time, trigger_time):
+            crossed.append(peer)
+        if _time_lte(first_triggered_at, trigger_time):
+            triggered.append(peer)
+        if _time_lte(opening_cross_time, trigger_time):
+            opening.append(peer)
+
+    return {
+        "symbol": symbol,
+        "theme": theme,
+        "data_mode": "packet_selected_results_copump",
+        "universe": "symbols_replayed_inside_this_packet",
+        "trigger_time": trigger_time,
+        "same_theme_candidate_count": len(same_theme),
+        "copump": {
+            "crossed_previous_high_by_trigger_count": len(crossed),
+            "triggered_by_trigger_count": len(triggered),
+            "opening_breakout_by_trigger_count": len(opening),
+            "crossed_symbols": [str(peer.get("symbol") or "").split(".", 1)[0] for peer in crossed[:10]],
+            "triggered_symbols": [str(peer.get("symbol") or "").split(".", 1)[0] for peer in triggered[:10]],
+        },
+        "notes": [
+            "Fast packet co-pump uses only symbols replayed inside this packet.",
+            "Call full theme co-pump explicitly when broader same-theme breadth is required.",
+        ],
+    }
+
+
 @mcp.tool
 def get_market_snapshot() -> dict:
     """Return a read-only A-share market sentiment snapshot."""
@@ -417,6 +533,24 @@ def get_theme_leaders(theme: str = "", trading_day: str = "") -> list[dict]:
 
 
 @mcp.tool
+def get_theme_continuity(theme: str, as_of_day: str, lookback_days: int = 14) -> dict:
+    """Return market-internal two-week continuity facts for one theme.
+
+    The tool groups historical limit-up pools by theme/industry over recent trading
+    days. It does not check off-platform news or CLS popups and does not assign a
+    buy/sell score.
+    """
+    safe_theme = theme.strip()
+    safe_day = as_of_day.strip()
+    if not safe_theme:
+        return {"data_mode": "unavailable", "error": "theme is required"}
+    if not safe_day:
+        return {"data_mode": "unavailable", "error": "as_of_day is required"}
+    safe_lookback = max(1, min(int(lookback_days or 14), 30))
+    return _call_tool(lambda adapter: adapter.get_theme_continuity(safe_theme, safe_day, safe_lookback))
+
+
+@mcp.tool
 def get_limit_up_ladder(symbol: str, trading_day: str = "") -> dict:
     """Return the latest known limit-up ladder height for one stock."""
     return _call_tool(lambda adapter: adapter.get_limit_up_ladder(symbol, trading_day.strip()).model_dump())
@@ -520,6 +654,510 @@ def get_second_board_candidates_compact(limit: int = 12, break_filter: str = "in
         return items
 
     return _call_tool(_compact)
+
+
+@mcp.tool
+def get_historical_second_board_candidates(trading_day: str, limit: int = 50) -> list[dict] | dict:
+    """Return facts-only historical second-board candidates for a given trading day.
+
+    The program returns provider facts such as seal amount, first seal time, turnover,
+    and theme. It does not assign a promotion probability or grade.
+    """
+    safe_day = trading_day.strip()
+    if not safe_day:
+        return {"data_mode": "unavailable", "error": "trading_day is required"}
+    safe_limit = max(1, min(int(limit or 50), 200))
+    return _call_tool(lambda adapter: adapter.get_historical_second_board_candidates(safe_day, safe_limit))
+
+
+@mcp.tool
+def get_historical_first_board_watchlist(as_of_day: str, limit: int = 50) -> list[dict] | dict:
+    """Return facts-only first-board watchlist inputs available as of a historical close.
+
+    Use this for strict replay questions like "standing at YYYY-MM-DD close, choose
+    tomorrow's second-board Top3". It returns only as-of-day or earlier provider facts,
+    and does not assign a promotion probability or grade.
+    """
+    safe_day = as_of_day.strip()
+    if not safe_day:
+        return {"data_mode": "unavailable", "error": "as_of_day is required"}
+    safe_limit = max(1, min(int(limit or 50), 200))
+    return _call_tool(lambda adapter: adapter.get_historical_first_board_watchlist(safe_day, safe_limit))
+
+
+@mcp.tool
+def get_strategy_watchlist(as_of_day: str, limit: int = 50) -> list[dict] | dict:
+    """Return facts-only strategy watchlist inputs for a historical close.
+
+    This builds the user's broad trend strategy universe from first-board and
+    large-turnover seeds, then returns 10-day turnover baseline, T-1 shrink,
+    previous-high break, and partial same-theme breadth. It does not assign a
+    score, grade, probability, buy instruction, or sell instruction.
+    """
+    safe_day = as_of_day.strip()
+    if not safe_day:
+        return {"data_mode": "unavailable", "error": "as_of_day is required"}
+    safe_limit = max(1, min(int(limit or 50), 100))
+    def _strategy_watchlist(adapter: Any) -> dict[str, Any]:
+        items = [
+            _compact_strategy_watchlist_item(item)
+            for item in adapter.get_strategy_watchlist(safe_day, safe_limit)
+            if isinstance(item, dict)
+        ]
+        return {
+            "as_of_day": safe_day,
+            "result_count": len(items),
+            "candidates": items,
+            "data_gaps": [
+                "Off-platform sector/news validation is not connected.",
+                "Historical CLS popup alignment is not connected.",
+                "Historical Level-2 big-order buy ratio is not connected.",
+                "MA5 slope is intentionally not part of the active strategy watchlist.",
+            ],
+        }
+
+    return _call_tool(_strategy_watchlist)
+
+
+@mcp.tool
+def get_daily_strategy_candidate_pool(as_of_day: str, limit: int = 30) -> dict:
+    """Prepare the daily facts-only pool for the user's strategy.
+
+    This is the first step of the target workflow:
+    as_of_day close -> candidate pool -> agent chooses observation TopN ->
+    target_day intraday facts via get_strategy_decision_packet.
+
+    The tool does not rank, grade, score, or assign promotion probability.
+    Ordering follows the provider/seed pipeline only and is not an alpha signal.
+    """
+    safe_day = as_of_day.strip()
+    if not safe_day:
+        return {"data_mode": "unavailable", "error": "as_of_day is required"}
+    safe_limit = max(1, min(int(limit or 30), 100))
+
+    def _candidate_pool(adapter: Any) -> dict[str, Any]:
+        raw_items = [
+            item
+            for item in adapter.get_strategy_watchlist(safe_day, safe_limit)
+            if isinstance(item, dict)
+        ]
+        candidates = [_daily_strategy_candidate_item(item) for item in raw_items]
+        source_counts: dict[str, int] = {}
+        theme_counts: dict[str, int] = {}
+        coverage_counts: dict[str, int] = {
+            "avg_turnover_10d": 0,
+            "prev_day_shrink": 0,
+            "previous_high_break": 0,
+            "theme_two_week_continuity": 0,
+            "intraday_big_order_ratio": 0,
+            "cls_news_alignment": 0,
+        }
+        for item in candidates:
+            for source in item.get("candidate_sources", []):
+                source_counts[source] = source_counts.get(source, 0) + 1
+            theme = str(item.get("theme") or "unknown")
+            theme_counts[theme] = theme_counts.get(theme, 0) + 1
+            coverage = item.get("strategy_coverage") or {}
+            for key in coverage_counts:
+                if coverage.get(key):
+                    coverage_counts[key] += 1
+
+        return {
+            "as_of_day": safe_day,
+            "data_mode": "daily_strategy_candidate_pool",
+            "intended_use": "facts_for_agent_selection",
+            "result_count": len(candidates),
+            "provider_order_is_not_alpha_rank": True,
+            "candidate_generation": {
+                "universe_sources": [
+                    "first_board_watchlist",
+                    "large_turnover_trend_seed",
+                ],
+                "active_program_filter": "avg_turnover_10d_pass_only",
+                "removed_strategy_rules": [
+                    "MA5 slope is intentionally not part of the active strategy.",
+                ],
+                "source_counts": source_counts,
+                "theme_counts": theme_counts,
+            },
+            "coverage_summary": coverage_counts,
+            "candidates": candidates,
+            "next_step": {
+                "agent_action": "Choose observation TopN from this pool using strategy reasoning.",
+                "then_call": "get_strategy_decision_packet",
+                "when": "When target_day intraday replay/live facts are needed.",
+            },
+            "data_gaps": [
+                "Off-platform sector/news validation is not connected.",
+                "Historical CLS popup alignment is not connected.",
+                "Historical Level-2 active big-order buy ratio is not connected.",
+                "Full-market realtime sector co-pump is not connected.",
+            ],
+            "notes": [
+                "Facts-only daily candidate pool; no program grade, score, or probability is assigned.",
+                "The agent must decide which candidates are worth observing.",
+            ],
+        }
+
+    return _call_tool(_candidate_pool)
+
+
+def _parse_symbol_list(symbols: str) -> list[str]:
+    normalized = symbols.replace("|", ",").replace("，", ",").replace(" ", ",")
+    return [item.strip().upper().split(".", 1)[0] for item in normalized.split(",") if item.strip()]
+
+
+@mcp.tool
+def run_historical_strategy_replay(
+    as_of_day: str,
+    target_day: str,
+    symbols: str = "",
+    limit: int = 10,
+    window_start: str = "",
+    window_end: str = "",
+) -> dict:
+    """Replay the user's intraday trigger pattern over historical minute bars.
+
+    The tool first builds the as-of strategy watchlist, then replays target-day
+    minute bars through the buy-point state machine. Optional HH:MM window
+    bounds limit the replay to a partial session such as 09:31-10:00. It returns
+    research alert facts only and does not include future outcome labels.
+    """
+    safe_as_of = as_of_day.strip()
+    safe_target = target_day.strip()
+    if not safe_as_of:
+        return {"data_mode": "unavailable", "error": "as_of_day is required"}
+    if not safe_target:
+        return {"data_mode": "unavailable", "error": "target_day is required"}
+    safe_limit = max(1, min(int(limit or 10), 50))
+    parsed_symbols = _parse_symbol_list(symbols)
+    return _call_tool(
+        lambda adapter: adapter.run_historical_strategy_replay(
+            safe_as_of,
+            safe_target,
+            parsed_symbols or None,
+            safe_limit,
+            window_start.strip(),
+            window_end.strip(),
+        )
+    )
+
+
+@mcp.tool
+def run_historical_trigger_validation(
+    end_day: str,
+    lookback_days: int = 5,
+    limit: int = 20,
+    window_start: str = "09:31",
+    window_end: str = "10:00",
+) -> dict:
+    """Validate the intraday trigger over recent historical trading days.
+
+    For each target day, the tool uses the previous trading day's strategy
+    watchlist, replays the target-day time window, and appends post-trigger
+    outcome labels for calibration. Post-trigger labels are not valid as
+    decision inputs at trigger time.
+    """
+    safe_end = end_day.strip()
+    if not safe_end:
+        return {"data_mode": "unavailable", "error": "end_day is required"}
+    safe_lookback = max(1, min(int(lookback_days or 5), 10))
+    safe_limit = max(1, min(int(limit or 20), 50))
+    return _call_tool(
+        lambda adapter: adapter.run_historical_trigger_validation(
+            safe_end,
+            safe_lookback,
+            safe_limit,
+            window_start.strip() or "09:31",
+            window_end.strip() or "10:00",
+        )
+    )
+
+
+@mcp.tool
+def get_intraday_theme_copump(
+    symbol: str,
+    as_of_day: str,
+    target_day: str,
+    trigger_time: str = "",
+    window_start: str = "09:31",
+    window_end: str = "10:00",
+    peer_limit: int = 20,
+) -> dict:
+    """Return same-theme intraday co-pump facts for a triggered stock.
+
+    This uses the full strategy watchlist as the current representative universe,
+    then replays same-theme peers in the requested intraday window. It is a proxy
+    for sector co-pump, not full-market realtime sector breadth.
+    """
+    safe_symbol = symbol.strip()
+    safe_as_of = as_of_day.strip()
+    safe_target = target_day.strip()
+    if not safe_symbol:
+        return {"data_mode": "unavailable", "error": "symbol is required"}
+    if not safe_as_of:
+        return {"data_mode": "unavailable", "error": "as_of_day is required"}
+    if not safe_target:
+        return {"data_mode": "unavailable", "error": "target_day is required"}
+    safe_peer_limit = max(1, min(int(peer_limit or 20), 50))
+    return _call_tool(
+        lambda adapter: adapter.get_intraday_theme_copump(
+            safe_symbol,
+            safe_as_of,
+            safe_target,
+            trigger_time.strip(),
+            window_start.strip() or "09:31",
+            window_end.strip() or "10:00",
+            safe_peer_limit,
+        )
+    )
+
+
+@mcp.tool
+def get_intraday_orderflow_confirmation(
+    symbol: str,
+    trading_day: str,
+    trigger_time: str = "",
+    window_start: str = "09:31",
+    window_end: str = "10:00",
+) -> dict:
+    """Return order-flow confirmation facts around an intraday trigger.
+
+    Current jvQuant historical wiring has daily semantic capital-flow fields,
+    but not verified minute-level active big-order buy ratio. The return value
+    separates the unavailable trigger-window fact from weak daily proxy facts.
+    """
+    safe_symbol = symbol.strip()
+    safe_day = trading_day.strip()
+    if not safe_symbol:
+        return {"data_mode": "unavailable", "error": "symbol is required"}
+    if not safe_day:
+        return {"data_mode": "unavailable", "error": "trading_day is required"}
+    return _call_tool(
+        lambda adapter: adapter.get_intraday_orderflow_confirmation(
+            safe_symbol,
+            safe_day,
+            trigger_time.strip(),
+            window_start.strip() or "09:31",
+            window_end.strip() or "10:00",
+        )
+    )
+
+
+@mcp.tool
+def sample_realtime_large_trade_proxy(
+    symbol: str,
+    duration_seconds: float = 8.0,
+    threshold_cny: float = 3_000_000.0,
+    window_start: str = "",
+    window_end: str = "",
+) -> dict:
+    """Sample realtime lv2 directionless large-trade activity for one symbol.
+
+    This is a weak order-flow proxy. It counts and sums large trades above the
+    threshold, but cannot classify active buy/sell direction with current lv2
+    fields.
+    """
+    safe_symbol = symbol.strip()
+    if not safe_symbol:
+        return {"data_mode": "unavailable", "error": "symbol is required"}
+    safe_duration = max(1.0, min(float(duration_seconds or 8.0), 30.0))
+    safe_threshold = max(1.0, float(threshold_cny or 3_000_000.0))
+    return _call_tool(
+        lambda adapter: adapter.sample_realtime_large_trade_proxy(
+            safe_symbol,
+            safe_duration,
+            safe_threshold,
+            window_start.strip(),
+            window_end.strip(),
+        )
+    )
+
+
+@mcp.tool
+def simulate_historical_orderflow_proxy(
+    symbol: str,
+    trading_day: str,
+    window_start: str = "09:31",
+    window_end: str = "10:00",
+    volume_ratio_threshold: float = 1.5,
+) -> dict:
+    """Simulate weak order-flow activity from historical minute volume.
+
+    This does not reconstruct tick-level large trades or active buy/sell side.
+    It flags minute bars whose volume is elevated relative to the opening
+    baseline, so agents can test the shape offline without pretending to have
+    historical Level-2.
+    """
+    safe_symbol = symbol.strip()
+    safe_day = trading_day.strip()
+    if not safe_symbol:
+        return {"data_mode": "unavailable", "error": "symbol is required"}
+    if not safe_day:
+        return {"data_mode": "unavailable", "error": "trading_day is required"}
+    safe_threshold = max(0.1, min(float(volume_ratio_threshold or 1.5), 20.0))
+    return _call_tool(
+        lambda adapter: adapter.simulate_historical_orderflow_proxy(
+            safe_symbol,
+            safe_day,
+            window_start.strip() or "09:31",
+            window_end.strip() or "10:00",
+            safe_threshold,
+        )
+    )
+
+
+@mcp.tool
+def get_strategy_decision_packet(
+    as_of_day: str,
+    target_day: str,
+    symbols: str = "",
+    limit: int = 10,
+    window_start: str = "09:31",
+    window_end: str = "10:00",
+    include_minute_volume_proxy: bool = False,
+    include_full_theme_copump: bool = False,
+) -> dict:
+    """Bundle facts needed for the user's strategy without assigning grades.
+
+    The packet reduces agent tool-wandering: it returns the as-of strategy
+    candidate facts, target-day replay facts, fast same-theme co-pump facts
+    within the packet, and order-flow availability/proxy facts. The agent still
+    makes the final Top3/grade/promotion_likelihood judgment.
+    """
+    safe_as_of = as_of_day.strip()
+    safe_target = target_day.strip()
+    if not safe_as_of:
+        return {"data_mode": "unavailable", "error": "as_of_day is required"}
+    if not safe_target:
+        return {"data_mode": "unavailable", "error": "target_day is required"}
+    requested = [item.strip() for item in symbols.replace(",", "|").split("|") if item.strip()]
+    safe_limit = max(1, min(int(limit or 10), 50))
+    safe_window_start = window_start.strip() or "09:31"
+    safe_window_end = window_end.strip() or "10:00"
+
+    def build(adapter: Any) -> dict:
+        from aegis_alpha.measurements.historical_strategy_replay import (
+            run_historical_strategy_replay_from_items,
+        )
+
+        if requested and hasattr(adapter, "get_strategy_items_for_symbols"):
+            strategy_items = adapter.get_strategy_items_for_symbols(safe_as_of, requested)
+        else:
+            strategy_items = adapter.get_strategy_watchlist(safe_as_of, safe_limit)
+        strategy_items = strategy_items[:safe_limit]
+        replay = run_historical_strategy_replay_from_items(
+            as_of_day=safe_as_of,
+            target_day=safe_target,
+            strategy_items=strategy_items,
+            get_snapshot=lambda symbol, day: adapter.get_stock_minute_replay_snapshot(
+                symbol,
+                day,
+                1,
+                max_bars=240,
+            ),
+            window_start=safe_window_start,
+            window_end=safe_window_end,
+        )
+        results = []
+        replay_results = replay.get("results", [])
+        for result in replay_results:
+            symbol = str(result.get("symbol") or "")
+            diagnostics = result.get("pattern_diagnostics") or {}
+            trigger_time = str(
+                result.get("first_triggered_at")
+                or diagnostics.get("first_cross_time")
+                or diagnostics.get("max_price_time")
+                or ""
+            )
+            orderflow = adapter.get_intraday_orderflow_confirmation(
+                symbol,
+                safe_target,
+                trigger_time,
+                safe_window_start,
+                safe_window_end,
+            )
+            theme_copump = _packet_theme_copump(
+                result,
+                replay_results,
+                trigger_time=trigger_time,
+            )
+            if include_full_theme_copump:
+                theme_copump = {
+                    "fast_packet_copump": theme_copump,
+                    "full_theme_copump": adapter.get_intraday_theme_copump(
+                        symbol,
+                        safe_as_of,
+                        safe_target,
+                        trigger_time,
+                        safe_window_start,
+                        safe_window_end,
+                        20,
+                    ),
+                }
+            item = {
+                **result,
+                "orderflow_confirmation": orderflow,
+                "intraday_theme_copump": theme_copump,
+            }
+            if include_minute_volume_proxy:
+                item["historical_minute_volume_proxy"] = adapter.simulate_historical_orderflow_proxy(
+                    symbol,
+                    safe_target,
+                    safe_window_start,
+                    safe_window_end,
+                    1.5,
+                )
+            results.append(item)
+        returned = {str(item.get("symbol") or "").split(".", 1)[0] for item in results}
+        return {
+            "as_of_day": safe_as_of,
+            "target_day": safe_target,
+            "data_mode": "strategy_decision_packet",
+            "window": {"start": safe_window_start, "end": safe_window_end},
+            "strategy_candidate_count": len(strategy_items),
+            "result_count": len(results),
+            "requested_symbols": requested,
+            "missing_requested_symbols": [
+                item for item in requested
+                if item.split(".", 1)[0] not in returned
+            ],
+            "results": results,
+            "notes": [
+                "Facts-only packet for agent judgment; no program grade or score is assigned.",
+                "Order-flow fields separate unavailable active big-order buy ratio from weak proxies.",
+                "Default co-pump is packet-local for speed; full same-theme replay is explicit.",
+                "Minute-volume proxy is included only when explicitly requested.",
+            ],
+        }
+
+    return _call_tool(build)
+
+
+@mcp.tool
+def get_second_board_next_day_outcomes(
+    trading_day: str,
+    symbols: str = "",
+    limit: int = 50,
+) -> dict:
+    """Return facts-only T+1 outcome labels for historical second-board candidates.
+
+    If `symbols` is blank, the adapter first resolves the historical candidate pool
+    for `trading_day` and labels that pool. Pipe-, comma-, and space-separated symbol
+    strings are accepted.
+    """
+    safe_day = trading_day.strip()
+    if not safe_day:
+        return {"data_mode": "unavailable", "error": "trading_day is required"}
+    safe_limit = max(1, min(int(limit or 50), 200))
+    parsed_symbols = _parse_symbol_list(symbols)
+    return _call_tool(
+        lambda adapter: adapter.get_second_board_next_day_outcomes(
+            safe_day,
+            parsed_symbols or None,
+            safe_limit,
+        )
+    )
 
 
 @mcp.tool

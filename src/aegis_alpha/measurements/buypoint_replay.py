@@ -12,16 +12,18 @@ Why a separate module (not in ``buypoint_state_machine.py``):
   orchestration types, and the replay file never reimplements state logic.
 
 Baseline window vs machine evaluation
---------------------------------------
+-------------------------------------
 The opening ``baseline_window`` bars establish the volume baseline (mean volume
-used for all ratio calculations) and are **NOT evaluated for breakouts**.  The
-state machine only runs over ``bars[baseline_window:]``.
+used for all ratio calculations) and are **NOT allowed to fire alerts by
+themselves**.  If the opening window has already crossed the prior high, replay
+seeds the machine as an opening breakout candidate and only evaluates later
+pullback/resurge confirmation over ``bars[baseline_window:]``.
 
 Rationale: A-share stocks frequently gap up open above the prior high with the
-day's highest volume.  If opening bars were both used as the volume denominator
-AND evaluated by the machine, the first bar could simultaneously inflate the
-baseline AND satisfy the breakout threshold — circular self-referential logic
-that produces spurious signals before the opening auction even settles.
+day's highest volume.  The opening bar must not simultaneously be its own volume
+denominator and an immediate signal.  But the user's strategy explicitly cares
+about early fast breaks, so an opening cross can become a candidate that still
+needs a later shrinking pullback and resurge to alert.
 
 Returned-list contract
 ----------------------
@@ -78,9 +80,11 @@ def replay_buypoint(
             baseline.  Must be >= 1.  These bars establish the mean volume
             denominator for all ratio calculations and are **not evaluated for
             breakouts** — the state machine runs over ``bars[baseline_window:]``
-            only.  If there are fewer total bars than *baseline_window*, the
-            mean of all available bars is used as the baseline and the machine
-            has no bars to evaluate (returns ``[]``).
+            only. If the baseline window itself crossed previous_high, replay
+            seeds an opening breakout candidate before evaluating later bars.
+            If there are fewer total bars than *baseline_window*, the mean of
+            all available bars is used as the baseline and the machine has no
+            later bars to evaluate (returns ``[]``).
 
     Returns:
         A list of :class:`IntradayBuyPointSignal` objects, one per
@@ -111,11 +115,19 @@ def replay_buypoint(
     baseline_volume = sum(b.volume for b in window) / len(window)
 
     # ------------------------------------------------------------------
-    # Fold step() over post-baseline bars only; restart on each terminal state
+    # Fold step() over post-baseline bars only; restart on each terminal state.
+    # If the opening window already broke the prior high, carry that fact into
+    # the first post-baseline bar as a candidate, but never emit an alert from
+    # the opening bars alone.
     # ------------------------------------------------------------------
     machine_bars = bars[baseline_window:]
     signals: list[IntradayBuyPointSignal] = []
-    ctx = _fresh_context(previous_high=previous_high, baseline_volume=baseline_volume)
+    opening_ctx = _opening_breakout_context(
+        opening_bars=window,
+        previous_high=previous_high,
+        baseline_volume=baseline_volume,
+    )
+    ctx = opening_ctx or _fresh_context(previous_high=previous_high, baseline_volume=baseline_volume)
 
     for bar in machine_bars:
         ctx = step(ctx, bar, thresholds)
@@ -145,6 +157,33 @@ def _fresh_context(*, previous_high: float, baseline_volume: float) -> BuyPointC
     return BuyPointContext(
         previous_high=previous_high,
         baseline_volume=baseline_volume,
+    )
+
+
+def _opening_breakout_context(
+    *,
+    opening_bars: list[MinuteReplayBar],
+    previous_high: float,
+    baseline_volume: float,
+) -> BuyPointContext | None:
+    crossed = [bar for bar in opening_bars if bar.last_price > previous_high]
+    if not crossed:
+        return None
+
+    breakout_bar = max(crossed, key=lambda bar: bar.last_price)
+    vol_ratio = breakout_bar.volume / baseline_volume if baseline_volume > 0 else 0.0
+    evidence_entry = (
+        f"开盘窗口过前高 at {breakout_bar.time}: price {breakout_bar.last_price} > "
+        f"prev_high {previous_high}, 量比 {vol_ratio:.4f}; 等待后续缩量回踩和重新上冲确认"
+    )
+    return BuyPointContext(
+        state="broke_high",
+        previous_high=previous_high,
+        baseline_volume=baseline_volume,
+        breakout_price=breakout_bar.last_price,
+        breakout_volume=breakout_bar.volume,
+        breakout_volume_ratio=vol_ratio,
+        evidence=(evidence_entry,),
     )
 
 

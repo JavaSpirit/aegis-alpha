@@ -69,7 +69,71 @@ def _multi_board_payload(query: str) -> dict:
 
 class FakeJvQuantClient:
     def query(self, query: str, page: int, sort_type: int, sort_key: str) -> dict:
-        if "连板数大于1" in query:
+        if "是否涨停@2026-05-23" in query and "行业" in query:
+            fields = ["代码", "名称", "行业", "涨跌幅@2026-05-23", "涨停封单额@2026-05-23"]
+            rows = [
+                ["001366", "播恩集团", "饲料", "10.0", "8000.00万"],
+                ["600001", "农业甲", "饲料", "10.0", "5000.00万"],
+                ["603000", "人民网", "传媒", "9.99", "3000.00万"],
+            ]
+            return {"code": 0, "message": "", "data": {"count": len(rows), "fields": fields, "list": rows}}
+        if "成交额@2026-05-25大于30亿" in query:
+            fields = [
+                "代码",
+                "名称",
+                "涨跌幅@2026-05-25",
+                "收盘价@2026-05-25",
+                "最高价@2026-05-25",
+                "成交额@2026-05-25",
+                "行业",
+            ]
+            rows = [
+                ["300475", "香农芯创", "0.60", "38.40", "39.20", "42.00亿", "半导体"],
+                ["002491", "通鼎互联", "-1.20", "6.40", "6.55", "32.00亿", "通信设备"],
+            ]
+            return {"code": 0, "message": "", "data": {"count": len(rows), "fields": fields, "list": rows}}
+        if "是否涨停@2026-05-25" in query and "行业" in query and "涨跌幅@2026-05-25" in query:
+            fields = [
+                "代码",
+                "名称",
+                "涨跌幅@2026-05-25",
+                "涨停首次封板时间@2026-05-25",
+                "涨停封单额@2026-05-25",
+                "涨停封单量@2026-05-25",
+                "涨停封成比@2026-05-25",
+                "收盘价@2026-05-25",
+                "成交额@2026-05-25",
+                "行业",
+            ]
+            rows = [
+                ["001366", "播恩集团", "10.01", "09:42:18", "1.28亿", "688.00万", "1.65", "16.92", "2.66亿", "饲料"],
+                ["002001", "新和成", "10.00", "10:22:31", "4200.00万", "230.00万", "0.82", "30.00", "4.12亿", "合成生物"],
+                ["603000", "人民网", "9.98", "13:14:20", "3000.00万", "120.00万", "0.50", "24.00", "6.00亿", "传媒"],
+            ]
+            return {"code": 0, "message": "", "data": {"count": len(rows), "fields": fields, "list": rows}}
+        if "是否涨停@2026-05-23" in query:
+            fields = ["代码", "名称"]
+            rows = [["002001", "新和成"]]
+            return {"code": 0, "message": "", "data": {"count": len(rows), "fields": fields, "list": rows}}
+        if "是否涨停@2026-05-25" in query and "涨跌幅@2026-05-26" in query:
+            fields = [
+                "代码",
+                "名称",
+                "涨跌幅@2026-05-26",
+                "涨停首次封板时间@2026-05-26",
+                "涨停封单额@2026-05-26",
+                "涨停封单量@2026-05-26",
+                "涨停封成比@2026-05-26",
+                "收盘价@2026-05-26",
+                "成交额@2026-05-26",
+                "行业",
+            ]
+            rows = [
+                ["001366", "播恩集团", "9.99", "09:42:18", "1.28亿", "688.00万", "1.65", "18.61", "2.66亿", "饲料"],
+                ["002001", "新和成", "7.10", "10:22:31", "4200.00万", "230.00万", "0.82", "32.10", "4.12亿", "合成生物"],
+            ]
+            return {"code": 0, "message": "", "data": {"count": len(rows), "fields": fields, "list": rows}}
+        elif "连板数大于1" in query:
             return _multi_board_payload(query)
         if "昨日涨停" in query:
             if "竞价" in query:
@@ -189,6 +253,84 @@ class FakeJvQuantClient:
         }
 
     def kline(self, code: str, cate: str, fq: str, type: str, limit: int) -> dict:
+        if code == "000001" and type == "day":
+            rows = [
+                ["2026-05-23", "10.00", "10.10", "10.20", "9.90", "100", "100000", "3.0", "1.0", "0.10", "1.0"],
+                ["2026-05-25", "10.10", "10.20", "10.30", "10.00", "100", "100000", "3.0", "1.0", "0.10", "1.0"],
+                ["2026-05-26", "10.20", "10.30", "10.40", "10.10", "100", "100000", "3.0", "1.0", "0.10", "1.0"],
+                ["2026-05-27", "10.30", "10.40", "10.50", "10.20", "100", "100000", "3.0", "1.0", "0.10", "1.0"],
+            ]
+        elif code == "001366" and type == "day":
+            rows = [
+                ["2026-05-18", "9.80", "10.00", "10.20", "9.70", "100", "6000000000", "5.0", "1.00", "0.10", "2.0"],
+                ["2026-05-19", "10.00", "10.20", "10.30", "9.90", "100", "5800000000", "4.0", "2.00", "0.20", "2.1"],
+                ["2026-05-20", "10.20", "10.40", "10.50", "10.10", "100", "6100000000", "4.0", "1.96", "0.20", "2.2"],
+                ["2026-05-21", "10.40", "10.60", "10.70", "10.30", "100", "5900000000", "4.0", "1.92", "0.20", "2.3"],
+                ["2026-05-22", "10.60", "10.80", "10.90", "10.50", "100", "6000000000", "4.0", "1.89", "0.20", "2.4"],
+                ["2026-05-23", "10.80", "10.70", "10.90", "10.60", "100", "3000000000", "3.0", "-0.93", "-0.10", "1.8"],
+                ["2026-05-25", "15.30", "16.92", "17.20", "15.20", "100", "266000000", "12.0", "10.01", "1.54", "3.0"],
+                ["2026-05-26", "16.92", "18.61", "18.61", "16.80", "100", "266000000", "10.0", "9.99", "1.69", "2.0"],
+                ["2026-05-27", "19.00", "20.47", "20.47", "18.80", "100", "300000000", "9.0", "9.99", "1.86", "2.2"],
+            ]
+        elif code == "002001" and type == "day":
+            rows = [
+                ["2026-05-26", "30.00", "32.10", "32.10", "29.90", "100", "412000000", "8.0", "7.10", "2.10", "1.8"],
+                ["2026-05-27", "31.00", "31.80", "33.00", "30.50", "100", "280000000", "7.8", "-0.93", "-0.30", "1.5"],
+            ]
+        elif code == "603000" and type == "day":
+            rows = [
+                ["2026-05-18", "20.00", "20.10", "20.20", "19.90", "100", "800000000", "2.0", "0.50", "0.10", "1.0"],
+                ["2026-05-19", "20.10", "20.20", "20.30", "20.00", "100", "850000000", "2.0", "0.50", "0.10", "1.0"],
+                ["2026-05-20", "20.20", "20.30", "20.40", "20.10", "100", "820000000", "2.0", "0.50", "0.10", "1.0"],
+                ["2026-05-21", "20.30", "20.40", "20.50", "20.20", "100", "810000000", "2.0", "0.49", "0.10", "1.0"],
+                ["2026-05-22", "20.40", "20.50", "20.60", "20.30", "100", "830000000", "2.0", "0.49", "0.10", "1.0"],
+                ["2026-05-23", "20.50", "20.40", "20.60", "20.30", "100", "900000000", "2.0", "-0.49", "-0.10", "1.0"],
+                ["2026-05-25", "21.82", "24.00", "24.10", "21.80", "100", "600000000", "10.0", "9.98", "2.18", "1.2"],
+            ]
+        elif code == "300475" and type == "day":
+            rows = [
+                ["2026-05-11", "30.00", "30.50", "30.80", "29.80", "100", "6200000000", "3.0", "1.0", "0.30", "2.0"],
+                ["2026-05-12", "30.50", "31.20", "31.40", "30.40", "100", "6400000000", "3.1", "2.3", "0.70", "2.1"],
+                ["2026-05-13", "31.20", "32.00", "32.20", "31.00", "100", "6600000000", "3.2", "2.6", "0.80", "2.2"],
+                ["2026-05-14", "32.00", "33.10", "33.30", "31.90", "100", "6900000000", "3.3", "3.4", "1.10", "2.3"],
+                ["2026-05-15", "33.10", "34.00", "34.30", "32.80", "100", "7100000000", "3.4", "2.7", "0.90", "2.4"],
+                ["2026-05-18", "34.00", "35.10", "35.30", "33.80", "100", "7300000000", "3.5", "3.2", "1.10", "2.5"],
+                ["2026-05-19", "35.10", "36.20", "36.50", "35.00", "100", "7200000000", "3.6", "3.1", "1.10", "2.6"],
+                ["2026-05-20", "36.20", "37.10", "37.40", "36.00", "100", "7000000000", "3.7", "2.5", "0.90", "2.7"],
+                ["2026-05-21", "37.10", "38.00", "38.50", "36.90", "100", "6800000000", "3.8", "2.4", "0.90", "2.8"],
+                ["2026-05-22", "38.00", "38.20", "38.40", "37.50", "100", "6500000000", "3.9", "0.5", "0.20", "2.9"],
+                ["2026-05-25", "38.20", "38.40", "39.20", "37.80", "100", "4200000000", "4.0", "0.6", "0.20", "3.0"],
+            ]
+        elif code == "002491" and type == "day":
+            rows = [
+                ["2026-05-11", "5.50", "5.60", "5.70", "5.40", "100", "5200000000", "3.0", "1.0", "0.10", "2.0"],
+                ["2026-05-12", "5.60", "5.70", "5.80", "5.50", "100", "5300000000", "3.1", "1.8", "0.10", "2.1"],
+                ["2026-05-13", "5.70", "5.85", "5.90", "5.65", "100", "5400000000", "3.2", "2.6", "0.15", "2.2"],
+                ["2026-05-14", "5.85", "6.00", "6.10", "5.80", "100", "5600000000", "3.3", "2.6", "0.15", "2.3"],
+                ["2026-05-15", "6.00", "6.15", "6.20", "5.95", "100", "5800000000", "3.4", "2.5", "0.15", "2.4"],
+                ["2026-05-18", "6.15", "6.30", "6.35", "6.05", "100", "5900000000", "3.5", "2.4", "0.15", "2.5"],
+                ["2026-05-19", "6.30", "6.45", "6.50", "6.25", "100", "5700000000", "3.6", "2.4", "0.15", "2.6"],
+                ["2026-05-20", "6.45", "6.60", "6.70", "6.40", "100", "5500000000", "3.7", "2.3", "0.15", "2.7"],
+                ["2026-05-21", "6.60", "6.70", "6.80", "6.55", "100", "5300000000", "3.8", "1.5", "0.10", "2.8"],
+                ["2026-05-22", "6.70", "6.50", "6.90", "6.45", "100", "5100000000", "3.9", "-3.0", "-0.20", "2.9"],
+                ["2026-05-25", "6.50", "6.40", "6.55", "6.30", "100", "3200000000", "4.0", "-1.2", "-0.10", "3.0"],
+            ]
+        else:
+            rows = [
+                [
+                    "2026-05-26",
+                    "1285.35",
+                    "1273.38",
+                    "1289.89",
+                    "1270.01",
+                    "45932",
+                    "5867830633",
+                    "1.55",
+                    "-0.97",
+                    "-12.5",
+                    "0.37",
+                ]
+            ]
         return {
             "code": code,
             "message": "",
@@ -198,21 +340,7 @@ class FakeJvQuantClient:
                 "type": type,
                 "fq": fq,
                 "fields": ["日期", "开盘", "收盘", "最高", "最低", "成交量", "成交额", "振幅", "涨跌幅", "涨跌额", "换手率"],
-                "list": [
-                    [
-                        "2026-05-26",
-                        "1285.35",
-                        "1273.38",
-                        "1289.89",
-                        "1270.01",
-                        "45932",
-                        "5867830633",
-                        "1.55",
-                        "-0.97",
-                        "-12.5",
-                        "0.37",
-                    ]
-                ],
+                "list": rows,
             },
         }
 
@@ -436,6 +564,264 @@ def test_jvquant_second_board_candidates_can_fallback_to_semantic_speed(monkeypa
         "observed_probe",
         "internal_inference",
     }
+
+
+def test_jvquant_historical_second_board_candidates_from_fake_client() -> None:
+    adapter = JvQuantMarketDataAdapter(token="fake")
+    adapter._client = FakeJvQuantClient()
+
+    rows = adapter.get_historical_second_board_candidates("2026-05-26", limit=5)
+
+    assert len(rows) == 2
+    assert rows[0]["symbol"] == "001366"
+    assert rows[0]["prev_day"] == "2026-05-25"
+    assert rows[0]["next_day"] == "2026-05-27"
+    assert rows[0]["data_mode"] == "historical_provider"
+    assert rows[0]["seal_amount_cny"] == 128_000_000
+    assert rows[0]["seal_volume_shares"] == 6_880_000
+    assert rows[0]["turnover_cny"] == 266_000_000
+    assert "promotion_grade" not in rows[0]
+    assert "promotion_likelihood" not in rows[0]
+
+
+def test_jvquant_historical_first_board_watchlist_from_fake_client() -> None:
+    adapter = JvQuantMarketDataAdapter(token="fake")
+    adapter._client = FakeJvQuantClient()
+
+    rows = adapter.get_historical_first_board_watchlist("2026-05-25", limit=5)
+
+    assert len(rows) == 2
+    assert rows[0]["symbol"] == "001366"
+    assert rows[0]["as_of_day"] == "2026-05-25"
+    assert rows[0]["prev_day"] == "2026-05-23"
+    assert rows[0]["target_second_board_day"] == "2026-05-26"
+    assert rows[0]["previous_day_limit_up"] is False
+    assert rows[0]["first_board_confirmed"] is True
+    assert rows[0]["seal_amount_cny"] == 128_000_000
+    assert "涨跌幅@2026-05-26" not in rows[0]["query"]
+    assert "promotion_grade" not in rows[0]
+    assert "promotion_likelihood" not in rows[0]
+
+
+def test_jvquant_strategy_watchlist_from_fake_client() -> None:
+    adapter = JvQuantMarketDataAdapter(token="fake")
+    adapter._client = FakeJvQuantClient()
+
+    rows = adapter.get_strategy_watchlist("2026-05-25", limit=5)
+
+    assert len(rows) == 3
+    by_symbol = {row["symbol"]: row for row in rows}
+    assert set(by_symbol) == {"001366", "300475", "002491"}
+    first = rows[0]
+    assert first["symbol"] == "001366"
+    assert first["target_second_board_day"] == "2026-05-26"
+    assert first["candidate_sources"] == ["first_board_watchlist"]
+    assert first["strategy_data_mode"] == "historical_provider"
+    assert first["avg_turnover_10d_cny"] > 5_000_000_000
+    assert first["avg_turnover_10d_pass"] is True
+    assert first["prev_day_shrink"] is True
+    assert first["as_of_high_broke_previous_high"] is True
+    assert first["strategy_filter_pass"] is True
+    assert "ma5_slope_degrees" not in first
+    assert "ma5_slope" not in first["strategy_coverage"]
+    assert "涨跌幅@2026-05-26" not in first["query"]
+    assert first["strategy_coverage"]["theme_two_week_continuity"] is True
+    assert first["theme_continuity"]["theme"] == "饲料"
+    assert first["theme_continuity"]["active_days"] >= 1
+    assert first["theme_continuity"]["off_platform_news_checked"] is False
+    assert by_symbol["300475"]["candidate_sources"] == ["large_turnover_trend_seed"]
+    assert by_symbol["300475"]["avg_turnover_10d_pass"] is True
+    assert by_symbol["300475"]["prev_day_shrink"] is True
+    assert by_symbol["300475"]["as_of_high_broke_previous_high"] is True
+    assert by_symbol["002491"]["candidate_sources"] == ["large_turnover_trend_seed"]
+    assert by_symbol["002491"]["avg_turnover_10d_pass"] is True
+    assert by_symbol["002491"]["prev_day_shrink"] is True
+    assert "promotion_grade" not in first
+    assert "promotion_likelihood" not in first
+
+
+def test_jvquant_theme_continuity_from_fake_client() -> None:
+    adapter = JvQuantMarketDataAdapter(token="fake")
+    adapter._client = FakeJvQuantClient()
+
+    result = adapter.get_theme_continuity("饲料", "2026-05-25", lookback_days=14)
+
+    assert result["theme"] == "饲料"
+    assert result["data_mode"] == "historical_provider"
+    assert result["active_days"] >= 2
+    assert result["burst_days"] >= 1
+    assert result["off_platform_news_checked"] is False
+    assert result["cls_news_checked"] is False
+    assert "continuity_label" in result
+
+
+def test_jvquant_historical_strategy_replay_from_fake_client() -> None:
+    adapter = JvQuantMarketDataAdapter(token="fake")
+    adapter._client = FakeJvQuantClient()
+
+    result = adapter.run_historical_strategy_replay(
+        "2026-05-25",
+        "2026-05-26",
+        symbols=["001366"],
+        limit=5,
+    )
+
+    assert result["as_of_day"] == "2026-05-25"
+    assert result["target_day"] == "2026-05-26"
+    assert result["data_mode"] == "historical_replay"
+    assert result["result_count"] == 1
+    item = result["results"][0]
+    assert item["symbol"] == "001366"
+    assert item["previous_high_price"] > 0
+    assert item["minute_count_replayed"] >= 1
+    assert "signals" in item
+    assert item["pattern_diagnostics"]["crossed_previous_high"] in {True, False}
+    assert "no_signal_reason" in item["pattern_diagnostics"]
+    assert "sealed_next_day" not in item
+    assert any("Level-2" in gap for gap in item["data_gaps"])
+
+
+def test_jvquant_intraday_orderflow_confirmation_returns_daily_proxy() -> None:
+    adapter = JvQuantMarketDataAdapter(token="fake")
+
+    class FakeCapitalFlowClient:
+        def query(self, query: str, page: int, sort_type: int, sort_key: str) -> dict:  # noqa: ARG002
+            fields = [
+                "代码", "名称", "涨跌幅2026-06-18", "成交额2026-06-18",
+                "主力净额2026-06-18", "超大单净额2026-06-18",
+                "大单净额2026-06-18", "中单净额2026-06-18",
+                "小单净额2026-06-18",
+            ]
+            rows = [[
+                "002281", "光迅科技", "5.31", "100.00亿",
+                "3.00亿", "1.20亿", "0.80亿", "-0.50亿", "-2.50亿",
+            ]]
+            return {"code": 0, "message": "", "data": {"count": len(rows), "fields": fields, "list": rows}}
+
+    adapter._client = FakeCapitalFlowClient()
+    result = adapter.get_intraday_orderflow_confirmation(
+        "002281",
+        trading_day="2026-06-18",
+        trigger_time="09:41",
+        window_start="09:31",
+        window_end="10:00",
+    )
+
+    assert result["data_mode"] == "historical_orderflow_proxy"
+    assert result["historical_big_order_buy_ratio_available"] is False
+    assert result["big_order_buy_ratio"] is None
+    assert result["realtime_orderflow_capability"]["lv2_large_trade_proxy_available"] is True
+    assert result["realtime_orderflow_capability"]["active_trade_side_available"] is False
+    assert result["realtime_orderflow_capability"]["can_compute_big_order_buy_ratio"] is False
+    assert result["daily_capital_flow_available"] is True
+    assert result["daily_capital_flow"]["big_order_net_inflow_cny"] == 200_000_000.0
+    assert result["daily_capital_flow"]["big_order_net_inflow_ratio"] == 0.02
+    assert result["daily_capital_flow"]["main_capital_net_inflow_ratio"] == 0.03
+    assert result["daily_capital_flow"]["direction"] == "positive"
+    assert any("daily net inflow" in note for note in result["notes"])
+
+
+def test_jvquant_intraday_orderflow_confirmation_falls_back_to_dated_fields() -> None:
+    adapter = JvQuantMarketDataAdapter(token="fake")
+
+    class FakeDatedCapitalFlowClient:
+        def __init__(self) -> None:
+            self.queries: list[str] = []
+
+        def query(self, query: str, page: int, sort_type: int, sort_key: str) -> dict:  # noqa: ARG002
+            self.queries.append(query)
+            if "主力净额2026-06-18" not in query:
+                return {"code": 0, "message": "", "data": {"count": 0, "fields": [], "list": []}}
+            fields = [
+                "代码", "名称", "涨跌幅2026-06-18", "成交额2026-06-18",
+                "主力净额2026-06-18", "超大单净额2026-06-18",
+                "大单净额2026-06-18", "中单净额2026-06-18",
+                "小单净额2026-06-18",
+            ]
+            rows = [[
+                "002281", "光迅科技", "10.00", "104.78亿",
+                "14.22亿", "15.03亿", "-8158.70万", "-7.46亿", "-6.75亿",
+            ]]
+            return {"code": 0, "message": "", "data": {"count": len(rows), "fields": fields, "list": rows}}
+
+    fake_client = FakeDatedCapitalFlowClient()
+    adapter._client = fake_client
+    result = adapter.get_intraday_orderflow_confirmation("002281", trading_day="2026-06-18")
+
+    assert len(fake_client.queries) == 2
+    assert result["daily_capital_flow_available"] is True
+    assert result["daily_capital_flow"]["big_order_net_inflow_ratio"] == 0.1357
+    assert result["daily_capital_flow"]["direction"] == "positive"
+
+
+def test_intraday_theme_copump_counts_same_theme_peers_by_trigger_time() -> None:
+    from aegis_alpha.adapters.jvquant.adapter import _intraday_theme_copump
+
+    day_results = [
+        {
+            "symbol": "000001",
+            "theme": "通信设备",
+            "first_triggered_at": "09:40",
+            "pattern_diagnostics": {
+                "first_cross_time": "09:33",
+                "opening_window_cross_time": "09:32",
+            },
+        },
+        {
+            "symbol": "000002",
+            "theme": "通信设备",
+            "first_triggered_at": "09:38",
+            "pattern_diagnostics": {
+                "first_cross_time": "09:34",
+                "opening_window_cross_time": "",
+            },
+        },
+        {
+            "symbol": "000003",
+            "theme": "通信设备",
+            "first_triggered_at": "09:50",
+            "pattern_diagnostics": {
+                "first_cross_time": "09:35",
+                "opening_window_cross_time": "",
+            },
+        },
+        {
+            "symbol": "000004",
+            "theme": "半导体",
+            "first_triggered_at": "09:35",
+            "pattern_diagnostics": {
+                "first_cross_time": "09:32",
+                "opening_window_cross_time": "09:31",
+            },
+        },
+    ]
+
+    result = _intraday_theme_copump(day_results[0], day_results, triggered_at="09:40")
+
+    assert result["same_theme_candidate_count"] == 2
+    assert result["crossed_previous_high_by_trigger_count"] == 2
+    assert result["triggered_by_trigger_count"] == 1
+    assert result["opening_breakout_by_trigger_count"] == 0
+    assert result["crossed_symbols"] == ["000002", "000003"]
+    assert result["triggered_symbols"] == ["000002"]
+
+
+def test_jvquant_second_board_next_day_outcomes_from_fake_client() -> None:
+    adapter = JvQuantMarketDataAdapter(token="fake")
+    adapter._client = FakeJvQuantClient()
+
+    result = adapter.get_second_board_next_day_outcomes("2026-05-26", symbols=["001366", "002001"])
+
+    assert result["trading_day"] == "2026-05-26"
+    assert result["next_day"] == "2026-05-27"
+    assert result["data_mode"] == "historical_provider"
+    by_symbol = {item["symbol"]: item for item in result["outcomes"]}
+    assert by_symbol["001366"]["ok"] is True
+    assert by_symbol["001366"]["next_day_high_pct"] == 9.99
+    assert by_symbol["001366"]["touched_limit_up"] is True
+    assert by_symbol["001366"]["sealed_next_day"] is True
+    assert by_symbol["002001"]["next_day_high_pct"] == 2.8
+    assert by_symbol["002001"]["touched_limit_up"] is False
 
 
 def test_inferred_change_pct_sh_main() -> None:

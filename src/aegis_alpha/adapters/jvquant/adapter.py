@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import logging
+import json
 import os
+import time
 from collections import Counter
 from datetime import datetime
 from typing import Any
 
 from aegis_alpha.adapters.mock_market_data import MockMarketDataAdapter
 from aegis_alpha.adapters.jvquant import parsers as P
+from aegis_alpha.adapters.jvquant import historical_second_board as HSB
 from aegis_alpha.adapters.jvquant.parsers import float_or_zero as _float_or_zero
 from aegis_alpha.adapters.jvquant.parsers import int_or_zero as _int_or_zero
 from aegis_alpha.adapters.jvquant.queries import JvQuantQueryClient
@@ -43,12 +46,13 @@ from aegis_alpha.models import (
     ThemeLeader,
     WeeklyPosition,
 )
-from aegis_alpha.events import EventDetector, freshness_status, load_event_scoring_config
+from aegis_alpha.events import EventDetector, SignalWindowBuffer, freshness_status, load_event_scoring_config
 from aegis_alpha.measurements.theme_lifecycle import STAGE_LABELS_CN
+from aegis_alpha.measurements.orderflow_proxy import simulate_historical_orderflow_proxy as simulate_orderflow_proxy
 from aegis_alpha.extensions.suspended_stocks import is_symbol_suspended
 from aegis_alpha.extensions.weekly_position import compute_weekly_health_score
 from aegis_alpha.storage import AegisAlphaStore
-from aegis_alpha.adapters.jvquant_websocket import JvQuantRealtimeClient
+from aegis_alpha.adapters.jvquant_websocket import JvQuantRealtimeClient, raw_lv2_large_trade_records
 from aegis_alpha.symbols import daily_limit_pct, normalize_symbol
 from aegis_alpha.themes.auction import AuctionAnalyzer
 from aegis_alpha.themes.ladder import classify_height
@@ -65,6 +69,55 @@ def _day_query_prefix(trading_day: str) -> str:
     day = (trading_day or "").strip()
     today = datetime.now(SH_TZ).date().isoformat()
     return "今日" if not day or day == today else day
+
+
+def _time_lte(value: str, boundary: str) -> bool:
+    return bool(value and boundary and value <= boundary)
+
+
+def _intraday_theme_copump(
+    item: dict[str, Any],
+    day_results: list[dict[str, Any]],
+    *,
+    triggered_at: str,
+) -> dict[str, Any]:
+    symbol = normalize_symbol(str(item.get("symbol") or ""))
+    theme = str(item.get("theme") or "unknown")
+    same_theme = [
+        result
+        for result in day_results
+        if normalize_symbol(str(result.get("symbol") or "")) != symbol
+        and str(result.get("theme") or "unknown") == theme
+    ]
+    crossed = []
+    triggered = []
+    opening = []
+    for peer in same_theme:
+        diagnostics = peer.get("pattern_diagnostics") or {}
+        first_cross_time = str(diagnostics.get("first_cross_time") or "")
+        first_triggered_at = str(peer.get("first_triggered_at") or "")
+        opening_cross_time = str(diagnostics.get("opening_window_cross_time") or "")
+        if _time_lte(first_cross_time, triggered_at):
+            crossed.append(peer)
+        if _time_lte(first_triggered_at, triggered_at):
+            triggered.append(peer)
+        if _time_lte(opening_cross_time, triggered_at):
+            opening.append(peer)
+
+    return {
+        "theme": theme,
+        "universe": "same_theme_strategy_watchlist_candidates",
+        "same_theme_candidate_count": len(same_theme),
+        "crossed_previous_high_by_trigger_count": len(crossed),
+        "triggered_by_trigger_count": len(triggered),
+        "opening_breakout_by_trigger_count": len(opening),
+        "crossed_symbols": [normalize_symbol(str(peer.get("symbol") or "")) for peer in crossed[:10]],
+        "triggered_symbols": [normalize_symbol(str(peer.get("symbol") or "")) for peer in triggered[:10]],
+        "notes": [
+            "Counts only same-theme names present in this strategy watchlist sample.",
+            "This is a market-internal co-pump proxy; full-board realtime breadth is not connected yet.",
+        ],
+    }
 
 
 class JvQuantMarketDataAdapter:
@@ -538,6 +591,870 @@ class JvQuantMarketDataAdapter:
 
         return candidates
 
+    def get_historical_second_board_candidates(self, trading_day: str, limit: int = 50) -> list[dict[str, Any]]:
+        safe_day = trading_day.strip()
+        safe_limit = max(1, min(int(limit or 50), 200))
+        calendar = HSB.resolve_adjacent_trading_days(self.client, safe_day)
+        if not calendar.get("ok"):
+            return [
+                {
+                    "trading_day": safe_day,
+                    "provider": "jvQuant",
+                    "data_mode": "unavailable",
+                    "error": calendar.get("error", "Unable to resolve adjacent trading days."),
+                }
+            ]
+
+        prev_day = str(calendar["prev_day"])
+        next_day = str(calendar["next_day"])
+        query = HSB.historical_candidate_query(safe_day, prev_day)
+        payload = self._query(query, sort_key="涨跌幅")
+        fields = HSB.payload_fields(payload)
+        if not HSB.has_target_day_candidate_facts(fields, safe_day):
+            return [
+                {
+                    "trading_day": safe_day,
+                    "prev_day": prev_day,
+                    "next_day": next_day,
+                    "provider": "jvQuant",
+                    "data_mode": "unavailable",
+                    "error": "jvQuant did not return target-day dated candidate facts.",
+                    "query": query,
+                    "source_fields": fields[:40],
+                }
+            ]
+
+        rows = P._query_rows(payload)
+        candidates: list[dict[str, Any]] = []
+        for row in rows[:safe_limit]:
+            if not P._symbol_from_row(row):
+                continue
+            candidates.append(
+                HSB.build_historical_candidate(
+                    row,
+                    trading_day=safe_day,
+                    prev_day=prev_day,
+                    next_day=next_day,
+                    query=query,
+                )
+            )
+        return candidates
+
+    def get_historical_first_board_watchlist(self, as_of_day: str, limit: int = 50) -> list[dict[str, Any]]:
+        safe_day = as_of_day.strip()
+        safe_limit = max(1, min(int(limit or 50), 200))
+        calendar = HSB.resolve_adjacent_trading_days(self.client, safe_day)
+        if not calendar.get("ok"):
+            return [
+                {
+                    "as_of_day": safe_day,
+                    "provider": "jvQuant",
+                    "data_mode": "unavailable",
+                    "error": calendar.get("error", "Unable to resolve adjacent trading days."),
+                }
+            ]
+
+        prev_day = str(calendar["prev_day"])
+        target_day = str(calendar["next_day"])
+        query = HSB.historical_first_board_watchlist_query(safe_day, prev_day)
+        payload = self._query(query, sort_key="涨停封单额")
+        prev_payload = self._query(HSB.historical_limit_up_symbols_query(prev_day))
+        prev_limit_up_symbols = {
+            normalize_symbol(P._symbol_from_row(row))
+            for row in P._query_rows(prev_payload)
+            if P._symbol_from_row(row)
+        }
+        fields = HSB.payload_fields(payload)
+        if not HSB.has_as_of_watchlist_facts(fields, safe_day):
+            return [
+                {
+                    "as_of_day": safe_day,
+                    "prev_day": prev_day,
+                    "target_second_board_day": target_day,
+                    "provider": "jvQuant",
+                    "data_mode": "unavailable",
+                    "error": "jvQuant did not return as-of dated first-board watchlist facts.",
+                    "query": query,
+                    "source_fields": fields[:40],
+                }
+            ]
+
+        rows = P._query_rows(payload)
+        watchlist: list[dict[str, Any]] = []
+        for row in rows:
+            symbol = normalize_symbol(P._symbol_from_row(row))
+            if not symbol:
+                continue
+            previous_day_limit_up = symbol in prev_limit_up_symbols
+            if previous_day_limit_up:
+                continue
+            item = HSB.build_historical_first_board_watchlist_item(
+                row,
+                as_of_day=safe_day,
+                prev_day=prev_day,
+                target_second_board_day=target_day,
+                query=query,
+                previous_day_limit_up=previous_day_limit_up,
+            )
+            watchlist.append(item)
+            if len(watchlist) >= safe_limit:
+                break
+        return watchlist
+
+    def get_strategy_watchlist(self, as_of_day: str, limit: int = 50) -> list[dict[str, Any]]:
+        safe_day = as_of_day.strip()
+        safe_limit = max(1, min(int(limit or 50), 100))
+        calendar = HSB.resolve_adjacent_trading_days(self.client, safe_day)
+        if not calendar.get("ok"):
+            return [
+                {
+                    "as_of_day": safe_day,
+                    "provider": "jvQuant",
+                    "data_mode": "unavailable",
+                    "error": calendar.get("error", "Unable to resolve adjacent trading days."),
+                }
+            ]
+
+        prev_day = str(calendar["prev_day"])
+        target_day = str(calendar["next_day"])
+        seed_items_by_symbol: dict[str, dict[str, Any]] = {}
+
+        for item in self.get_historical_first_board_watchlist(safe_day, 100):
+            symbol = normalize_symbol(str(item.get("symbol") or ""))
+            if not symbol:
+                continue
+            seed_items_by_symbol[symbol] = {
+                **item,
+                "candidate_sources": ["first_board_watchlist"],
+                "strategy_seed_reasons": ["as_of_day_first_board"],
+                "strategy_seed_queries": [item.get("query", "")],
+            }
+
+        trend_queries = HSB.historical_large_turnover_strategy_queries(safe_day)
+        trend_source_fields: list[str] = []
+        for trend_query in trend_queries:
+            trend_payload = self._query(trend_query, sort_key="成交额")
+            trend_fields = HSB.payload_fields(trend_payload)
+            if not trend_source_fields:
+                trend_source_fields = trend_fields
+            if not HSB.has_large_turnover_strategy_facts(trend_fields, safe_day):
+                continue
+            for row in P._query_rows(trend_payload):
+                symbol = normalize_symbol(P._symbol_from_row(row))
+                if not symbol:
+                    continue
+                trend_item = HSB.build_large_turnover_strategy_item(
+                    row,
+                    as_of_day=safe_day,
+                    prev_day=prev_day,
+                    target_day=target_day,
+                    query=trend_query,
+                )
+                if symbol in seed_items_by_symbol:
+                    existing = seed_items_by_symbol[symbol]
+                    existing["candidate_sources"] = sorted(
+                        set(existing.get("candidate_sources", [])) | {"large_turnover_trend_seed"}
+                    )
+                    existing["strategy_seed_reasons"] = sorted(
+                        set(existing.get("strategy_seed_reasons", [])) | {"as_of_day_turnover_seed"}
+                    )
+                    existing["strategy_seed_queries"] = list(
+                        dict.fromkeys(
+                            query
+                            for query in [*existing.get("strategy_seed_queries", []), trend_query]
+                            if query
+                        )
+                    )
+                    existing.setdefault("trend_turnover_cny", trend_item.get("turnover_cny", 0.0))
+                    existing.setdefault("trend_change_pct", trend_item.get("change_pct", 0.0))
+                else:
+                    seed_items_by_symbol[symbol] = {
+                        **trend_item,
+                        "candidate_sources": ["large_turnover_trend_seed"],
+                        "strategy_seed_reasons": ["as_of_day_turnover_seed"],
+                        "strategy_seed_queries": [trend_query],
+                    }
+
+        base_items = list(seed_items_by_symbol.values())
+        if not base_items:
+            return [
+                {
+                    "as_of_day": safe_day,
+                    "target_second_board_day": target_day,
+                    "provider": "jvQuant",
+                    "data_mode": "unavailable",
+                    "error": "No strategy seed candidates returned by first-board or large-turnover universe queries.",
+                    "trend_queries": trend_queries,
+                    "trend_source_fields": trend_source_fields[:40],
+                }
+            ]
+
+        theme_counts = Counter(str(item.get("theme") or "unknown") for item in base_items)
+        first_board_theme_counts = Counter(
+            str(item.get("theme") or "unknown")
+            for item in base_items
+            if "first_board_watchlist" in item.get("candidate_sources", [])
+        )
+        continuity_map = HSB.build_theme_continuity_map(
+            self.client,
+            self._query,
+            themes=list(theme_counts.keys()),
+            as_of_day=safe_day,
+            lookback_days=14,
+        )
+        enriched: list[dict[str, Any]] = []
+        for item in base_items:
+            symbol = str(item.get("symbol") or "")
+            if not symbol:
+                continue
+            strategy_facts = HSB.strategy_facts_from_kline(self.client, symbol, as_of_day=safe_day)
+            theme = str(item.get("theme") or "unknown")
+            continuity = continuity_map.get(
+                theme,
+                HSB.summarize_theme_continuity(
+                    theme=theme,
+                    as_of_day=safe_day,
+                    days=[],
+                    daily_counts={},
+                ),
+            )
+            enriched_item = {
+                **item,
+                **strategy_facts,
+                "strategy_filter_pass": bool(strategy_facts.get("avg_turnover_10d_pass")),
+                "same_theme_strategy_seed_count": theme_counts.get(theme, 0),
+                "same_theme_first_board_count": first_board_theme_counts.get(theme, 0),
+                "theme_continuity": {
+                    **continuity,
+                    "same_theme_strategy_seed_count": theme_counts.get(theme, 0),
+                    "same_theme_first_board_count": first_board_theme_counts.get(theme, 0),
+                },
+                "strategy_coverage": {
+                    "avg_turnover_10d": strategy_facts.get("strategy_data_mode") == "historical_provider",
+                    "prev_day_shrink": strategy_facts.get("strategy_data_mode") == "historical_provider",
+                    "previous_high_break": strategy_facts.get("strategy_data_mode") == "historical_provider",
+                    "theme_two_week_continuity": continuity.get("data_mode") == "historical_provider",
+                    "intraday_big_order_ratio": False,
+                    "cls_news_alignment": False,
+                },
+            }
+            if enriched_item["strategy_filter_pass"]:
+                enriched.append(enriched_item)
+        return enriched[:safe_limit]
+
+    def get_strategy_items_for_symbols(self, as_of_day: str, symbols: list[str]) -> list[dict[str, Any]]:
+        safe_day = as_of_day.strip()
+        calendar = HSB.resolve_adjacent_trading_days(self.client, safe_day)
+        if not calendar.get("ok"):
+            return [
+                {
+                    "as_of_day": safe_day,
+                    "provider": "jvQuant",
+                    "data_mode": "unavailable",
+                    "error": calendar.get("error", "Unable to resolve adjacent trading days."),
+                }
+            ]
+        prev_day = str(calendar["prev_day"])
+        target_day = str(calendar["next_day"])
+        output: list[dict[str, Any]] = []
+        for raw_symbol in symbols:
+            symbol = normalize_symbol(raw_symbol)
+            if not symbol:
+                continue
+            payload = self._query(
+                (
+                    f"{symbol},股票代码,股票简称,涨跌幅@{safe_day},"
+                    f"收盘价@{safe_day},最高价@{safe_day},成交额@{safe_day},行业"
+                ),
+                sort_key="成交额",
+            )
+            row = next(
+                (
+                    item for item in P._query_rows(payload)
+                    if normalize_symbol(P._symbol_from_row(item)) == symbol
+                ),
+                {},
+            )
+            strategy_facts = HSB.strategy_facts_from_kline(self.client, symbol, as_of_day=safe_day)
+            theme = P._theme_from_row(row) if row else "unknown"
+            continuity = (
+                self.get_theme_continuity(theme, safe_day, 14)
+                if theme != "unknown"
+                else HSB.summarize_theme_continuity(theme=theme, as_of_day=safe_day, days=[], daily_counts={})
+            )
+            output.append(
+                {
+                    "symbol": symbol,
+                    "name": P._name_from_row(row) if row else symbol,
+                    "as_of_day": safe_day,
+                    "prev_day": prev_day,
+                    "target_second_board_day": target_day,
+                    "provider": "jvQuant",
+                    "data_mode": "historical_provider" if row else "partial_historical_provider",
+                    "candidate_sources": ["requested_symbol_fast_path"],
+                    "strategy_seed_reasons": ["user_requested_symbol"],
+                    "change_pct": P.float_or_zero(P._field_value(row, "涨跌幅")) if row else 0.0,
+                    "close_price": P.float_or_zero(P._field_value(row, "收盘价", "价格", "最新价")) if row else 0.0,
+                    "as_of_high_price": P.float_or_zero(P._field_value(row, "最高价", "最高")) if row else 0.0,
+                    "turnover_cny": P._parse_cny_amount(P._field_value(row, "成交额")) if row else 0.0,
+                    "theme": theme,
+                    **strategy_facts,
+                    "strategy_filter_pass": bool(strategy_facts.get("avg_turnover_10d_pass")),
+                    "same_theme_strategy_seed_count": 0,
+                    "same_theme_first_board_count": 0,
+                    "theme_continuity": {
+                        **continuity,
+                        "same_theme_strategy_seed_count": 0,
+                        "same_theme_first_board_count": 0,
+                    },
+                    "strategy_coverage": {
+                        "avg_turnover_10d": strategy_facts.get("strategy_data_mode") == "historical_provider",
+                        "prev_day_shrink": strategy_facts.get("strategy_data_mode") == "historical_provider",
+                        "previous_high_break": strategy_facts.get("strategy_data_mode") == "historical_provider",
+                        "theme_two_week_continuity": continuity.get("data_mode") == "historical_provider",
+                        "intraday_big_order_ratio": False,
+                        "cls_news_alignment": False,
+                    },
+                    "notes": [
+                        "Requested-symbol fast path; does not scan the full strategy universe.",
+                        "No program grade or promotion probability is assigned.",
+                    ],
+                }
+            )
+        return output
+
+    def get_theme_continuity(
+        self,
+        theme: str,
+        as_of_day: str,
+        lookback_days: int = 14,
+    ) -> dict[str, Any]:
+        safe_theme = theme.strip()
+        safe_day = as_of_day.strip()
+        if not safe_theme:
+            return {
+                "data_mode": "unavailable",
+                "theme": safe_theme,
+                "as_of_day": safe_day,
+                "error": "theme is required",
+            }
+        continuity = HSB.build_theme_continuity_map(
+            self.client,
+            self._query,
+            themes=[safe_theme],
+            as_of_day=safe_day,
+            lookback_days=lookback_days,
+        )
+        return continuity.get(
+            safe_theme,
+            HSB.summarize_theme_continuity(
+                theme=safe_theme,
+                as_of_day=safe_day,
+                days=[],
+                daily_counts={},
+            ),
+        )
+
+    def run_historical_strategy_replay(
+        self,
+        as_of_day: str,
+        target_day: str,
+        symbols: list[str] | None = None,
+        limit: int = 10,
+        window_start: str = "",
+        window_end: str = "",
+    ) -> dict[str, Any]:
+        from aegis_alpha.measurements.historical_strategy_replay import (
+            run_historical_strategy_replay_from_items,
+        )
+
+        safe_as_of = as_of_day.strip()
+        safe_target = target_day.strip()
+        safe_limit = max(1, min(int(limit or 10), 50))
+        selected_symbols = {normalize_symbol(symbol) for symbol in (symbols or []) if normalize_symbol(symbol)}
+        lookup_limit = 100 if selected_symbols else safe_limit
+        items = self.get_strategy_watchlist(safe_as_of, lookup_limit)
+        if selected_symbols:
+            items = [item for item in items if normalize_symbol(str(item.get("symbol") or "")) in selected_symbols]
+
+        result = run_historical_strategy_replay_from_items(
+            as_of_day=safe_as_of,
+            target_day=safe_target,
+            strategy_items=items,
+            get_snapshot=lambda symbol, day: self.get_stock_minute_replay_snapshot(
+                symbol,
+                day,
+                1,
+                max_bars=240,
+            ),
+            window_start=window_start.strip(),
+            window_end=window_end.strip(),
+        )
+        if selected_symbols:
+            returned = {normalize_symbol(str(item.get("symbol") or "")) for item in result.get("results", [])}
+            result["requested_symbols"] = sorted(selected_symbols)
+            result["missing_requested_symbols"] = sorted(selected_symbols - returned)
+        return result
+
+    def run_historical_trigger_validation(
+        self,
+        end_day: str,
+        lookback_days: int = 5,
+        limit: int = 20,
+        window_start: str = "09:31",
+        window_end: str = "10:00",
+    ) -> dict[str, Any]:
+        from collections import Counter
+
+        from aegis_alpha.measurements.historical_strategy_replay import post_signal_outcome
+
+        safe_end = end_day.strip()
+        safe_lookback = max(1, min(int(lookback_days or 5), 10))
+        safe_limit = max(1, min(int(limit or 20), 50))
+        days = HSB.recent_trading_days(self.client, safe_end, safe_lookback + 1)
+        if len(days) < 2:
+            return {
+                "end_day": safe_end,
+                "data_mode": "unavailable",
+                "error": "not_enough_trading_days",
+            }
+
+        validations: list[dict[str, Any]] = []
+        total_candidates = 0
+        total_triggered = 0
+        reason_counts: Counter[str] = Counter()
+        post_outcomes: list[dict[str, Any]] = []
+
+        for idx in range(1, len(days)):
+            as_of = days[idx - 1]
+            target = days[idx]
+            replay = self.run_historical_strategy_replay(
+                as_of,
+                target,
+                symbols=None,
+                limit=safe_limit,
+                window_start=window_start,
+                window_end=window_end,
+            )
+            day_results = replay.get("results", [])
+            triggered_rows: list[dict[str, Any]] = []
+            day_reason_counts: Counter[str] = Counter()
+            for item in day_results:
+                total_candidates += 1
+                diagnostics = item.get("pattern_diagnostics") or {}
+                reason = str(diagnostics.get("no_signal_reason") or item.get("error") or "unknown")
+                day_reason_counts[reason] += 1
+                reason_counts[reason] += 1
+                if int(item.get("signal_count") or 0) <= 0:
+                    continue
+
+                total_triggered += 1
+                symbol = normalize_symbol(str(item.get("symbol") or ""))
+                first_signal = (item.get("signals") or [{}])[0]
+                triggered_at = str(first_signal.get("triggered_at") or "")
+                snapshot = self.get_stock_minute_replay_snapshot(symbol, target, 1, max_bars=240)
+                outcome = post_signal_outcome(snapshot, triggered_at=triggered_at)
+                row = {
+                    "symbol": symbol,
+                    "name": item.get("name", ""),
+                    "theme": item.get("theme", "unknown"),
+                    "triggered_at": triggered_at,
+                    "breakout_volume_ratio": first_signal.get("breakout_volume_ratio", 0.0),
+                    "pullback_volume_shrink_ratio": first_signal.get("pullback_volume_shrink_ratio", 0.0),
+                    "resurge_strength": first_signal.get("resurge_strength", 0.0),
+                    "intraday_theme_copump": _intraday_theme_copump(
+                        item,
+                        day_results,
+                        triggered_at=triggered_at,
+                    ),
+                    "post_signal_outcome": outcome,
+                }
+                triggered_rows.append(row)
+                post_outcomes.append(row)
+
+            validations.append(
+                {
+                    "as_of_day": as_of,
+                    "target_day": target,
+                    "candidate_count": len(day_results),
+                    "triggered_count": len(triggered_rows),
+                    "trigger_rate": round(len(triggered_rows) / len(day_results), 4) if day_results else 0.0,
+                    "no_signal_reason_counts": dict(day_reason_counts),
+                    "triggered": triggered_rows,
+                }
+            )
+
+        closed_above = [
+            row
+            for row in post_outcomes
+            if (row.get("post_signal_outcome") or {}).get("ok")
+            and (row.get("post_signal_outcome") or {}).get("closed_above_trigger")
+        ]
+        return {
+            "end_day": safe_end,
+            "lookback_days": safe_lookback,
+            "trading_days": days,
+            "window": {
+                "start": window_start,
+                "end": window_end,
+            },
+            "limit_per_day": safe_limit,
+            "data_mode": "historical_validation",
+            "day_count": len(validations),
+            "candidate_count": total_candidates,
+            "triggered_count": total_triggered,
+            "trigger_rate": round(total_triggered / total_candidates, 4) if total_candidates else 0.0,
+            "closed_above_trigger_count": len(closed_above),
+            "closed_above_trigger_rate": round(len(closed_above) / total_triggered, 4) if total_triggered else 0.0,
+            "no_signal_reason_counts": dict(reason_counts),
+            "validations": validations,
+            "notes": [
+                "Validation uses as_of_day watchlist facts, target-day window replay, and post-trigger outcomes for calibration.",
+                "Post-trigger outcomes are future labels and must not be used as intraday decision inputs.",
+                "Historical Level-2 big-order ratio, CLS popups, and off-platform news alignment are not connected.",
+            ],
+        }
+
+    def get_intraday_theme_copump(
+        self,
+        symbol: str,
+        as_of_day: str,
+        target_day: str,
+        trigger_time: str = "",
+        window_start: str = "09:31",
+        window_end: str = "10:00",
+        peer_limit: int = 20,
+    ) -> dict[str, Any]:
+        safe_symbol = normalize_symbol(symbol)
+        safe_as_of = as_of_day.strip()
+        safe_target = target_day.strip()
+        safe_peer_limit = max(1, min(int(peer_limit or 20), 50))
+        universe = [
+            item
+            for item in self.get_strategy_watchlist(safe_as_of, 100)
+            if normalize_symbol(str(item.get("symbol") or ""))
+        ]
+        target_item = next(
+            (item for item in universe if normalize_symbol(str(item.get("symbol") or "")) == safe_symbol),
+            None,
+        )
+        if not target_item:
+            return {
+                "symbol": safe_symbol,
+                "as_of_day": safe_as_of,
+                "target_day": safe_target,
+                "data_mode": "unavailable",
+                "error": "symbol_not_in_strategy_watchlist",
+            }
+
+        theme = str(target_item.get("theme") or "unknown")
+        same_theme_items = [
+            item
+            for item in universe
+            if str(item.get("theme") or "unknown") == theme
+            and normalize_symbol(str(item.get("symbol") or "")) != safe_symbol
+        ][:safe_peer_limit]
+        replay_symbols = [safe_symbol] + [normalize_symbol(str(item.get("symbol") or "")) for item in same_theme_items]
+        replay = self.run_historical_strategy_replay(
+            safe_as_of,
+            safe_target,
+            symbols=replay_symbols,
+            limit=100,
+            window_start=window_start,
+            window_end=window_end,
+        )
+        results = replay.get("results", [])
+        target_result = next(
+            (item for item in results if normalize_symbol(str(item.get("symbol") or "")) == safe_symbol),
+            None,
+        )
+        if not target_result:
+            return {
+                "symbol": safe_symbol,
+                "as_of_day": safe_as_of,
+                "target_day": safe_target,
+                "theme": theme,
+                "data_mode": "unavailable",
+                "error": "symbol_replay_missing",
+            }
+
+        safe_trigger_time = trigger_time.strip() or str(target_result.get("first_triggered_at") or "")
+        if not safe_trigger_time:
+            diagnostics = target_result.get("pattern_diagnostics") or {}
+            safe_trigger_time = str(diagnostics.get("first_cross_time") or diagnostics.get("max_price_time") or "")
+        copump = _intraday_theme_copump(target_result, results, triggered_at=safe_trigger_time)
+        peer_details = []
+        for peer in results:
+            peer_symbol = normalize_symbol(str(peer.get("symbol") or ""))
+            if peer_symbol == safe_symbol or str(peer.get("theme") or "unknown") != theme:
+                continue
+            diagnostics = peer.get("pattern_diagnostics") or {}
+            peer_details.append(
+                {
+                    "symbol": peer_symbol,
+                    "name": peer.get("name", ""),
+                    "first_cross_time": diagnostics.get("first_cross_time", ""),
+                    "opening_window_crossed_previous_high": diagnostics.get(
+                        "opening_window_crossed_previous_high", False
+                    ),
+                    "signal_count": peer.get("signal_count", 0),
+                    "first_triggered_at": peer.get("first_triggered_at", ""),
+                    "no_signal_reason": diagnostics.get("no_signal_reason", ""),
+                }
+            )
+
+        return {
+            "symbol": safe_symbol,
+            "name": target_result.get("name", ""),
+            "as_of_day": safe_as_of,
+            "target_day": safe_target,
+            "window": {
+                "start": window_start,
+                "end": window_end,
+            },
+            "trigger_time": safe_trigger_time,
+            "theme": theme,
+            "data_mode": "historical_theme_copump",
+            "universe": "same_theme_full_strategy_watchlist_candidates",
+            "same_theme_candidate_count": len(same_theme_items),
+            "copump": {
+                **copump,
+                "universe": "same_theme_full_strategy_watchlist_candidates",
+            },
+            "peer_details": peer_details,
+            "notes": [
+                "This checks same-theme names in the full strategy watchlist, not only the displayed validation sample.",
+                "It is still not full-market sector breadth because direct jvQuant industry-member queries are not reliable yet.",
+                "Historical Level-2 big-order ratio and CLS/news alignment are not connected.",
+            ],
+        }
+
+    def get_intraday_orderflow_confirmation(
+        self,
+        symbol: str,
+        trading_day: str,
+        trigger_time: str = "",
+        window_start: str = "09:31",
+        window_end: str = "10:00",
+    ) -> dict[str, Any]:
+        safe_symbol = normalize_symbol(symbol)
+        safe_day = trading_day.strip()
+        payload = self._capital_flow_payload(safe_symbol, safe_day)
+        slices = P.parse_daily_capital_flow_payload(payload, symbol=safe_symbol, trading_day=safe_day)
+        rows = P._query_rows(payload)
+        row = next(
+            (
+                item
+                for item in rows
+                if normalize_symbol(P._symbol_from_row(item)) == safe_symbol
+            ),
+            None,
+        )
+        turnover_cny = P._parse_cny_amount(P._field_value(row, "成交额")) if row is not None else 0.0
+        daily = slices[0] if slices else None
+
+        daily_flow: dict[str, Any] | None = None
+        if daily is not None:
+            big_ratio = round(daily.big_order_net_inflow_cny / turnover_cny, 4) if turnover_cny else None
+            main_ratio = round(daily.main_capital_net_inflow_cny / turnover_cny, 4) if turnover_cny else None
+            direction = "neutral"
+            if daily.big_order_net_inflow_cny > 0 and daily.main_capital_net_inflow_cny > 0:
+                direction = "positive"
+            elif daily.big_order_net_inflow_cny < 0 and daily.main_capital_net_inflow_cny < 0:
+                direction = "negative"
+            daily_flow = {
+                "window": daily.window,
+                "big_order_net_inflow_cny": daily.big_order_net_inflow_cny,
+                "main_capital_net_inflow_cny": daily.main_capital_net_inflow_cny,
+                "retail_capital_net_inflow_cny": daily.retail_capital_net_inflow_cny,
+                "turnover_cny": turnover_cny,
+                "big_order_net_inflow_ratio": big_ratio,
+                "main_capital_net_inflow_ratio": main_ratio,
+                "direction": direction,
+                "source_notes": daily.notes,
+            }
+
+        return {
+            "symbol": safe_symbol,
+            "trading_day": safe_day,
+            "window": {"start": window_start, "end": window_end},
+            "trigger_time": trigger_time.strip(),
+            "data_mode": "historical_orderflow_proxy" if daily_flow else "unavailable",
+            "provider": "jvQuant",
+            "orderflow_available": False,
+            "historical_big_order_buy_ratio_available": False,
+            "can_compute_big_order_buy_ratio": False,
+            "big_order_buy_ratio": None,
+            "active_buy_strength": "unavailable",
+            "realtime_orderflow_capability": {
+                "lv2_large_trade_proxy_available": True,
+                "active_trade_side_available": False,
+                "can_compute_big_order_buy_ratio": False,
+                "observed_lv2_fields": ["time", "trade_id", "price", "volume"],
+                "closest_realtime_metric": "directionless_large_trade_amount_cny",
+                "large_trade_threshold_cny": float(
+                    os.environ.get("AEGIS_ALPHA_BIG_ORDER_THRESHOLD_CNY", "3000000")
+                ),
+                "latest_probe_note": (
+                    "2026-06-18 lv2 probe for 002281 observed 4-field deal rows "
+                    "without active buy/sell side."
+                ),
+            },
+            "daily_capital_flow_available": daily_flow is not None,
+            "daily_capital_flow": daily_flow,
+            "data_gaps": [
+                "historical_minute_level_active_big_order_buy_ratio",
+                "historical_orderbook_trade_direction",
+            ],
+            "notes": [
+                "Current jvQuant wiring provides daily semantic capital-flow fields only.",
+                "Do not treat daily net inflow as trigger-window big-order buy ratio.",
+                "Use this as weak context alongside replay and theme co-pump facts.",
+            ],
+        }
+
+    def sample_realtime_large_trade_proxy(
+        self,
+        symbol: str,
+        duration_seconds: float = 8.0,
+        threshold_cny: float = 3_000_000.0,
+        window_start: str = "",
+        window_end: str = "",
+    ) -> dict[str, Any]:
+        safe_symbol = normalize_symbol(symbol)
+        safe_duration = max(1.0, min(float(duration_seconds or 8.0), 30.0))
+        safe_threshold = max(1.0, float(threshold_cny or 3_000_000.0))
+        raw_buffer = SignalWindowBuffer()
+        seen_trade_ids: set[str] = set()
+        raw_message_count = 0
+
+        def handle_raw(text: str) -> None:
+            nonlocal raw_message_count
+            raw_message_count += 1
+            for record in raw_lv2_large_trade_records(text):
+                record_symbol = normalize_symbol(str(record.get("symbol") or ""))
+                if record_symbol != safe_symbol:
+                    continue
+                trade_id = str(record.get("trade_id") or "")
+                key = f"{record_symbol}:{trade_id}" if trade_id else json.dumps(record, sort_keys=True)
+                if key in seen_trade_ids:
+                    continue
+                seen_trade_ids.add(key)
+                raw_buffer.add_large_trade_proxy(
+                    record_symbol,
+                    f"{datetime.now(SH_TZ).date().isoformat()}T{record.get('time')}+08:00",
+                    float(record.get("price") or 0.0),
+                    float(record.get("volume") or 0.0),
+                    threshold_cny=safe_threshold,
+                )
+
+        client = JvQuantRealtimeClient(
+            token=self.token,
+            market=os.environ.get("JVQUANT_MARKET", "ab"),
+            big_order_threshold_cny=safe_threshold,
+            raw_data_handle=handle_raw,
+        )
+        initial_status = client.subscribe([safe_symbol], ["lv2"])
+        time.sleep(safe_duration)
+        stats = raw_buffer.large_trade_proxy_stats(
+            safe_symbol,
+            window_start=window_start.strip(),
+            window_end=window_end.strip(),
+            trading_day=datetime.now(SH_TZ).date().isoformat(),
+        )
+        final_status = client.disconnect()
+        sample_available = raw_message_count > 0
+        data_mode = "realtime_large_trade_proxy" if sample_available else "unavailable"
+        return {
+            "symbol": safe_symbol,
+            "provider": "jvQuant",
+            "data_mode": data_mode,
+            "duration_seconds": safe_duration,
+            "threshold_cny": safe_threshold,
+            "window": {"start": window_start.strip(), "end": window_end.strip()},
+            "sample_available": sample_available,
+            "raw_message_count": raw_message_count,
+            "active_trade_side_available": False,
+            "can_compute_big_order_buy_ratio": False,
+            "proxy_metric": "directionless_large_trade_amount_cny",
+            "stats": stats,
+            "initial_status": initial_status.model_dump(),
+            "final_status": final_status.model_dump(),
+            "notes": [
+                "This samples realtime lv2 large trades and sums directionless trade amount only.",
+                "Observed lv2 shape does not include active buy/sell side, so this is not a buy ratio.",
+                "Use this as weak盘口活跃度 confirmation, not as 主动大单买入占比.",
+                "If sample_available=false, the provider did not deliver lv2 raw messages during this sample window.",
+            ],
+        }
+
+    def simulate_historical_orderflow_proxy(
+        self,
+        symbol: str,
+        trading_day: str,
+        window_start: str = "09:31",
+        window_end: str = "10:00",
+        volume_ratio_threshold: float = 1.5,
+    ) -> dict[str, Any]:
+        safe_symbol = normalize_symbol(symbol)
+        safe_day = trading_day.strip()
+        snapshot = self.get_stock_minute_replay_snapshot(
+            safe_symbol,
+            safe_day,
+            1,
+            max_bars=240,
+        )
+        return simulate_orderflow_proxy(
+            snapshot,
+            window_start=window_start.strip(),
+            window_end=window_end.strip(),
+            volume_ratio_threshold=float(volume_ratio_threshold or 1.5),
+        )
+
+    def get_second_board_next_day_outcomes(
+        self,
+        trading_day: str,
+        symbols: list[str] | None = None,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        safe_day = trading_day.strip()
+        safe_limit = max(1, min(int(limit or 50), 200))
+        calendar = HSB.resolve_adjacent_trading_days(self.client, safe_day)
+        if not calendar.get("ok"):
+            return {
+                "trading_day": safe_day,
+                "provider": "jvQuant",
+                "data_mode": "unavailable",
+                "error": calendar.get("error", "Unable to resolve adjacent trading days."),
+                "outcomes": [],
+            }
+
+        next_day = str(calendar["next_day"])
+        selected = [normalize_symbol(symbol) for symbol in (symbols or []) if normalize_symbol(symbol)]
+        if not selected:
+            selected = [
+                str(item.get("symbol") or "")
+                for item in self.get_historical_second_board_candidates(safe_day, safe_limit)
+                if str(item.get("symbol") or "")
+            ]
+        selected = selected[:safe_limit]
+        outcomes = [
+            HSB.outcome_from_kline(self.client, symbol, trading_day=safe_day, next_day=next_day)
+            for symbol in selected
+        ]
+        return {
+            "trading_day": safe_day,
+            "next_day": next_day,
+            "provider": "jvQuant",
+            "data_mode": "historical_provider",
+            "symbols": selected,
+            "outcomes": outcomes,
+            "notes": [
+                "Facts-only next-day labels for historical second-board replay.",
+                "Aegis Alpha does not assign promotion probability or grade in this tool.",
+            ],
+        }
+
     def explain_candidate(self, symbol: str):
         return self._fallback.explain_candidate(symbol)
 
@@ -661,6 +1578,7 @@ class JvQuantMarketDataAdapter:
         symbol: str,
         end_day: str | None = None,
         limit_days: int = 1,
+        max_bars: int = 30,
     ) -> MinuteReplaySnapshot:
         code = normalize_symbol(symbol)
         safe_limit = max(1, min(int(limit_days or 1), 30))
@@ -679,6 +1597,8 @@ class JvQuantMarketDataAdapter:
         previous_close = _float_or_zero(selected_day.get("last_price"))
         raw_bars = selected_day.get("list", [])
         bars = P._minute_bars_from_rows(raw_bars, fields)
+        safe_max_bars = max(0, int(max_bars or 0))
+        selected_bars = bars[-safe_max_bars:] if safe_max_bars > 0 else bars
         last_bar = bars[-1] if bars else None
         timestamp = (
             P._iso_from_provider_datetime(f"{trading_day} {P._time_with_seconds(last_bar.time)}")
@@ -697,7 +1617,7 @@ class JvQuantMarketDataAdapter:
             previous_close=previous_close,
             last_price=last_bar.last_price if last_bar else 0.0,
             minute_count=len(bars),
-            bars=bars[-30:],
+            bars=selected_bars,
             speed_pct_by_window=speed_pct_by_window,
             speed_window_by_window=speed_window_by_window,
             notes=[
@@ -706,6 +1626,7 @@ class JvQuantMarketDataAdapter:
                 "Minute replay is minute-level historical/replay data; it is not tick-by-tick realtime Level-2.",
                 f"requested_end_day={safe_end_day}",
                 f"requested_limit_days={safe_limit}",
+                f"returned_bar_count={len(selected_bars)}",
             ],
         )
 
@@ -833,15 +1754,34 @@ class JvQuantMarketDataAdapter:
         )
         return P.parse_st_pool_payload(payload, trading_day=day)
 
+    def _capital_flow_payload(self, code: str, trading_day: str) -> dict[str, Any]:
+        queries = [
+            (
+                f"{code},股票代码,股票简称,主力净额,超大单净额,"
+                "大单净额,中单净额,小单净额,涨跌幅,成交额"
+            )
+        ]
+        if trading_day:
+            queries.append(
+                (
+                    f"{code},股票代码,股票简称,主力净额{trading_day},超大单净额{trading_day},"
+                    f"大单净额{trading_day},中单净额{trading_day},小单净额{trading_day},"
+                    f"涨跌幅{trading_day},成交额{trading_day}"
+                )
+            )
+        last_payload: dict[str, Any] = {}
+        for query in queries:
+            last_payload = self._query(query, sort_key="主力净额")
+            if P._query_rows(last_payload):
+                return last_payload
+        return last_payload
+
     def get_capital_flow_slices(
         self, symbol: str, trading_day: str
     ) -> list[CapitalFlowSlice]:
         code = normalize_symbol(symbol)
         day = trading_day or datetime.now(SH_TZ).date().isoformat()
-        payload = self._query(
-            f"{code},股票代码,股票简称,主力净额,超大单净额,大单净额,中单净额,小单净额,涨跌幅,成交额",
-            sort_key="主力净额",
-        )
+        payload = self._capital_flow_payload(code, day)
         return P.parse_daily_capital_flow_payload(payload, symbol=code, trading_day=day)
 
     def get_weekly_position(self, symbol: str) -> WeeklyPosition:

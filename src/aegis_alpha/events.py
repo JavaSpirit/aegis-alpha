@@ -64,6 +64,35 @@ def _parse_timestamp(value: str) -> datetime | None:
     return parsed
 
 
+def _time_text(value: str) -> str:
+    text = str(value or "").strip()
+    if "T" in text:
+        return text.split("T", 1)[1][:8]
+    if " " in text:
+        return text.rsplit(" ", 1)[-1][:8]
+    return text[:8]
+
+
+def _normalize_window_time(value: str) -> str:
+    text = _time_text(value)
+    if len(text) == 5 and text.count(":") == 1:
+        return f"{text}:00"
+    return text
+
+
+def _timestamp_in_window(timestamp: str, window_start: str, window_end: str, trading_day: str) -> bool:
+    if trading_day and timestamp[:10] != trading_day:
+        return False
+    start = _normalize_window_time(window_start)
+    end = _normalize_window_time(window_end)
+    value = _normalize_window_time(timestamp)
+    if start and value < start:
+        return False
+    if end and value > end:
+        return False
+    return True
+
+
 class SignalWindowBuffer:
     """Thread-safe rolling signal window for realtime handlers and deterministic tests."""
 
@@ -71,6 +100,9 @@ class SignalWindowBuffer:
         self.max_points_per_symbol = max_points_per_symbol
         self._lock = threading.RLock()
         self._points: dict[str, deque[tuple[str, float, float]]] = defaultdict(
+            lambda: deque(maxlen=max_points_per_symbol)
+        )
+        self._large_trades: dict[str, deque[tuple[str, float, float, float]]] = defaultdict(
             lambda: deque(maxlen=max_points_per_symbol)
         )
         self._big_order_amount: dict[str, float] = defaultdict(float)
@@ -100,6 +132,23 @@ class SignalWindowBuffer:
     def add_big_order_flow(self, symbol: str, amount_cny: float) -> None:
         with self._lock:
             self._big_order_amount[symbol] += amount_cny
+
+    def add_large_trade_proxy(
+        self,
+        symbol: str,
+        timestamp: str,
+        price: float,
+        volume: float,
+        *,
+        threshold_cny: float,
+    ) -> bool:
+        amount_cny = max(0.0, price) * max(0.0, volume)
+        if amount_cny < threshold_cny:
+            return False
+        with self._lock:
+            self._large_trades[symbol].append((timestamp, amount_cny, price, volume))
+            self._big_order_amount[symbol] += amount_cny
+        return True
 
     def set_orderbook_quality(self, symbol: str, quality_score: float) -> None:
         with self._lock:
@@ -132,6 +181,41 @@ class SignalWindowBuffer:
         """Return a thread-safe COPY of the rolling (timestamp, price, turnover) points for a symbol."""
         with self._lock:
             return list(self._points.get(symbol, []))
+
+    def large_trade_proxy_stats(
+        self,
+        symbol: str,
+        *,
+        window_start: str = "",
+        window_end: str = "",
+        trading_day: str = "",
+    ) -> dict[str, Any]:
+        with self._lock:
+            trades = list(self._large_trades.get(symbol, []))
+        filtered = [
+            trade for trade in trades
+            if _timestamp_in_window(trade[0], window_start, window_end, trading_day)
+        ]
+        total_amount = sum(trade[1] for trade in filtered)
+        max_amount = max((trade[1] for trade in filtered), default=0.0)
+        return {
+            "symbol": symbol,
+            "window": {"start": window_start, "end": window_end},
+            "trade_count": len(filtered),
+            "total_amount_cny": round(total_amount, 2),
+            "max_trade_amount_cny": round(max_amount, 2),
+            "first_trade_time": filtered[0][0] if filtered else "",
+            "last_trade_time": filtered[-1][0] if filtered else "",
+            "sample_trades": [
+                {
+                    "time": timestamp,
+                    "amount_cny": round(amount, 2),
+                    "price": price,
+                    "volume": volume,
+                }
+                for timestamp, amount, price, volume in filtered[-10:]
+            ],
+        }
 
     def speed_pct(self, symbol: str, minutes: int) -> float:
         """Return percentage change over the last `minutes` minutes by timestamp."""

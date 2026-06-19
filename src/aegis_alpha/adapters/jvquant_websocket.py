@@ -55,6 +55,36 @@ def summarize_raw_ab_payload(text: str, *, max_rows: int = 20, include_samples: 
     return summary
 
 
+def raw_lv2_large_trade_records(text: str) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for row in [item for item in text.splitlines() if item.strip()]:
+        if "=" not in row:
+            continue
+        symbol_key, payload = row.split("=", 1)
+        if not symbol_key.startswith("lv2_"):
+            continue
+        symbol = re.sub(r"^lv2_", "", symbol_key)
+        for piece in [item for item in payload.split("|") if item]:
+            fields = piece.split(",")
+            if len(fields) < 4:
+                continue
+            try:
+                price = float(fields[2])
+                volume = float(fields[3])
+            except ValueError:
+                continue
+            records.append(
+                {
+                    "symbol": symbol,
+                    "time": fields[0],
+                    "trade_id": fields[1],
+                    "price": price,
+                    "volume": volume,
+                }
+            )
+    return records
+
+
 class JvQuantRealtimeClient:
     """Thin read-only jvQuant WebSocket wrapper.
 
@@ -69,11 +99,17 @@ class JvQuantRealtimeClient:
         market: str | None = None,
         buffer: SignalWindowBuffer | None = None,
         raw_data_handle: Any | None = None,
+        big_order_threshold_cny: float | None = None,
     ) -> None:
         self.token = token or os.environ.get("JVQUANT_TOKEN", "")
         self.market = market or os.environ.get("JVQUANT_MARKET", "ab")
         self.buffer = buffer or SignalWindowBuffer()
         self.raw_data_handle = raw_data_handle
+        self.big_order_threshold_cny = (
+            float(big_order_threshold_cny)
+            if big_order_threshold_cny is not None
+            else float(os.environ.get("AEGIS_ALPHA_BIG_ORDER_THRESHOLD_CNY", "3000000"))
+        )
         self._client: Any | None = None
         self._connected = False
         self._subscribed: set[str] = set()
@@ -184,9 +220,13 @@ class JvQuantRealtimeClient:
     def _on_ab_lv2(self, lv2: Any) -> None:
         self._last_message_at = now_iso()
         for deal in getattr(lv2, "deal_list", []):
-            amount = float(getattr(deal, "price", 0.0)) * float(getattr(deal, "volume", 0.0))
-            if amount >= float(os.environ.get("AEGIS_ALPHA_BIG_ORDER_THRESHOLD_CNY", "3000000")):
-                self.buffer.add_big_order_flow(str(lv2.code), amount)
+            self.buffer.add_large_trade_proxy(
+                str(lv2.code),
+                self._provider_time(getattr(deal, "time", getattr(lv2, "time", ""))),
+                float(getattr(deal, "price", 0.0)),
+                float(getattr(deal, "volume", 0.0)),
+                threshold_cny=self.big_order_threshold_cny,
+            )
 
     def _on_ab_lv10(self, lv10: Any) -> None:
         self._last_message_at = now_iso()
