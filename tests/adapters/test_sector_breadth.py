@@ -25,3 +25,4 @@ def test_breadth_empty_members_is_unavailable():
     )
     assert result["data_mode"] == "unavailable"
     assert result["member_count"] == 0
+    assert result["limitup_members"] == []

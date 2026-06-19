@@ -24,6 +24,7 @@ def compute_sector_breadth(
             "limitup_ratio": 0.0,
             "concept_system": concept_system,
             "data_source": data_source,
+            "limitup_members": [],
             "notes": ["成分股列表为空,无法计算板块宽度。"],
         }
     member_set = {str(m).strip().upper().split(".", 1)[0] for m in members}
