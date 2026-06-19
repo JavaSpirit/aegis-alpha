@@ -40,3 +40,47 @@ def compute_sector_breadth(
         "data_source": data_source,
         "limitup_members": sorted(hit),
     }
+
+
+def compute_breadth_continuity(
+    *,
+    theme: str,
+    daily_limitup_counts: list[int],
+) -> dict[str, Any]:
+    """两周(默认 ~10-14 交易日)板块持续性,facts-only。
+
+    label 规则(描述性,非评分):
+      - 无数据                          → unavailable
+      - active_days >= 6 且后半段仍活跃 → persistent
+      - 仅前半段活跃、后半段归零        → fading
+      - active_days 1-2                 → emerging
+      - 其余                            → weak
+    """
+    if not daily_limitup_counts:
+        return {"theme": theme, "data_mode": "unavailable",
+                "active_days": 0, "total_limitups": 0, "max_daily": 0,
+                "continuity_label": "unavailable"}
+    counts = [int(c) for c in daily_limitup_counts]
+    active_days = sum(1 for c in counts if c > 0)
+    total = sum(counts)
+    max_daily = max(counts)
+    half = len(counts) // 2 or 1
+    first_half_active = any(c > 0 for c in counts[:half])
+    second_half_active = any(c > 0 for c in counts[half:])
+    if active_days >= 6 and second_half_active:
+        label = "persistent"
+    elif first_half_active and not second_half_active:
+        label = "fading"
+    elif active_days <= 2:
+        label = "emerging"
+    else:
+        label = "weak"
+    return {
+        "theme": theme,
+        "data_mode": "computed",
+        "active_days": active_days,
+        "total_limitups": total,
+        "max_daily": max_daily,
+        "recent_counts": counts[-5:],
+        "continuity_label": label,
+    }
