@@ -12,6 +12,7 @@ def test_fetch_members_degrades_when_source_raises(monkeypatch):
     assert result["members"] == []
     assert "akshare" in result["data_source"]
     assert result["theme"] == "AI算力"
+    assert result["error"]
 
 
 def test_fetch_members_ok_when_source_returns(monkeypatch):

@@ -11,6 +11,8 @@ def _load_concept_members_raw(theme: str) -> list[str]:
     import akshare as ak  # lazy import — 缺失不影响其余模块
 
     df = ak.stock_board_concept_cons_ths(symbol=theme)
+    if df.empty or df.columns.empty:
+        return []
     col = "代码" if "代码" in df.columns else df.columns[0]
     return [str(v) for v in df[col].tolist()]
 
