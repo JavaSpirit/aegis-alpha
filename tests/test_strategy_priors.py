@@ -65,11 +65,11 @@ class TestStrategyPriorModel:
     def test_philosophy_guard_no_forbidden_fields(self) -> None:
         """model_dump() must contain NONE of the forbidden pass/fail/filter fields."""
         threshold = StrategyPriorThreshold(
-            name="ma5_slope_degrees",
-            ideal_low=30.0,
-            ideal_high=60.0,
-            unit="degrees",
-            rationale="5日均线斜率30–60度，趋势向上但不过热。",
+            name="avg_turnover_10d",
+            ideal_low=5_000_000_000.0,
+            ideal_high=None,
+            unit="cny",
+            rationale="近10日均成交量需大于50亿。",
         )
         prior = StrategyPrior(
             prior_id="test",
@@ -122,15 +122,13 @@ class TestLoadStrategyPriors:
         assert t.ideal_high is None
         assert t.unit == "cny"
 
-    def test_thresholds_ma5_slope(self) -> None:
+    def test_ma5_slope_removed_from_active_strategy(self) -> None:
+        """MA5 slope 已从 client_10pt 策略层移除(数据层字段仍保留,见 client_facts)。"""
         prior = load_active_strategy_prior()
         assert prior is not None
         names = [t.name for t in prior.thresholds]
-        assert "ma5_slope_degrees" in names
-        t = next(t for t in prior.thresholds if t.name == "ma5_slope_degrees")
-        assert t.ideal_low == 30.0
-        assert t.ideal_high == 60.0
-        assert t.unit == "degrees"
+        assert "ma5_slope_degrees" not in names
+        assert "avg_turnover_10d" in names
 
     def test_guidance_notes_non_empty(self) -> None:
         prior = load_active_strategy_prior()
