@@ -59,7 +59,7 @@ def compute_breadth_continuity(
     if not daily_limitup_counts:
         return {"theme": theme, "data_mode": "unavailable",
                 "active_days": 0, "total_limitups": 0, "max_daily": 0,
-                "continuity_label": "unavailable"}
+                "recent_counts": [], "continuity_label": "unavailable"}
     counts = [int(c) for c in daily_limitup_counts]
     active_days = sum(1 for c in counts if c > 0)
     total = sum(counts)

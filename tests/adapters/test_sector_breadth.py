@@ -48,3 +48,4 @@ def test_continuity_label_fading():
 def test_continuity_empty_is_unavailable():
     result = compute_breadth_continuity(theme="x", daily_limitup_counts=[])
     assert result["data_mode"] == "unavailable"
+    assert result["recent_counts"] == []
