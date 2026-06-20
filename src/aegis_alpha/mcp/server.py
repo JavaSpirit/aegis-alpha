@@ -1819,6 +1819,92 @@ def get_selection_audit(as_of_day: str) -> dict:
     return _call_store(_run)
 
 
+def _validation_intraday_trigger(symbol: str, as_of_day: str, target_day: str,
+                                 window_start: str, window_end: str) -> dict:
+    """从 decision packet 取该 symbol 目标日盘中触发事实。失败降级。"""
+    try:
+        packet = get_strategy_decision_packet(
+            as_of_day, target_day, symbol, 1, window_start, window_end,
+        )
+        raw = packet if isinstance(packet, dict) else {}
+        for it in raw.get("results", []):
+            if not isinstance(it, dict):
+                continue
+            if str(it.get("symbol", "")).split(".")[0] == symbol.split(".")[0]:
+                diag = it.get("pattern_diagnostics") or {}
+                triggered = bool(it.get("first_triggered_at") or diag.get("opening_window_crossed_previous_high"))
+                return {"triggered": triggered,
+                        "trigger_time": str(it.get("first_triggered_at", "")),
+                        "data_mode": "ok"}
+        return {"triggered": False, "trigger_time": "", "data_mode": "ok"}
+    except Exception:
+        return {"triggered": None, "trigger_time": "", "data_mode": "unavailable"}
+
+
+def _validation_next_day_outcome(symbol: str, target_day: str) -> dict:
+    """取触发后次日结果。失败降级。"""
+    try:
+        out = get_second_board_next_day_outcomes(target_day, symbol)
+        items = out.get("outcomes", []) if isinstance(out, dict) else (out if isinstance(out, list) else [])
+        for o in items:
+            if not isinstance(o, dict):
+                continue
+            if str(o.get("symbol", "")).split(".")[0] == symbol.split(".")[0]:
+                return {"sealed_second_board": o.get("sealed_second_board"),
+                        "next_day_open_pct": o.get("next_day_open_pct"),
+                        "data_mode": "ok"}
+        return {"sealed_second_board": None, "next_day_open_pct": None, "data_mode": "ok"}
+    except Exception:
+        return {"sealed_second_board": None, "next_day_open_pct": None, "data_mode": "unavailable"}
+
+
+@mcp.tool
+def get_selection_trigger_validation(
+    as_of_day: str, target_day: str,
+    window_start: str = "09:31", window_end: str = "10:00",
+) -> dict:
+    """闭环对照 (#4):收盘选的 TopN vs 目标日盘中触发 + 次日结果。只读纯组合,facts-only。"""
+    def _run(store):
+        audit = store.get_selection_audit_by_day(as_of_day)
+        if audit is None:
+            return {"as_of_day": as_of_day, "target_day": target_day,
+                    "data_mode": "unavailable", "notes": ["该日无选股审计,无法对照。"]}
+        per_pick = []
+        triggered = 0
+        for pick in audit.picks:
+            trig = _validation_intraday_trigger(pick.symbol, as_of_day, target_day, window_start, window_end)
+            outcome = _validation_next_day_outcome(pick.symbol, target_day)
+            if trig.get("triggered") is True:
+                triggered += 1
+            per_pick.append({
+                "symbol": pick.symbol, "rank": pick.rank,
+                "relative_reason": pick.relative_reason,
+                "triggered": trig.get("triggered"),
+                "trigger_time": trig.get("trigger_time", ""),
+                "sealed_second_board": outcome.get("sealed_second_board"),
+                "next_day_open_pct": outcome.get("next_day_open_pct"),
+                "trigger_data_mode": trig.get("data_mode"),
+                "outcome_data_mode": outcome.get("data_mode"),
+            })
+        total = len(audit.picks)
+        return {
+            "as_of_day": as_of_day, "target_day": target_day,
+            "data_mode": "ok", "total": total,
+            "triggered_count": triggered,
+            "trigger_rate": round(triggered / total, 4) if total else 0.0,
+            "equals_baseline": audit.equals_baseline,
+            "confidence_label": audit.confidence_label,
+            "window": {"start": window_start, "end": window_end},
+            "per_pick": per_pick,
+            "notes": [
+                "盘中触发=09:31-10:00 过前高/买点;次日结果=封板/开盘涨幅。",
+                "样本不足时 confidence_label=exploratory,勿过度解读。",
+            ],
+        }
+
+    return _call_store(_run)
+
+
 def main() -> None:
     mcp.run()
 
