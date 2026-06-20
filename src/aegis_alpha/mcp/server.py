@@ -1700,6 +1700,43 @@ def get_news_alignment(symbol_or_theme: str, lookback_days: int = 7) -> dict:
     )
 
 
+@mcp.tool
+def get_tick_rule_orderflow_proxy(
+    symbol: str,
+    window_start: str = "",
+    window_end: str = "",
+    big_trade_threshold_cny: float = 1_000_000.0,
+    limit_up_price: float = 0.0,
+) -> dict:
+    """大单主动买入占比 tick-rule 代理(明标非真值,封板虚高警告)。
+
+    与 sample_realtime_large_trade_proxy(directionless 金额)互补:
+    本工具给推断方向占比,那个给无方向金额。两者都是代理,非交易所真值。
+    """
+    from aegis_alpha.measurements.tick_rule_orderflow import tick_rule_big_buy_ratio_proxy
+
+    def _run(adapter: Any) -> dict:
+        sample = adapter.sample_realtime_large_trade_proxy(
+            symbol, threshold_cny=big_trade_threshold_cny,
+            window_start=window_start, window_end=window_end,
+        )
+        raw = sample if isinstance(sample, dict) else sample.model_dump()
+        trades = raw.get("stats", {}).get("sample_trades", [])
+        result = tick_rule_big_buy_ratio_proxy(
+            [{"price": float(t.get("price", 0.0)), "volume": float(t.get("volume", 0.0))} for t in trades],
+            big_trade_threshold_cny=big_trade_threshold_cny,
+            limit_up_price=limit_up_price,
+        )
+        return {
+            **result,
+            "symbol": symbol,
+            "window": {"start": window_start, "end": window_end},
+            "upstream_sample_available": bool(raw.get("sample_available", False)),
+        }
+
+    return _call_tool(_run)
+
+
 def main() -> None:
     mcp.run()
 
