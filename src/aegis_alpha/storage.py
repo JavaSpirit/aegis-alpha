@@ -26,8 +26,11 @@ from aegis_alpha.models import (
     LadderEntry,
     MarketEvent,
     OutcomeAttribution,
+    RejectedCandidate,
     RunnerStatus,
     SealTimelineEvent,
+    SelectionAudit,
+    SelectionPick,
     SignalSnapshot,
     SuspendedStock,
     ThemeLeader,
@@ -48,6 +51,10 @@ def default_runner_status_path() -> Path:
     return Path(
         os.environ.get("AEGIS_ALPHA_RUNNER_STATUS_PATH", default_data_dir() / "runner_status.json")
     ).expanduser()
+
+
+def _dump_audit_list(items: list) -> str:
+    return json.dumps([i.model_dump() for i in items], ensure_ascii=False)
 
 
 def current_freshness_status(provider_timestamp: str, max_age_seconds: int = 180) -> str:
@@ -1319,6 +1326,69 @@ class AegisAlphaStore:
                 (trading_day, trading_day),
             ).fetchall()
         return [SuspendedStock.model_validate_json(row[0]) for row in rows]
+
+    def save_selection_audit(self, audit: SelectionAudit) -> SelectionAudit:
+        if not audit.created_at:
+            audit.created_at = now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO selection_audits
+                    (audit_id, as_of_day, picks_json, rejected_json, baseline_json,
+                     equals_baseline, confidence_label, candidate_pool_size,
+                     provider, model, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(audit_id) DO UPDATE SET
+                    picks_json=excluded.picks_json,
+                    rejected_json=excluded.rejected_json,
+                    baseline_json=excluded.baseline_json,
+                    equals_baseline=excluded.equals_baseline,
+                    confidence_label=excluded.confidence_label,
+                    candidate_pool_size=excluded.candidate_pool_size,
+                    provider=excluded.provider,
+                    model=excluded.model
+                """,
+                (
+                    audit.audit_id, audit.as_of_day,
+                    _dump_audit_list(audit.picks), _dump_audit_list(audit.rejected),
+                    json.dumps(audit.baseline, ensure_ascii=False),
+                    1 if audit.equals_baseline else 0,
+                    audit.confidence_label, audit.candidate_pool_size,
+                    audit.provider, audit.model, audit.created_at,
+                ),
+            )
+        return audit
+
+    def get_selection_audit_by_day(self, as_of_day: str) -> SelectionAudit | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT audit_id, as_of_day, picks_json, rejected_json, baseline_json,
+                       equals_baseline, confidence_label, candidate_pool_size,
+                       provider, model, created_at
+                FROM selection_audits WHERE as_of_day = ?
+                ORDER BY created_at DESC LIMIT 1
+                """,
+                (as_of_day,),
+            ).fetchone()
+        if row is None:
+            return None
+        return SelectionAudit(
+            audit_id=row[0], as_of_day=row[1],
+            picks=[SelectionPick.model_validate(p) for p in json.loads(row[2] or "[]")],
+            rejected=[RejectedCandidate.model_validate(r) for r in json.loads(row[3] or "[]")],
+            baseline=json.loads(row[4] or "{}"),
+            equals_baseline=bool(row[5]),
+            confidence_label=row[6], candidate_pool_size=row[7],
+            provider=row[8], model=row[9], created_at=row[10],
+        )
+
+    def count_selection_audit_days(self) -> int:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(DISTINCT as_of_day) FROM selection_audits"
+            ).fetchone()
+        return int(row[0]) if row else 0
 
 
 def write_runner_status(status: RunnerStatus, path: str | Path | None = None) -> Path:
