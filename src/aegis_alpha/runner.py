@@ -254,6 +254,11 @@ class AegisAlphaRunner:
             except Exception:
                 # Buy-point detection is advisory; never kill the runner cycle
                 pass
+            try:
+                self.validate_selections_next_day()
+            except Exception:
+                # Selection validation is advisory; never kill the runner cycle
+                pass
             state = "RUNNING" if connection.connected and not connection.last_error else "DEGRADED"
             status = self.write_status(state, next_action="listen")
         except Exception as exc:
@@ -471,6 +476,65 @@ class AegisAlphaRunner:
                 pass
 
         return fired_signals
+
+    def validate_selections_next_day(self) -> list:
+        """次日自动对照昨收选股审计 vs 今日盘中触发,写 SELECTION_VALIDATION 告警。
+
+        Advisory: 任何异常都被吞,runner liveness 绝不依赖此方法。只读审计 + 写 AgentAlert。
+        """
+        try:
+            cfg = self.config.get("selection_validation", {}) or {}
+            if not cfg.get("enabled", False):
+                return []
+            after = str(cfg.get("after", "10:00"))
+            now_hhmm = now_dt().strftime("%H:%M")
+            if now_hhmm < after:
+                return []
+            return self._run_selection_validation()
+        except Exception:
+            return []
+
+    def _run_selection_validation(self) -> list:
+        from aegis_alpha.alerts.store import AlertStore
+        from aegis_alpha.alerts.notifier import notify_macos
+        from aegis_alpha.mcp.server import get_selection_trigger_validation
+
+        today = now_dt().date().isoformat()
+        prior_audit = self._latest_prior_selection_audit(today)
+        if prior_audit is None:
+            return []
+        as_of = prior_audit.as_of_day
+        result = get_selection_trigger_validation(as_of, today)
+        if not isinstance(result, dict) or result.get("data_mode") != "ok":
+            return []
+        alert_store = AlertStore(self.store)
+        event_id = f"selection_validation:{as_of}:{today}"
+        body = (
+            f"昨收({as_of})选股 vs 今日触发: {result.get('triggered_count')}/{result.get('total')} 触发, "
+            f"trigger_rate={result.get('trigger_rate')}, equals_baseline={result.get('equals_baseline')}, "
+            f"confidence={result.get('confidence_label')}"
+        )
+        alert = alert_store.create(
+            title=f"SELECTION_VALIDATION {as_of}->{today}",
+            body=body[:480], severity="info", event_id=event_id,
+        )
+        notify_macos(alert)
+        return [result]
+
+    def _latest_prior_selection_audit(self, today: str):
+        """取早于 today 的最近一条选股审计;无则 None。"""
+        try:
+            with self.store._connect() as conn:
+                row = conn.execute(
+                    "SELECT as_of_day FROM selection_audits WHERE as_of_day < ? "
+                    "ORDER BY as_of_day DESC LIMIT 1",
+                    (today,),
+                ).fetchone()
+            if row is None:
+                return None
+            return self.store.get_selection_audit_by_day(row[0])
+        except Exception:
+            return None
 
     def run_forever(self) -> None:
         signal.signal(signal.SIGTERM, self.request_stop)

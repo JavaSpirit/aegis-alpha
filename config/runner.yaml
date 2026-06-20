@@ -41,3 +41,7 @@ storage:
 post_close:
   enabled: true
   review_after: "15:10"
+
+selection_validation:
+  enabled: true
+  after: "10:00"
