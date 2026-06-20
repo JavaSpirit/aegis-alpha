@@ -25,6 +25,7 @@ def test_orderflow_proxy_marks_non_truth(monkeypatch):
     result = server.get_tick_rule_orderflow_proxy("002230", big_trade_threshold_cny=1_000_000.0)
     assert result["is_exchange_truth"] is False
     assert result["method"] == "tick_rule"
+    assert "accuracy_caveat" in result
     assert result["symbol"] == "002230"
     assert result["upstream_sample_available"] is True
     assert result["data_mode"] == "computed"

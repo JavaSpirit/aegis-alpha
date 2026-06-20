@@ -96,6 +96,10 @@ Core tools:
 - `detect_intraday_buypoint`
 - `get_promotion_dossier`
 - `get_agent_judgment_scorecard`
+- `get_market_sector_breadth`
+- `get_sector_breadth_continuity`
+- `get_news_alignment`
+- `get_tick_rule_orderflow_proxy`
 
 Useful supporting tools:
 
@@ -134,6 +138,12 @@ In validation output, `intraday_theme_copump` is the closest current proxy for t
 `get_strategy_decision_packet(as_of_day, target_day, symbols, limit, window_start, window_end, include_minute_volume_proxy, include_full_theme_copump)` is the preferred end-to-end fact bundle when the user wants a full strategy-style answer. It reduces tool-wandering by bundling as-of strategy facts, target-day replay, packet-local same-theme co-pump, and order-flow availability/proxy facts. It does NOT assign grades or scores; Hermes must still make the Top3/grade/promotion_likelihood judgment. Keep `include_minute_volume_proxy=false` unless the user explicitly wants offline simulation. Keep `include_full_theme_copump=false` by default; turn it on only when the user asks for broader same-theme replay because it is slower.
 
 `get_historical_second_board_candidates(trading_day)` and `get_second_board_next_day_outcomes(trading_day, symbols)` return historical FACTS and objective T+1 labels. They do not return program scores, probabilities, or grades. Use them when the user asks whether the approach is usable, asks for replay/backtest-like evidence, asks why a judgment failed, or asks for historical comparison before trusting a live candidate. These are post-hoc tools for a known trading day; they are not valid as the initial candidate pool for an as-of-close replay.
+
+`get_market_sector_breadth(trading_day, theme)` 与 `get_sector_breadth_continuity(theme, as_of_day, lookback_days)` 提供全市场板块宽度事实(同花顺 THS 概念体系,成分股×当日涨停池 join),升级了原先只看候选池的 packet-local 同题材代理。输出带 `concept_system="ths"` 与覆盖度;数据源(AkShare)不可用时返回 `data_mode="unavailable"`,不得脑补。THS 体系与东财体系归类存在差异,这是市场内板块事实,非交易所官方归类。
+
+`get_news_alignment(symbol_or_theme, lookback_days)` 提供合规新闻/公告对齐事实(巨潮资讯公告)。这是合规替代,**明确不是财联社电报原文**(`source_is_caixin=false`);只作题材持续性的弱证据辅助,不作主信号。取数失败时降级,不得伪造消息面。
+
+`get_tick_rule_orderflow_proxy(symbol, window_start, window_end, big_trade_threshold_cny, limit_up_price)` 用 tick-rule 从 lv2 逐笔价格序列推断大单主动买入占比。**这是推断代理,非交易所真值 BS flag**(`is_exchange_truth=false`、`method="tick_rule"`);A股实测精度约70-80%,且封板博弈时系统性虚高——当 `sealing_distortion_warning=true`(价格触及/接近涨停)时该占比不可信,不得当作主动买入真值。它是买点的资金确认弱证据层,买点主链(过前高→回踩缩量→重新上冲)不依赖此值。与 `sample_realtime_large_trade_proxy`(无方向金额)互补。
 
 If these tools are unavailable, first ask Hermes to reload MCP with `/reload-mcp` or inspect the Hermes MCP configuration. Do not fabricate live data.
 
