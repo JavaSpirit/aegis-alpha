@@ -1737,6 +1737,88 @@ def get_tick_rule_orderflow_proxy(
     return _call_tool(_run)
 
 
+def _build_naive_baselines(as_of_day: str, top_n: int) -> dict:
+    """三朴素基准 TopN(封单额/封成比/首封时间)。任一不可用→[]。失败降级,不抛。"""
+    n = max(1, int(top_n or 1))
+    try:
+        rows = get_historical_second_board_candidates(as_of_day, limit=50)
+        items = rows if isinstance(rows, list) else (rows.get("candidates", []) if isinstance(rows, dict) else [])
+    except Exception:
+        return {"seal_amount": [], "seal_ratio": [], "first_seal_time": []}
+
+    def _top(key: str, reverse: bool) -> list[str]:
+        try:
+            ranked = sorted(
+                [i for i in items if isinstance(i, dict) and i.get(key) is not None],
+                key=lambda i: i.get(key), reverse=reverse,
+            )
+            return [str(i.get("symbol")) for i in ranked[:n]]
+        except Exception:
+            return []
+
+    return {
+        "seal_amount": _top("seal_amount_cny", True),
+        "seal_ratio": _top("seal_to_turnover_ratio", True),
+        "first_seal_time": _top("first_limit_up_time", False),
+    }
+
+
+@mcp.tool
+def record_selection_audit(
+    as_of_day: str,
+    picks_json: str,
+    rejected_json: str = "",
+    candidate_pool_size: int = 0,
+    provider: str = "",
+    model: str = "",
+) -> dict:
+    """记录 agent 收盘选股决策 (facts-only)。自动算三朴素基准对比 + confidence 守卫 + 即时反机械排序提醒。"""
+    import json as _json
+    from aegis_alpha.models import SelectionAudit, SelectionPick, RejectedCandidate
+    from aegis_alpha.feedback.selection_audit import (
+        compute_audit_id, compute_equals_baseline, compute_confidence_label,
+    )
+
+    picks = [SelectionPick.model_validate(p) for p in _json.loads(picks_json or "[]")]
+    rejected = [RejectedCandidate.model_validate(r) for r in _json.loads(rejected_json or "[]")]
+    pick_symbols = [p.symbol for p in picks]
+
+    def _run(store):
+        baseline = _build_naive_baselines(as_of_day, len(pick_symbols))
+        equals = compute_equals_baseline(pick_symbols, baseline)
+        accumulated = store.count_selection_audit_days()
+        confidence = compute_confidence_label(accumulated_days=accumulated)
+        audit = SelectionAudit(
+            audit_id=compute_audit_id(as_of_day, pick_symbols),
+            as_of_day=as_of_day, picks=picks, rejected=rejected,
+            baseline=baseline, equals_baseline=equals,
+            confidence_label=confidence, candidate_pool_size=candidate_pool_size,
+            provider=provider, model=model,
+        )
+        saved = store.save_selection_audit(audit)
+        result = saved.model_dump()
+        if equals:
+            result["anti_mechanical_warning"] = (
+                "你的 TopN 等同某朴素基准(封单额/封成比/首封时间),未体现额外 alpha;请重新评估或明确标注。"
+            )
+        return result
+
+    return _call_store(_run)
+
+
+@mcp.tool
+def get_selection_audit(as_of_day: str) -> dict:
+    """取某收盘日的选股审计 (facts-only)。无记录返回 unavailable。"""
+    def _run(store):
+        audit = store.get_selection_audit_by_day(as_of_day)
+        if audit is None:
+            return {"as_of_day": as_of_day, "data_mode": "unavailable",
+                    "notes": ["该日无选股审计记录。"]}
+        return {**audit.model_dump(), "data_mode": "ok"}
+
+    return _call_store(_run)
+
+
 def main() -> None:
     mcp.run()
 
