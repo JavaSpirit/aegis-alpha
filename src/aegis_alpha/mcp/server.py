@@ -1633,6 +1633,73 @@ def simulate_outcome(
     return _call_store(_run)
 
 
+@mcp.tool
+def get_market_sector_breadth(trading_day: str, theme: str) -> dict:
+    """全市场板块宽度 facts(THS 体系, 成分股×涨停池 join)。失败降级 unavailable。"""
+    from aegis_alpha.adapters.sector_breadth import compute_sector_breadth
+    from aegis_alpha.adapters.sector_breadth.akshare_source import fetch_theme_members
+
+    def _run(adapter: Any) -> dict:
+        members_payload = fetch_theme_members(theme)
+        if members_payload["data_mode"] != "ok":
+            return {
+                "theme": theme,
+                "trading_day": trading_day,
+                "data_mode": "unavailable",
+                "data_source": "akshare.ths",
+                "notes": ["板块成分股取数失败,无法计算宽度。"],
+            }
+        try:
+            limitups = {str(item.symbol) for item in adapter.get_limitup_pool()}
+        except Exception:
+            limitups = set()
+        result = compute_sector_breadth(
+            theme=theme,
+            members=members_payload["members"],
+            limitup_symbols=limitups,
+            concept_system="ths",
+            data_source="akshare",
+        )
+        result["trading_day"] = trading_day
+        return result
+
+    return _call_tool(_run)
+
+
+@mcp.tool
+def get_sector_breadth_continuity(theme: str, as_of_day: str, lookback_days: int = 14) -> dict:
+    """板块两周持续性 facts。用市场内 theme_continuity 的每日涨停计数喂入。"""
+    from aegis_alpha.adapters.sector_breadth import compute_breadth_continuity
+
+    def _run(adapter: Any) -> dict:
+        continuity = adapter.get_theme_continuity(theme, as_of_day, lookback_days)
+        raw = continuity if isinstance(continuity, dict) else continuity.model_dump()
+        daily = raw.get("daily_counts", [])
+        result = compute_breadth_continuity(
+            theme=theme,
+            daily_limitup_counts=[int(x) for x in daily],
+        )
+        result["as_of_day"] = as_of_day
+        result["lookback_days"] = lookback_days
+        return result
+
+    return _call_tool(_run)
+
+
+@mcp.tool
+def get_news_alignment(symbol_or_theme: str, lookback_days: int = 7) -> dict:
+    """题材/个股合规新闻对齐 facts(巨潮公告)。明标非财联社电报。失败降级。"""
+    from aegis_alpha.adapters.news_alignment import compute_news_alignment
+    from aegis_alpha.adapters.news_alignment.cninfo_source import fetch_recent_docs
+
+    fetched = fetch_recent_docs(symbol_or_theme, lookback_days=lookback_days)
+    return compute_news_alignment(
+        query=symbol_or_theme,
+        docs=fetched.get("docs", []),
+        source="cninfo",
+    )
+
+
 def main() -> None:
     mcp.run()
 
