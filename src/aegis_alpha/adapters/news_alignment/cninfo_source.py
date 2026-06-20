@@ -9,6 +9,7 @@ def _load_announcements_raw(query: str, lookback_days: int) -> list[dict[str, An
     巨潮是证监会指定的信息披露平台,公告完全公开合法。
     """
     import akshare as ak  # lazy import — 缺失不影响其余模块
+    # query/lookback_days 暂未做服务端过滤,保留参数供后续按题材/时间窗筛选;当前取全部公告由上层 compute_news_alignment 关键词过滤。
 
     df = ak.stock_notice_report(symbol="全部")
     if df is None or df.empty or df.columns.empty:
