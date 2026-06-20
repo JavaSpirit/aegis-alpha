@@ -40,6 +40,7 @@ def test_big_buy_ratio_proxy_basic():
     assert result["is_exchange_truth"] is False
     assert result["method"] == "tick_rule"
     assert 0.0 < result["tick_rule_big_buy_ratio_proxy"] <= 1.0
+    assert result["tick_rule_big_buy_ratio_proxy"] == 0.667763  # 203万/(203万+101万) = 203/304
     assert result["sealing_distortion_warning"] is False
     assert "accuracy_caveat" in result
     assert result["data_mode"] == "computed"
@@ -61,3 +62,16 @@ def test_empty_trades_unavailable():
     assert result["data_mode"] == "unavailable"
     assert result["is_exchange_truth"] is False
     assert result["sealing_distortion_warning"] is False
+
+
+def test_no_big_trades_ratio_zero_but_computed():
+    trades = [
+        {"price": 10.0, "volume": 100},   # 1000元, well below 100万 threshold
+        {"price": 10.1, "volume": 100},   # buy but tiny
+    ]
+    result = tick_rule_big_buy_ratio_proxy(
+        trades, big_trade_threshold_cny=1_000_000.0, limit_up_price=0.0,
+    )
+    assert result["data_mode"] == "computed"
+    assert result["tick_rule_big_buy_ratio_proxy"] == 0.0
+    assert result["is_exchange_truth"] is False
