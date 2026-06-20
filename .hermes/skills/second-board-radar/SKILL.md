@@ -96,6 +96,9 @@ Core tools:
 - `detect_intraday_buypoint`
 - `get_promotion_dossier`
 - `get_agent_judgment_scorecard`
+- `record_selection_audit`
+- `get_selection_audit`
+- `get_selection_trigger_validation`
 - `get_market_sector_breadth`
 - `get_sector_breadth_continuity`
 - `get_news_alignment`
@@ -360,6 +363,10 @@ Do not save raw stock tips, credentials, or one-off market rumors as memory.
 Use `get_agent_judgment_scorecard(start_day, end_day)` to review how well your PAST calls matched reality over a date window. It returns objective calibration metrics — `brier_score` (lower = better-calibrated promotion_likelihood), `likelihood_calibration` (per high/medium/low bucket: predicted vs realized seal rate), and `grade_hit_rate` (realized seal rate per grade) — computed from your stored reviews vs recorded next-day outcomes.
 
 This is a self-calibration mirror, not a program grade and not an order. Read it to spot systematic bias — e.g. if your `high` bucket's realized seal rate is far below 0.8, you are over-confident and should tighten what earns a `high`. When the window has no scored samples, `sample_size` is 0 and `brier_score` is null; do not over-interpret a tiny sample.
+
+## 闭环验证（二期A，#3+#4）
+
+闭环验证(二期A,#3+#4):收盘 agent 从候选池选完 TopN 后,调 `record_selection_audit(as_of_day, picks_json, rejected_json, candidate_pool_size)` 持久化选股决策——picks_json 每只含 symbol/rank/relative_reason(相对理由:为什么它胜过某只更高封单额/封成比的落选股)/caveats(缺失数据,如盘外新闻未确认);rejected_json 记录落选 near-miss 及 why_rejected/beat_by。程序自动用当天历史二板事实算三朴素基准 TopN(封单额/封成比/首封时间)并标记 `equals_baseline`:若为 true,说明你的 TopN 等同机械基准、未体现额外 alpha,返回里会带 anti_mechanical_warning,你必须重评或明确说明。`confidence_label` 在累计选股记录 <10 个交易日时强制 exploratory。次日(或任意目标日)调 `get_selection_trigger_validation(as_of_day, target_day, window_start, window_end)` 对照闭环:逐只 pick 给出 09:31-10:00 盘中是否过前高/买点触发(trigger_time)+ 次日封板/开盘涨幅,汇总 trigger_rate;盘中/次日事实任一不可用时该字段 data_mode 标 unavailable,不脑补。runner 在交易日 10:00 后自动对最近一条昨收审计跑一次验证并发 SELECTION_VALIDATION 告警(advisory,只读审计+写告警,绝不下单),通过 get_pending_alerts 拉取。样本不足时所有结论标 exploratory,不得据单日/小样本下稳定胜率结论。
 
 ## Scheduled Use
 

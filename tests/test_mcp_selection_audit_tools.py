@@ -28,6 +28,19 @@ def test_get_selection_audit_unavailable(monkeypatch, tmp_path):
     assert res["data_mode"] == "unavailable"
 
 
+def test_record_with_rejected_roundtrips(monkeypatch, tmp_path):
+    import json
+    from aegis_alpha.storage import AegisAlphaStore
+    store = AegisAlphaStore(str(tmp_path / "t.db"))
+    monkeypatch.setattr(server, "get_store", lambda: store)
+    picks = json.dumps([{"symbol": "002491", "rank": 1}])
+    rejected = json.dumps([{"symbol": "300475", "why_rejected": "题材分歧", "beat_by": "002491"}])
+    server.record_selection_audit("2026-06-19", picks, rejected_json=rejected)
+    got = server.get_selection_audit("2026-06-19")
+    assert got["rejected"][0]["symbol"] == "300475"
+    assert got["rejected"][0]["beat_by"] == "002491"
+
+
 def test_record_equals_baseline_when_picks_match_seal_amount_top(monkeypatch, tmp_path):
     from aegis_alpha.storage import AegisAlphaStore
     store = AegisAlphaStore(str(tmp_path / "t.db"))
