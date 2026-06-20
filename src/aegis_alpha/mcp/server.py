@@ -1827,6 +1827,8 @@ def _validation_intraday_trigger(symbol: str, as_of_day: str, target_day: str,
             as_of_day, target_day, symbol, 1, window_start, window_end,
         )
         raw = packet if isinstance(packet, dict) else {}
+        if raw.get("data_mode") == "unavailable":
+            return {"triggered": None, "trigger_time": "", "data_mode": "unavailable"}
         for it in raw.get("results", []):
             if not isinstance(it, dict):
                 continue
@@ -1845,6 +1847,8 @@ def _validation_next_day_outcome(symbol: str, target_day: str) -> dict:
     """取触发后次日结果。失败降级。"""
     try:
         out = get_second_board_next_day_outcomes(target_day, symbol)
+        if isinstance(out, dict) and out.get("data_mode") == "unavailable":
+            return {"sealed_second_board": None, "next_day_open_pct": None, "data_mode": "unavailable"}
         items = out.get("outcomes", []) if isinstance(out, dict) else (out if isinstance(out, list) else [])
         for o in items:
             if not isinstance(o, dict):

@@ -48,3 +48,16 @@ def test_trigger_validation_degrades_when_upstream_fails(monkeypatch, tmp_path):
     assert res["data_mode"] == "ok"
     assert res["triggered_count"] == 0
     assert res["per_pick"][0]["trigger_data_mode"] == "unavailable"
+
+
+def test_trigger_validation_propagates_upstream_unavailable(monkeypatch, tmp_path):
+    store = AegisAlphaStore(str(tmp_path / "t.db"))
+    monkeypatch.setattr(srv, "get_store", lambda: store)
+    srv.record_selection_audit("2026-06-18", json.dumps([{"symbol": "002491", "rank": 1}]))
+    monkeypatch.setattr(srv, "get_strategy_decision_packet", lambda *a, **k: {"data_mode": "unavailable"})
+    monkeypatch.setattr(srv, "get_second_board_next_day_outcomes", lambda *a, **k: {"data_mode": "unavailable"})
+    res = srv.get_selection_trigger_validation("2026-06-18", "2026-06-19")
+    assert res["data_mode"] == "ok"  # tool itself succeeded
+    assert res["per_pick"][0]["trigger_data_mode"] == "unavailable"
+    assert res["per_pick"][0]["outcome_data_mode"] == "unavailable"
+    assert res["triggered_count"] == 0
