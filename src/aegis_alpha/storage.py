@@ -1329,7 +1329,7 @@ class AegisAlphaStore:
 
     def save_selection_audit(self, audit: SelectionAudit) -> SelectionAudit:
         if not audit.created_at:
-            audit.created_at = now_iso()
+            audit = audit.model_copy(update={"created_at": now_iso()})
         with self._connect() as conn:
             conn.execute(
                 """

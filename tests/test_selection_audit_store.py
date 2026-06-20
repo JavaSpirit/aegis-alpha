@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from aegis_alpha.models import SelectionAudit, SelectionPick
 from aegis_alpha.storage import AegisAlphaStore
 
 
@@ -25,9 +26,6 @@ def test_selection_audits_columns(tmp_path: Path):
                 "equals_baseline", "confidence_label", "candidate_pool_size",
                 "provider", "model", "created_at"}
     assert expected <= cols
-
-
-from aegis_alpha.models import SelectionAudit, SelectionPick
 
 
 def test_save_and_get_selection_audit(tmp_path):
