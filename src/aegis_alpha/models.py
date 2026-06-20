@@ -1071,3 +1071,30 @@ class StrategyPrior(BaseModel):
         "Strategy prior is agent guidance only, not a program filter "
         "and not a buy/sell/order instruction."
     )
+
+
+class SelectionPick(BaseModel):
+    symbol: str
+    rank: int = 0
+    relative_reason: str = ""
+    caveats: list[str] = Field(default_factory=list)
+
+
+class RejectedCandidate(BaseModel):
+    symbol: str
+    why_rejected: str = ""
+    beat_by: str = ""
+
+
+class SelectionAudit(BaseModel):
+    audit_id: str = ""
+    as_of_day: str
+    picks: list[SelectionPick] = Field(default_factory=list)
+    rejected: list[RejectedCandidate] = Field(default_factory=list)
+    baseline: dict[str, Any] = Field(default_factory=dict)
+    equals_baseline: bool = False
+    confidence_label: str = "exploratory"
+    candidate_pool_size: int = 0
+    provider: str = ""
+    model: str = ""
+    created_at: str = ""
