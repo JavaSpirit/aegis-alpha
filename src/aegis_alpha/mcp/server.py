@@ -1660,8 +1660,7 @@ def get_market_sector_breadth(trading_day: str, theme: str) -> dict:
             concept_system="ths",
             data_source="akshare",
         )
-        result["trading_day"] = trading_day
-        return result
+        return {**result, "trading_day": trading_day}
 
     return _call_tool(_run)
 
@@ -1674,14 +1673,15 @@ def get_sector_breadth_continuity(theme: str, as_of_day: str, lookback_days: int
     def _run(adapter: Any) -> dict:
         continuity = adapter.get_theme_continuity(theme, as_of_day, lookback_days)
         raw = continuity if isinstance(continuity, dict) else continuity.model_dump()
-        daily = raw.get("daily_counts", [])
-        result = compute_breadth_continuity(
-            theme=theme,
-            daily_limitup_counts=[int(x) for x in daily],
-        )
-        result["as_of_day"] = as_of_day
-        result["lookback_days"] = lookback_days
-        return result
+        daily_raw = raw.get("daily_counts", [])
+        daily_counts: list[int] = []
+        for x in daily_raw:
+            if isinstance(x, dict):
+                daily_counts.append(int(x.get("limit_up_count", 0)))
+            else:
+                daily_counts.append(int(x))
+        result = compute_breadth_continuity(theme=theme, daily_limitup_counts=daily_counts)
+        return {**result, "as_of_day": as_of_day, "lookback_days": lookback_days}
 
     return _call_tool(_run)
 
