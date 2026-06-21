@@ -127,3 +127,50 @@ def test_trigger_validation_maps_sealed_next_day_field(monkeypatch, tmp_path):
     res = srv.get_selection_trigger_validation("2026-06-18", "2026-06-19")
 
     assert res["per_pick"][0]["sealed_second_board"] is True
+
+
+def test_trigger_validation_includes_trend_outcome(monkeypatch, tmp_path):
+    store = AegisAlphaStore(str(tmp_path / "t.db"))
+    monkeypatch.setattr(srv, "get_store", lambda: store)
+    srv.record_selection_audit("2026-06-18", json.dumps([{"symbol": "002491", "rank": 1}]))
+    monkeypatch.setattr(
+        srv,
+        "_validation_intraday_trigger",
+        lambda *a: {
+            "triggered": True,
+            "crossed_previous_high": True,
+            "trigger_time": "09:41",
+            "cross_time": "09:32",
+            "no_signal_reason": "signal_triggered",
+            "data_mode": "ok",
+        },
+    )
+    monkeypatch.setattr(
+        srv,
+        "_validation_next_day_outcome",
+        lambda *a: {"sealed_second_board": None, "next_day_open_pct": 1.2, "data_mode": "ok"},
+    )
+    monkeypatch.setattr(
+        srv,
+        "get_strategy_trend_outcomes",
+        lambda *a, **k: {
+            "data_mode": "strategy_trend_outcomes",
+            "outcomes": [
+                {
+                    "symbol": "002491",
+                    "data_mode": "trend_window_outcome",
+                    "outcome_label": "gap_and_fade",
+                    "trigger_outcome_label": "triggered_but_faded",
+                    "max_gain_pct": 8.4,
+                    "window_end_pct": 1.1,
+                    "drawdown_after_high_pct": -6.2,
+                }
+            ],
+        },
+    )
+
+    res = srv.get_selection_trigger_validation("2026-06-18", "2026-06-19")
+
+    assert res["per_pick"][0]["trend_outcome_label"] == "gap_and_fade"
+    assert res["per_pick"][0]["trigger_outcome_label"] == "triggered_but_faded"
+    assert res["per_pick"][0]["max_gain_pct"] == 8.4

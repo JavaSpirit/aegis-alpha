@@ -104,6 +104,7 @@ mcp_servers:
         - sample_realtime_large_trade_proxy
         - simulate_historical_orderflow_proxy
         - get_strategy_decision_packet
+        - get_strategy_trend_outcomes
         - get_second_board_next_day_outcomes
         - record_selection_audit
         - get_selection_audit

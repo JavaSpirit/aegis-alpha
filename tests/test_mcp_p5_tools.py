@@ -447,6 +447,33 @@ def test_second_board_next_day_outcomes_tool_accepts_symbol_string(monkeypatch):
     assert "grade" not in result["outcomes"][0]
 
 
+def test_strategy_trend_outcomes_returns_broad_outcome_facts(monkeypatch):
+    monkeypatch.setenv("AEGIS_ALPHA_MARKET_DATA_PROVIDER", "mock")
+    from aegis_alpha.mcp.dependencies import reset_singletons
+    from aegis_alpha.mcp.server import get_strategy_trend_outcomes
+
+    reset_singletons()
+    result = get_strategy_trend_outcomes(
+        "2026-05-25",
+        "2026-05-26",
+        symbols="002230",
+        limit=1,
+        window_start="10:10",
+        window_end="10:16",
+    )
+
+    assert result["data_mode"] == "strategy_trend_outcomes"
+    assert result["result_count"] == 1
+    item = result["outcomes"][0]
+    assert item["symbol"] == "002230"
+    assert "max_gain_pct" in item
+    assert "window_end_pct" in item
+    assert "outcome_label" in item
+    assert "buy_point_triggered" in item
+    assert "sealed_second_board" not in item
+    assert any("not limited to second-board" in note for note in result["notes"])
+
+
 def test_get_active_seats_today_includes_data_mode_field():
     from aegis_alpha.mcp.server import get_active_seats_today
 

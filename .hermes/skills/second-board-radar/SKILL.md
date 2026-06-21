@@ -57,6 +57,7 @@ Core tools:
 - `sample_realtime_large_trade_proxy`
 - `simulate_historical_orderflow_proxy`
 - `get_strategy_decision_packet`
+- `get_strategy_trend_outcomes`
 - `get_second_board_next_day_outcomes`
 - `get_second_board_candidate_data_quality`
 - `explain_second_board_candidate`
@@ -139,6 +140,8 @@ In validation output, `intraday_theme_copump` is the closest current proxy for t
 `simulate_historical_orderflow_proxy(symbol, trading_day, window_start, window_end, volume_ratio_threshold)` simulates weak盘口活跃度 from historical minute bars. It flags minutes whose volume is elevated versus the opening baseline. This is useful when the user asks to simulate without market hours, but it is NOT historical Level-2, NOT tick-level large trades, and NOT active buy/sell direction.
 
 `get_strategy_decision_packet(as_of_day, target_day, symbols, limit, window_start, window_end, include_minute_volume_proxy, include_full_theme_copump)` is the preferred end-to-end fact bundle when the user wants a full strategy-style answer. It reduces tool-wandering by bundling as-of strategy facts, target-day replay, packet-local same-theme co-pump, and order-flow availability/proxy facts. It does NOT assign grades or scores; Hermes must still make the Top3/grade/promotion_likelihood judgment. Keep `include_minute_volume_proxy=false` unless the user explicitly wants offline simulation. Keep `include_full_theme_copump=false` by default; turn it on only when the user asks for broader same-theme replay because it is slower.
+
+`get_strategy_trend_outcomes(as_of_day, target_day, symbols, limit, window_start, window_end)` is the preferred broad-strategy validation outcome after the agent has selected TopN. It is not second-board-only. It returns target-day window facts such as max_gain_pct, drawdown_after_high_pct, window_end_pct, gap_and_fade, morning_followthrough, buy_point_triggered, crossed_previous_high, and trigger_outcome_label. Use this before relying on second-board-specific `sealed_next_day` labels for the user's large-turnover trend strategy.
 
 `get_historical_second_board_candidates(trading_day)` and `get_second_board_next_day_outcomes(trading_day, symbols)` return historical FACTS and objective T+1 labels. They do not return program scores, probabilities, or grades. Use them when the user asks whether the approach is usable, asks for replay/backtest-like evidence, asks why a judgment failed, or asks for historical comparison before trusting a live candidate. These are post-hoc tools for a known trading day; they are not valid as the initial candidate pool for an as-of-close replay.
 
@@ -368,7 +371,7 @@ This is a self-calibration mirror, not a program grade and not an order. Read it
 
 ## 闭环验证（二期A，#3+#4）
 
-闭环验证(二期A,#3+#4):收盘 agent 从候选池选完 TopN 后,调 `record_selection_audit(as_of_day, picks_json, rejected_json, candidate_pool_size)` 持久化选股决策——picks_json 每只含 symbol/rank/relative_reason(相对理由:为什么它胜过某只更高封单额/封成比的落选股)/caveats(缺失数据,如盘外新闻未确认);rejected_json 记录落选 near-miss 及 why_rejected/beat_by。程序自动用同日候选池/历史二板事实算三朴素基准 TopN(封单额/封成比/首封时间)并标记 `equals_baseline`:若为 true,说明你的 TopN 等同机械基准、未体现额外 alpha,返回里会带 anti_mechanical_warning,你必须重评或明确说明。`confidence_label` 在累计选股记录 <10 个交易日时强制 exploratory。次日(或任意目标日)调 `get_selection_trigger_validation(as_of_day, target_day, window_start, window_end)` 对照闭环:逐只 pick 分开给出 09:31-10:00 是否过前高(crossed_previous_high/cross_time)、买点状态机是否真正触发(triggered/trigger_time/no_signal_reason)、次日触板/封板/开盘涨幅,汇总 trigger_rate;注意 trigger_rate 只统计真正买点触发,不把单纯过前高算作触发。盘中/次日事实任一不可用时该字段 data_mode 标 unavailable,不脑补。runner 在交易日 10:00 后自动对最近一条昨收审计跑一次验证并发 SELECTION_VALIDATION 告警(advisory,只读审计+写告警,绝不下单),通过 get_pending_alerts 拉取。样本不足时所有结论标 exploratory,不得据单日/小样本下稳定胜率结论。
+闭环验证(二期A,#3+#4):收盘 agent 从候选池选完 TopN 后,调 `record_selection_audit(as_of_day, picks_json, rejected_json, candidate_pool_size)` 持久化选股决策——picks_json 每只含 symbol/rank/relative_reason(相对理由:为什么它胜过某只更高封单额/封成比的落选股)/caveats(缺失数据,如盘外新闻未确认);rejected_json 记录落选 near-miss 及 why_rejected/beat_by。程序自动用同日候选池/历史二板事实算三朴素基准 TopN(封单额/封成比/首封时间)并标记 `equals_baseline`:若为 true,说明你的 TopN 等同机械基准、未体现额外 alpha,返回里会带 anti_mechanical_warning,你必须重评或明确说明。`confidence_label` 在累计选股记录 <10 个交易日时强制 exploratory。次日(或任意目标日)调 `get_selection_trigger_validation(as_of_day, target_day, window_start, window_end)` 对照闭环:逐只 pick 分开给出 09:31-10:00 是否过前高(crossed_previous_high/cross_time)、买点状态机是否真正触发(triggered/trigger_time/no_signal_reason)、宽策略趋势 outcome(trend_outcome_label/trigger_outcome_label/max_gain_pct/window_end_pct/drawdown_after_high_pct)、次日触板/封板/开盘涨幅,汇总 trigger_rate;注意 trigger_rate 只统计真正买点触发,不把单纯过前高算作触发。盘中/次日事实任一不可用时该字段 data_mode 标 unavailable,不脑补。runner 在交易日 10:00 后自动对最近一条昨收审计跑一次验证并发 SELECTION_VALIDATION 告警(advisory,只读审计+写告警,绝不下单),通过 get_pending_alerts 拉取。样本不足时所有结论标 exploratory,不得据单日/小样本下稳定胜率结论。
 
 ## Scheduled Use
 

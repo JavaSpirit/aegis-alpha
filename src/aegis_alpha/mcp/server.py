@@ -1135,6 +1135,117 @@ def get_strategy_decision_packet(
 
 
 @mcp.tool
+def get_strategy_trend_outcomes(
+    as_of_day: str,
+    target_day: str,
+    symbols: str = "",
+    limit: int = 10,
+    window_start: str = "09:31",
+    window_end: str = "10:00",
+) -> dict:
+    """Return broad trend-strategy outcome facts for target-day replay.
+
+    This is not second-board-only. It labels target-day window behavior such as
+    morning follow-through or gap-and-fade, while keeping buy-point trigger facts
+    separate from simple previous-high crossing.
+    """
+    from aegis_alpha.measurements.trend_outcome import summarize_trend_window_outcome
+
+    safe_as_of = as_of_day.strip()
+    safe_target = target_day.strip()
+    if not safe_as_of:
+        return {"data_mode": "unavailable", "error": "as_of_day is required"}
+    if not safe_target:
+        return {"data_mode": "unavailable", "error": "target_day is required"}
+    requested = [item.strip() for item in symbols.replace(",", "|").split("|") if item.strip()]
+    safe_limit = max(1, min(int(limit or 10), 50))
+    safe_window_start = window_start.strip() or "09:31"
+    safe_window_end = window_end.strip() or "10:00"
+
+    def _run(adapter: Any) -> dict:
+        selected = requested
+        if not selected:
+            pool = get_daily_strategy_candidate_pool(safe_as_of, safe_limit)
+            selected = [
+                str(item.get("symbol") or "")
+                for item in (pool.get("candidates", []) if isinstance(pool, dict) else [])
+                if str(item.get("symbol") or "")
+            ][:safe_limit]
+
+        packet = get_strategy_decision_packet(
+            safe_as_of,
+            safe_target,
+            "|".join(selected),
+            safe_limit,
+            safe_window_start,
+            safe_window_end,
+            False,
+            False,
+        )
+        trigger_by_symbol: dict[str, dict[str, Any]] = {}
+        if isinstance(packet, dict):
+            for item in packet.get("results", []):
+                if not isinstance(item, dict):
+                    continue
+                symbol_key = str(item.get("symbol") or "").split(".", 1)[0]
+                diagnostics = item.get("pattern_diagnostics") or {}
+                trigger_by_symbol[symbol_key] = {
+                    "buy_point_triggered": bool(item.get("first_triggered_at") or int(item.get("signal_count") or 0) > 0),
+                    "trigger_time": str(item.get("first_triggered_at") or ""),
+                    "crossed_previous_high": bool(diagnostics.get("crossed_previous_high")),
+                    "cross_time": str(diagnostics.get("first_cross_time") or ""),
+                    "no_signal_reason": str(diagnostics.get("no_signal_reason") or ""),
+                    "trigger_data_mode": item.get("data_mode", ""),
+                }
+
+        outcomes = []
+        for symbol in selected[:safe_limit]:
+            snapshot = adapter.get_stock_minute_replay_snapshot(
+                symbol,
+                safe_target,
+                1,
+                max_bars=240,
+            )
+            outcome = summarize_trend_window_outcome(
+                snapshot,
+                window_start=safe_window_start,
+                window_end=safe_window_end,
+            )
+            symbol_key = str(symbol).split(".", 1)[0]
+            trigger = trigger_by_symbol.get(symbol_key, {})
+            if trigger:
+                outcome.update(trigger)
+                if trigger.get("buy_point_triggered") and outcome.get("outcome_label") in {"gap_and_fade", "failed_intraday_breakout"}:
+                    outcome["trigger_outcome_label"] = "triggered_but_faded"
+                elif trigger.get("buy_point_triggered"):
+                    outcome["trigger_outcome_label"] = "triggered_with_followthrough"
+                elif trigger.get("crossed_previous_high"):
+                    outcome["trigger_outcome_label"] = "crossed_without_buy_point"
+                else:
+                    outcome["trigger_outcome_label"] = "no_breakout"
+            else:
+                outcome["trigger_data_mode"] = "unavailable"
+            outcomes.append(outcome)
+
+        return {
+            "as_of_day": safe_as_of,
+            "target_day": safe_target,
+            "data_mode": "strategy_trend_outcomes",
+            "window": {"start": safe_window_start, "end": safe_window_end},
+            "symbols": selected[:safe_limit],
+            "result_count": len(outcomes),
+            "outcomes": outcomes,
+            "notes": [
+                "Broad trend outcome facts; not limited to second-board sealing labels.",
+                "No exchange-verified active buy/sell direction is available.",
+                "buy_point_triggered is separated from crossed_previous_high.",
+            ],
+        }
+
+    return _call_tool(_run)
+
+
+@mcp.tool
 def get_second_board_next_day_outcomes(
     trading_day: str,
     symbols: str = "",
@@ -1916,6 +2027,34 @@ def _validation_next_day_outcome(symbol: str, target_day: str) -> dict:
         return {"sealed_second_board": None, "next_day_open_pct": None, "data_mode": "unavailable"}
 
 
+def _validation_trend_outcomes(
+    as_of_day: str,
+    target_day: str,
+    symbols: list[str],
+    window_start: str,
+    window_end: str,
+) -> dict[str, dict[str, Any]]:
+    """Fetch broad trend outcomes for a batch. Failure should not break validation."""
+    try:
+        raw = get_strategy_trend_outcomes(
+            as_of_day,
+            target_day,
+            "|".join(symbols),
+            len(symbols),
+            window_start,
+            window_end,
+        )
+        if not isinstance(raw, dict) or raw.get("data_mode") == "unavailable":
+            return {}
+        return {
+            str(item.get("symbol") or "").split(".", 1)[0]: item
+            for item in raw.get("outcomes", [])
+            if isinstance(item, dict) and str(item.get("symbol") or "")
+        }
+    except Exception:
+        return {}
+
+
 @mcp.tool
 def get_selection_trigger_validation(
     as_of_day: str, target_day: str,
@@ -1927,11 +2066,20 @@ def get_selection_trigger_validation(
         if audit is None:
             return {"as_of_day": as_of_day, "target_day": target_day,
                     "data_mode": "unavailable", "notes": ["该日无选股审计,无法对照。"]}
+        symbols = [pick.symbol for pick in audit.picks]
+        trend_by_symbol = _validation_trend_outcomes(
+            as_of_day,
+            target_day,
+            symbols,
+            window_start,
+            window_end,
+        )
         per_pick = []
         triggered = 0
         for pick in audit.picks:
             trig = _validation_intraday_trigger(pick.symbol, as_of_day, target_day, window_start, window_end)
             outcome = _validation_next_day_outcome(pick.symbol, target_day)
+            trend = trend_by_symbol.get(str(pick.symbol).split(".", 1)[0], {})
             if trig.get("triggered") is True:
                 triggered += 1
             per_pick.append({
@@ -1945,6 +2093,12 @@ def get_selection_trigger_validation(
                 "sealed_second_board": outcome.get("sealed_second_board"),
                 "touched_limit_up": outcome.get("touched_limit_up"),
                 "next_day_open_pct": outcome.get("next_day_open_pct"),
+                "trend_outcome_label": trend.get("outcome_label", ""),
+                "trigger_outcome_label": trend.get("trigger_outcome_label", ""),
+                "max_gain_pct": trend.get("max_gain_pct"),
+                "window_end_pct": trend.get("window_end_pct"),
+                "drawdown_after_high_pct": trend.get("drawdown_after_high_pct"),
+                "trend_outcome_data_mode": trend.get("data_mode", "unavailable"),
                 "trigger_data_mode": trig.get("data_mode"),
                 "outcome_data_mode": outcome.get("data_mode"),
             })
