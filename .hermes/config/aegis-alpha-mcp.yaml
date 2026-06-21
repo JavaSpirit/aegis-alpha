@@ -69,6 +69,13 @@ mcp_servers:
         - simulate_historical_orderflow_proxy
         - get_strategy_decision_packet
         - get_second_board_next_day_outcomes
+        - record_selection_audit
+        - get_selection_audit
+        - get_selection_trigger_validation
+        - get_market_sector_breadth
+        - get_sector_breadth_continuity
+        - get_news_alignment
+        - get_tick_rule_orderflow_proxy
         - get_second_board_candidate_data_quality
         - get_promotion_dossier
         - explain_candidate

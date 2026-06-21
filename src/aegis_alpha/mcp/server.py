@@ -1738,13 +1738,22 @@ def get_tick_rule_orderflow_proxy(
 
 
 def _build_naive_baselines(as_of_day: str, top_n: int) -> dict:
-    """三朴素基准 TopN(封单额/封成比/首封时间)。任一不可用→[]。失败降级,不抛。"""
+    """三朴素基准 TopN。优先用 daily pool 同宇宙；失败降级到历史二板池。"""
     n = max(1, int(top_n or 1))
     try:
-        rows = get_historical_second_board_candidates(as_of_day, limit=50)
-        items = rows if isinstance(rows, list) else (rows.get("candidates", []) if isinstance(rows, dict) else [])
+        pool = get_daily_strategy_candidate_pool(as_of_day, limit=100)
+        items = pool.get("candidates", []) if isinstance(pool, dict) else []
+        source = "daily_strategy_candidate_pool"
     except Exception:
-        return {"seal_amount": [], "seal_ratio": [], "first_seal_time": []}
+        items = []
+        source = "unavailable"
+    if not items:
+        try:
+            rows = get_historical_second_board_candidates(as_of_day, limit=50)
+            items = rows if isinstance(rows, list) else (rows.get("candidates", []) if isinstance(rows, dict) else [])
+            source = "historical_second_board_candidates"
+        except Exception:
+            return {"seal_amount": [], "seal_ratio": [], "first_seal_time": [], "source": "unavailable"}
 
     def _top(key: str, reverse: bool) -> list[str]:
         try:
@@ -1756,11 +1765,31 @@ def _build_naive_baselines(as_of_day: str, top_n: int) -> dict:
         except Exception:
             return []
 
-    return {
+    baselines = {
         "seal_amount": _top("seal_amount_cny", True),
         "seal_ratio": _top("seal_to_turnover_ratio", True),
         "first_seal_time": _top("first_limit_up_time", False),
+        "source": source,
     }
+    if (
+        source == "daily_strategy_candidate_pool"
+        and not baselines["seal_amount"]
+        and not baselines["seal_ratio"]
+        and not baselines["first_seal_time"]
+    ):
+        try:
+            rows = get_historical_second_board_candidates(as_of_day, limit=50)
+            items = rows if isinstance(rows, list) else (rows.get("candidates", []) if isinstance(rows, dict) else [])
+            source = "historical_second_board_candidates"
+            baselines = {
+                "seal_amount": _top("seal_amount_cny", True),
+                "seal_ratio": _top("seal_to_turnover_ratio", True),
+                "first_seal_time": _top("first_limit_up_time", False),
+                "source": source,
+            }
+        except Exception:
+            pass
+    return baselines
 
 
 @mcp.tool
@@ -1834,13 +1863,32 @@ def _validation_intraday_trigger(symbol: str, as_of_day: str, target_day: str,
                 continue
             if str(it.get("symbol", "")).split(".")[0] == symbol.split(".")[0]:
                 diag = it.get("pattern_diagnostics") or {}
-                triggered = bool(it.get("first_triggered_at") or diag.get("opening_window_crossed_previous_high"))
-                return {"triggered": triggered,
-                        "trigger_time": str(it.get("first_triggered_at", "")),
-                        "data_mode": "ok"}
-        return {"triggered": False, "trigger_time": "", "data_mode": "ok"}
+                triggered = bool(it.get("first_triggered_at") or int(it.get("signal_count") or 0) > 0)
+                return {
+                    "triggered": triggered,
+                    "crossed_previous_high": bool(diag.get("crossed_previous_high")),
+                    "trigger_time": str(it.get("first_triggered_at", "")),
+                    "cross_time": str(diag.get("first_cross_time", "")),
+                    "no_signal_reason": str(diag.get("no_signal_reason", "")),
+                    "data_mode": "ok",
+                }
+        return {
+            "triggered": False,
+            "crossed_previous_high": False,
+            "trigger_time": "",
+            "cross_time": "",
+            "no_signal_reason": "symbol_not_in_packet_results",
+            "data_mode": "ok",
+        }
     except Exception:
-        return {"triggered": None, "trigger_time": "", "data_mode": "unavailable"}
+        return {
+            "triggered": None,
+            "crossed_previous_high": None,
+            "trigger_time": "",
+            "cross_time": "",
+            "no_signal_reason": "",
+            "data_mode": "unavailable",
+        }
 
 
 def _validation_next_day_outcome(symbol: str, target_day: str) -> dict:
@@ -1854,9 +1902,15 @@ def _validation_next_day_outcome(symbol: str, target_day: str) -> dict:
             if not isinstance(o, dict):
                 continue
             if str(o.get("symbol", "")).split(".")[0] == symbol.split(".")[0]:
-                return {"sealed_second_board": o.get("sealed_second_board"),
-                        "next_day_open_pct": o.get("next_day_open_pct"),
-                        "data_mode": "ok"}
+                sealed = o.get("sealed_second_board")
+                if sealed is None:
+                    sealed = o.get("sealed_next_day")
+                return {
+                    "sealed_second_board": sealed,
+                    "touched_limit_up": o.get("touched_limit_up"),
+                    "next_day_open_pct": o.get("next_day_open_pct"),
+                    "data_mode": "ok",
+                }
         return {"sealed_second_board": None, "next_day_open_pct": None, "data_mode": "ok"}
     except Exception:
         return {"sealed_second_board": None, "next_day_open_pct": None, "data_mode": "unavailable"}
@@ -1884,8 +1938,12 @@ def get_selection_trigger_validation(
                 "symbol": pick.symbol, "rank": pick.rank,
                 "relative_reason": pick.relative_reason,
                 "triggered": trig.get("triggered"),
+                "crossed_previous_high": trig.get("crossed_previous_high"),
                 "trigger_time": trig.get("trigger_time", ""),
+                "cross_time": trig.get("cross_time", ""),
+                "no_signal_reason": trig.get("no_signal_reason", ""),
                 "sealed_second_board": outcome.get("sealed_second_board"),
+                "touched_limit_up": outcome.get("touched_limit_up"),
                 "next_day_open_pct": outcome.get("next_day_open_pct"),
                 "trigger_data_mode": trig.get("data_mode"),
                 "outcome_data_mode": outcome.get("data_mode"),
@@ -1901,7 +1959,7 @@ def get_selection_trigger_validation(
             "window": {"start": window_start, "end": window_end},
             "per_pick": per_pick,
             "notes": [
-                "盘中触发=09:31-10:00 过前高/买点;次日结果=封板/开盘涨幅。",
+                "盘中 triggered 严格表示买点状态机触发；crossed_previous_high 单独列示，不等同于触发。",
                 "样本不足时 confidence_label=exploratory,勿过度解读。",
             ],
         }

@@ -148,6 +148,8 @@ In validation output, `intraday_theme_copump` is the closest current proxy for t
 
 `get_tick_rule_orderflow_proxy(symbol, window_start, window_end, big_trade_threshold_cny, limit_up_price)` 用 tick-rule 从 lv2 逐笔价格序列推断大单主动买入占比。**这是推断代理,非交易所真值 BS flag**(`is_exchange_truth=false`、`method="tick_rule"`);A股实测精度约70-80%,且封板博弈时系统性虚高——当 `sealing_distortion_warning=true`(价格触及/接近涨停)时该占比不可信,不得当作主动买入真值。它是买点的资金确认弱证据层,买点主链(过前高→回踩缩量→重新上冲)不依赖此值。与 `sample_realtime_large_trade_proxy`(无方向金额)互补。
 
+Hard data boundary: Aegis Alpha currently does not have exchange-verified intraday active buy/sell direction. Treat directionless lv2 large-trade amount, tick-rule inference, and daily semantic capital-flow fields as proxies only. Never describe any of them as true trigger-window active big-order buy ratio.
+
 If these tools are unavailable, first ask Hermes to reload MCP with `/reload-mcp` or inspect the Hermes MCP configuration. Do not fabricate live data.
 
 ## Data Availability And Freshness
@@ -366,7 +368,7 @@ This is a self-calibration mirror, not a program grade and not an order. Read it
 
 ## 闭环验证（二期A，#3+#4）
 
-闭环验证(二期A,#3+#4):收盘 agent 从候选池选完 TopN 后,调 `record_selection_audit(as_of_day, picks_json, rejected_json, candidate_pool_size)` 持久化选股决策——picks_json 每只含 symbol/rank/relative_reason(相对理由:为什么它胜过某只更高封单额/封成比的落选股)/caveats(缺失数据,如盘外新闻未确认);rejected_json 记录落选 near-miss 及 why_rejected/beat_by。程序自动用当天历史二板事实算三朴素基准 TopN(封单额/封成比/首封时间)并标记 `equals_baseline`:若为 true,说明你的 TopN 等同机械基准、未体现额外 alpha,返回里会带 anti_mechanical_warning,你必须重评或明确说明。`confidence_label` 在累计选股记录 <10 个交易日时强制 exploratory。次日(或任意目标日)调 `get_selection_trigger_validation(as_of_day, target_day, window_start, window_end)` 对照闭环:逐只 pick 给出 09:31-10:00 盘中是否过前高/买点触发(trigger_time)+ 次日封板/开盘涨幅,汇总 trigger_rate;盘中/次日事实任一不可用时该字段 data_mode 标 unavailable,不脑补。runner 在交易日 10:00 后自动对最近一条昨收审计跑一次验证并发 SELECTION_VALIDATION 告警(advisory,只读审计+写告警,绝不下单),通过 get_pending_alerts 拉取。样本不足时所有结论标 exploratory,不得据单日/小样本下稳定胜率结论。
+闭环验证(二期A,#3+#4):收盘 agent 从候选池选完 TopN 后,调 `record_selection_audit(as_of_day, picks_json, rejected_json, candidate_pool_size)` 持久化选股决策——picks_json 每只含 symbol/rank/relative_reason(相对理由:为什么它胜过某只更高封单额/封成比的落选股)/caveats(缺失数据,如盘外新闻未确认);rejected_json 记录落选 near-miss 及 why_rejected/beat_by。程序自动用同日候选池/历史二板事实算三朴素基准 TopN(封单额/封成比/首封时间)并标记 `equals_baseline`:若为 true,说明你的 TopN 等同机械基准、未体现额外 alpha,返回里会带 anti_mechanical_warning,你必须重评或明确说明。`confidence_label` 在累计选股记录 <10 个交易日时强制 exploratory。次日(或任意目标日)调 `get_selection_trigger_validation(as_of_day, target_day, window_start, window_end)` 对照闭环:逐只 pick 分开给出 09:31-10:00 是否过前高(crossed_previous_high/cross_time)、买点状态机是否真正触发(triggered/trigger_time/no_signal_reason)、次日触板/封板/开盘涨幅,汇总 trigger_rate;注意 trigger_rate 只统计真正买点触发,不把单纯过前高算作触发。盘中/次日事实任一不可用时该字段 data_mode 标 unavailable,不脑补。runner 在交易日 10:00 后自动对最近一条昨收审计跑一次验证并发 SELECTION_VALIDATION 告警(advisory,只读审计+写告警,绝不下单),通过 get_pending_alerts 拉取。样本不足时所有结论标 exploratory,不得据单日/小样本下稳定胜率结论。
 
 ## Scheduled Use
 

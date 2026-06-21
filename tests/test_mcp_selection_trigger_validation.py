@@ -61,3 +61,69 @@ def test_trigger_validation_propagates_upstream_unavailable(monkeypatch, tmp_pat
     assert res["per_pick"][0]["trigger_data_mode"] == "unavailable"
     assert res["per_pick"][0]["outcome_data_mode"] == "unavailable"
     assert res["triggered_count"] == 0
+
+
+def test_trigger_validation_does_not_count_opening_cross_as_buy_point(monkeypatch, tmp_path):
+    store = AegisAlphaStore(str(tmp_path / "t.db"))
+    monkeypatch.setattr(srv, "get_store", lambda: store)
+    srv.record_selection_audit("2026-06-18", json.dumps([{"symbol": "002491", "rank": 1}]))
+    monkeypatch.setattr(
+        srv,
+        "get_strategy_decision_packet",
+        lambda *a, **k: {
+            "data_mode": "strategy_decision_packet",
+            "results": [
+                {
+                    "symbol": "002491",
+                    "signal_count": 0,
+                    "first_triggered_at": "",
+                    "pattern_diagnostics": {
+                        "crossed_previous_high": True,
+                        "first_cross_time": "09:31",
+                        "opening_window_crossed_previous_high": True,
+                        "no_signal_reason": "opening_breakout_candidate_but_no_qualified_pullback_resurge",
+                    },
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(srv, "get_second_board_next_day_outcomes", lambda *a, **k: {"outcomes": []})
+
+    res = srv.get_selection_trigger_validation("2026-06-18", "2026-06-19")
+
+    assert res["triggered_count"] == 0
+    assert res["per_pick"][0]["triggered"] is False
+    assert res["per_pick"][0]["crossed_previous_high"] is True
+    assert res["per_pick"][0]["cross_time"] == "09:31"
+    assert res["per_pick"][0]["no_signal_reason"] == "opening_breakout_candidate_but_no_qualified_pullback_resurge"
+
+
+def test_trigger_validation_maps_sealed_next_day_field(monkeypatch, tmp_path):
+    store = AegisAlphaStore(str(tmp_path / "t.db"))
+    monkeypatch.setattr(srv, "get_store", lambda: store)
+    srv.record_selection_audit("2026-06-18", json.dumps([{"symbol": "002491", "rank": 1}]))
+    monkeypatch.setattr(
+        srv,
+        "_validation_intraday_trigger",
+        lambda *a: {
+            "triggered": True,
+            "crossed_previous_high": True,
+            "trigger_time": "09:41",
+            "cross_time": "09:32",
+            "no_signal_reason": "signal_triggered",
+            "data_mode": "ok",
+        },
+    )
+    monkeypatch.setattr(
+        srv,
+        "get_second_board_next_day_outcomes",
+        lambda *a, **k: {
+            "outcomes": [
+                {"symbol": "002491", "sealed_next_day": True, "next_day_open_pct": 3.2}
+            ]
+        },
+    )
+
+    res = srv.get_selection_trigger_validation("2026-06-18", "2026-06-19")
+
+    assert res["per_pick"][0]["sealed_second_board"] is True
