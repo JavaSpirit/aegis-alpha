@@ -63,7 +63,142 @@ def audit_to_dict(audit: Any) -> dict[str, Any]:
 
 
 def audit_symbols(audit: Any) -> list[str]:
-    return [str(pick.symbol).split(".", 1)[0] for pick in getattr(audit, "picks", []) if pick.symbol]
+    return merge_symbols([str(pick.symbol) for pick in getattr(audit, "picks", []) if pick.symbol])
+
+
+def normalize_symbol(value: str) -> str:
+    return str(value or "").strip().upper().split(".", 1)[0]
+
+
+def merge_symbols(*groups: list[str]) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for group in groups:
+        for raw in group:
+            symbol = normalize_symbol(raw)
+            if not symbol or symbol in seen:
+                continue
+            output.append(symbol)
+            seen.add(symbol)
+    return output
+
+
+def _pool_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    raw_items = payload.get("candidates")
+    if raw_items is None:
+        raw_items = payload.get("items")
+    if raw_items is None:
+        raw_items = payload.get("results")
+    return [item for item in raw_items or [] if isinstance(item, dict)]
+
+
+def current_limitup_scan_pool_symbols(scan_limit: int, *, reason: str) -> dict[str, Any]:
+    safe_limit = max(1, min(int(scan_limit or 50), 100))
+    try:
+        from aegis_alpha.adapters.factory import create_market_data_adapter
+
+        adapter = create_market_data_adapter()
+        rows = adapter.get_limitup_pool()
+    except Exception as exc:
+        return {
+            "source": "current_limitup_pool_proxy",
+            "data_mode": "unavailable",
+            "requested_limit": safe_limit,
+            "symbols": [],
+            "error": type(exc).__name__,
+            "fallback_reason": reason,
+        }
+    symbols: list[str] = []
+    sample: list[dict[str, Any]] = []
+    for row in rows:
+        item = row.model_dump() if hasattr(row, "model_dump") else dict(row or {})
+        symbol = normalize_symbol(str(item.get("symbol") or ""))
+        if not symbol:
+            continue
+        symbols.append(symbol)
+        if len(sample) < 20:
+            sample.append(
+                {
+                    "symbol": symbol,
+                    "name": item.get("name", ""),
+                    "theme": item.get("theme", ""),
+                }
+            )
+        if len(symbols) >= safe_limit:
+            break
+    return {
+        "source": "current_limitup_pool_proxy",
+        "data_mode": "proxy_current_provider",
+        "requested_limit": safe_limit,
+        "result_count": len(symbols),
+        "symbols": merge_symbols(symbols),
+        "sample": sample,
+        "fallback_reason": reason,
+        "strict_as_of": False,
+        "warning": "Current provider limit-up pool proxy; not a strict historical as-of strategy pool.",
+    }
+
+
+def strategy_scan_pool_symbols(as_of_day: str, scan_limit: int, *, allow_current_proxy: bool = False) -> dict[str, Any]:
+    """Return the broad scan pool symbols for next-session live monitoring.
+
+    TopN audit picks are for explanation and audit. Live scanning should use a
+    wider strategy pool so a valid intraday trigger is not missed just because
+    the prior close Top3 did not include it.
+    """
+    safe_limit = max(1, min(int(scan_limit or 50), 100))
+    try:
+        from aegis_alpha.mcp import server
+
+        payload = server.get_daily_strategy_candidate_pool(as_of_day, limit=safe_limit)
+    except Exception as exc:
+        return {
+            "source": "daily_strategy_candidate_pool",
+            "data_mode": "unavailable",
+            "requested_limit": safe_limit,
+            "symbols": [],
+            "error": type(exc).__name__,
+        }
+    if not isinstance(payload, dict):
+        return {
+            "source": "daily_strategy_candidate_pool",
+            "data_mode": "unavailable",
+            "requested_limit": safe_limit,
+            "symbols": [],
+            "error": "invalid_pool_payload",
+        }
+
+    items = _pool_items(payload)
+    symbols = merge_symbols(
+        [
+            str(item.get("symbol") or "")
+            for item in items
+            if str(item.get("symbol") or "").strip()
+            and str(item.get("data_mode") or "").lower() != "unavailable"
+            and not item.get("error")
+        ]
+    )
+    result = {
+        "source": "daily_strategy_candidate_pool",
+        "data_mode": payload.get("data_mode", "unknown"),
+        "requested_limit": safe_limit,
+        "result_count": payload.get("result_count", len(items)),
+        "symbols": symbols,
+        "source_counts": payload.get("source_counts", {}),
+        "theme_counts": payload.get("theme_counts", {}),
+    }
+    if not symbols:
+        result["warning"] = "scan_pool_empty"
+        today = now_dt().date().isoformat()
+        if allow_current_proxy or as_of_day == today:
+            fallback = current_limitup_scan_pool_symbols(
+                safe_limit,
+                reason=f"daily_strategy_candidate_pool_empty_for_{as_of_day}",
+            )
+            fallback["strict_pool"] = result
+            return fallback
+        result["warning"] = "scan_pool_empty; runner will fall back to audit picks only"
+    return result
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -93,9 +228,14 @@ def write_subscription_files(
     audit: Any,
     as_of_day: str,
     output_dir: Path,
+    scan_limit: int = 50,
+    allow_current_proxy: bool = False,
     update_env_local: bool = False,
 ) -> dict[str, Any]:
-    symbols = audit_symbols(audit)
+    priority_symbols = audit_symbols(audit)
+    scan_pool = strategy_scan_pool_symbols(as_of_day, scan_limit, allow_current_proxy=allow_current_proxy)
+    scan_symbols = [str(symbol) for symbol in scan_pool.get("symbols", [])]
+    symbols = merge_symbols(priority_symbols, scan_symbols)
     symbol_text = ",".join(symbols)
     output_dir.mkdir(parents=True, exist_ok=True)
     env_path = output_dir / f"jvquant_symbols_{as_of_day}.env"
@@ -106,11 +246,16 @@ def write_subscription_files(
         {
             "as_of_day": as_of_day,
             "created_at": now_iso(),
+            "subscription_mode": "strategy_scan_pool_with_audit_priority",
             "symbols": symbols,
+            "priority_audit_symbols": priority_symbols,
+            "scan_pool_symbols": scan_symbols,
+            "scan_pool": scan_pool,
             "env": {"JVQUANT_SUBSCRIBE_SYMBOLS": symbol_text},
             "notes": [
-                "Source this env file in a shell, or run prepare --update-env-local before restarting launchd runner.",
-                "This only subscribes the runner; it does not place orders.",
+                "TopN audit picks are priority symbols for explanation; live scanning uses the wider strategy candidate pool.",
+                "Source this env file in a shell, or run prepare/export-subscription --update-env-local before restarting launchd runner.",
+                "This only subscribes the runner for read-only monitoring; it does not place orders.",
             ],
         },
     )
@@ -119,7 +264,11 @@ def write_subscription_files(
         update_env_key(repo_root() / ".env.local", "JVQUANT_SUBSCRIBE_SYMBOLS", symbol_text)
         env_local_updated = True
     return {
+        "subscription_mode": "strategy_scan_pool_with_audit_priority",
         "symbols": symbols,
+        "priority_audit_symbols": priority_symbols,
+        "scan_pool_symbols": scan_symbols,
+        "scan_pool": scan_pool,
         "env_path": str(env_path),
         "json_path": str(json_path),
         "env_local_updated": env_local_updated,
@@ -172,7 +321,7 @@ def prepare_prompt(as_of_day: str, candidate_limit: int, top_n: int, *, provider
 - Top{top_n} 代码和名称
 - 每只票覆盖原策略因子：10日成交额、T-1量能、板块持续性、前高/突破状态、盘口/大单代理、同板块共振代理、新闻/公告代理、missing真值
 - audit_id、audit_quality、equals_baseline、confidence_label
-- 简短说明明天 runner 应订阅这些 symbol
+- 简短说明 Top{top_n} 只是重点审计对象；明天 runner 应扫描更大的 strategy candidate pool，不应只扫描 Top{top_n}
 
 只输出研究观察，不输出买卖指令。
 """.strip()
@@ -206,10 +355,12 @@ def command_cron_context(args: argparse.Namespace) -> int:
         "latest_selection_audit_day": latest_audit,
         "candidate_limit": args.candidate_limit,
         "top_n": args.top_n,
+        "scan_limit": args.scan_limit,
         "runner_status": status_payload(),
         "instructions": [
             "This script only provides dynamic context for Hermes cron.",
             "Hermes must still use the second-board-radar skill and Aegis Alpha MCP tools for judgment.",
+            "TopN is for selection audit and explanation; runner subscription should use the broader strategy scan pool.",
             "Do not treat suggested business-day dates as exchange-calendar truth; if provider data is unavailable, step back to the latest available trading day and say so.",
         ],
     }
@@ -278,6 +429,8 @@ def command_prepare(args: argparse.Namespace) -> int:
         audit=audit,
         as_of_day=as_of_day,
         output_dir=output_dir,
+        scan_limit=args.scan_limit,
+        allow_current_proxy=args.allow_current_proxy_scan,
         update_env_local=args.update_env_local,
     )
     payload = {
@@ -304,7 +457,10 @@ def write_prepare_markdown(path: Path, payload: dict[str, Any]) -> None:
         f"- audit_id: `{audit.get('audit_id', '')}`",
         f"- confidence: `{audit.get('confidence_label', '')}`",
         f"- equals_baseline: `{audit.get('equals_baseline')}`",
+        f"- subscription_mode: `{subscription.get('subscription_mode', '')}`",
         f"- symbols: `{','.join(subscription.get('symbols', []))}`",
+        f"- priority_audit_symbols: `{','.join(subscription.get('priority_audit_symbols', []))}`",
+        f"- scan_pool_symbols: `{','.join(subscription.get('scan_pool_symbols', []))}`",
         f"- env file: `{subscription.get('env_path', '')}`",
         f"- .env.local updated: `{subscription.get('env_local_updated')}`",
         "",
@@ -332,6 +488,8 @@ def command_export_subscription(args: argparse.Namespace) -> int:
         audit=audit,
         as_of_day=as_of_day,
         output_dir=args.output_dir,
+        scan_limit=args.scan_limit,
+        allow_current_proxy=args.allow_current_proxy_scan,
         update_env_local=args.update_env_local,
     )
     payload["as_of_day"] = as_of_day
@@ -456,6 +614,8 @@ def build_parser() -> argparse.ArgumentParser:
     prepare.add_argument("--as-of-day", default="")
     prepare.add_argument("--candidate-limit", type=int, default=12)
     prepare.add_argument("--top-n", type=int, default=3)
+    prepare.add_argument("--scan-limit", type=int, default=50, help="Broader strategy pool size for runner subscriptions.")
+    prepare.add_argument("--allow-current-proxy-scan", action="store_true", help="Allow current-provider proxy pool when strict strategy pool is unavailable.")
     prepare.add_argument("--provider", default=DEFAULT_PROVIDER)
     prepare.add_argument("--model", default=DEFAULT_MODEL)
     prepare.add_argument("--timeout-seconds", type=int, default=360)
@@ -466,6 +626,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     export = sub.add_parser("export-subscription", help="Export JVQUANT_SUBSCRIBE_SYMBOLS from an existing audit.")
     export.add_argument("--as-of-day", default="")
+    export.add_argument("--scan-limit", type=int, default=50, help="Broader strategy pool size for runner subscriptions.")
+    export.add_argument("--allow-current-proxy-scan", action="store_true", help="Allow current-provider proxy pool when strict strategy pool is unavailable.")
     export.add_argument("--update-env-local", action="store_true")
     export.set_defaults(func=command_export_subscription)
 
@@ -492,6 +654,7 @@ def build_parser() -> argparse.ArgumentParser:
     context.add_argument("--target-day", default="")
     context.add_argument("--candidate-limit", type=int, default=12)
     context.add_argument("--top-n", type=int, default=3)
+    context.add_argument("--scan-limit", type=int, default=50)
     context.set_defaults(func=command_cron_context)
     return parser
 

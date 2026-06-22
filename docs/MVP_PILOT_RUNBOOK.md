@@ -78,6 +78,7 @@ Hermes cron runs the prepare job after close:
 
 ```text
 10 16 * * 1-5  aegis-alpha-daily-prepare
+20 16 * * 1-5  aegis-alpha-export-subscription
 ```
 
 The cron job injects dynamic context from:
@@ -89,11 +90,28 @@ The cron job injects dynamic context from:
 Hermes then uses the `second-board-radar` skill and Aegis Alpha MCP tools to:
 
 - call `get_daily_strategy_candidate_pool`
-- choose Top3 as the agent
+- choose Top3 as the agent audit/explanation layer
 - call `record_selection_audit`
-- output audit summary and runner subscription symbols
+- output audit summary
+- export runner subscription symbols from the broader strategy scan pool, with Top3 only prioritized for review
 
 The context script does not choose stocks and does not call an agent.
+
+Important boundary: Top3 is not the full live monitoring universe. The runner
+should subscribe to the wider scan pool exported by `scripts/mvp_pilot.py`
+(`subscription_mode=strategy_scan_pool_with_audit_priority`) so valid morning
+triggers outside the audit Top3 can still alert.
+
+`aegis-alpha-export-subscription` is a no-agent Hermes cron job. It runs:
+
+```bash
+scripts/mvp_pilot.py export-subscription --scan-limit 50 --allow-current-proxy-scan --update-env-local
+```
+
+Then it restarts the launchd runner so the next trading session reads the new
+`JVQUANT_SUBSCRIBE_SYMBOLS`. If the strict daily strategy pool is unavailable,
+the export can use a clearly labelled current-provider proxy pool
+(`data_mode=proxy_current_provider`) rather than silently falling back to Top3.
 
 ## Runner
 
@@ -137,6 +155,7 @@ The cron job injects context from:
 Hermes should read the latest audit, runner status, pending alerts, and `get_selection_trigger_validation`, then explain:
 
 - whether the main strategy triggered
+- whether the trigger came from the Top3 audit set or the wider scan pool
 - whether a move was only `strong_continuation_without_buy_point`
 - whether the later move was a second-board relay path
 - which facts are exact, proxy, or missing

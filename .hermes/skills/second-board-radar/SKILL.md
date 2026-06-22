@@ -121,6 +121,8 @@ Useful supporting tools:
 
 `get_daily_strategy_candidate_pool(as_of_day, limit)` is the preferred first step for the user's final workflow: close-day facts -> agent selects observation TopN -> target-day trigger facts. It returns a facts-only daily pool from first-board and large-turnover trend seeds, with 10-day turnover, T-1/as-of-day shrink, previous-high facts, market-internal theme continuity, source counts, coverage, and explicit data gaps. It does NOT rank by alpha, grade, score, or probability. Provider order is not an agent ranking.
 
+TopN is an audit/explanation layer, not the full live monitoring universe. For live or simulated early-session scanning, the runner should monitor the broader strategy candidate pool exported by `mvp_pilot.py` (`subscription_mode=strategy_scan_pool_with_audit_priority`), with TopN picks only prioritized for review. If a user asks why a valid trigger was missed, check whether the symbol was outside the exported scan pool before changing the trigger rules.
+
 `get_strategy_watchlist(as_of_day)` is the lower-level strict replay entrypoint for the user's broad trend strategy. It returns `{result_count, candidates, data_gaps}` where candidates come from merged first-board and large-turnover trend seeds, then expose 10-day turnover baseline, T-1/as-of-day shrink, previous-high break, candidate source, and partial same-theme breadth. It still does not return program scores, probabilities, or grades. Prefer `get_daily_strategy_candidate_pool` for daily TopN selection unless you need the older compact shape. Do not treat MA5 slope as part of the user's current strategy; that rule is intentionally removed for now.
 
 `get_theme_continuity(theme, as_of_day, lookback_days)` returns market-internal two-week continuity facts for a theme: active days, burst days, total limit-ups, max daily count, recent counts, and a descriptive label such as weak/emerging/persistent/fading. It does NOT check off-platform news or CLS popups, and it is not a buy/sell score.
@@ -252,6 +254,7 @@ Use `get_runner_status` when the user asks whether realtime monitoring is active
 
 22. 历史 replay / 可用性验证（按需使用）：
     - 严格 as-of replay：当用户说「站在 YYYY-MM-DD 收盘，选明日最值得观察的二板 Top3」或「生成明日观察池」时，优先调用 `get_daily_strategy_candidate_pool(as_of_day=YYYY-MM-DD)`。如果该工具不可用，才退回 `get_strategy_watchlist(as_of_day=YYYY-MM-DD)`；再不可用才退回 `get_historical_first_board_watchlist(as_of_day=YYYY-MM-DD)`，并明确说明策略字段不足。在给出 Top3 之前，不要调用 `get_historical_second_board_candidates(target_day)`，不要读取 `target_day` 的涨跌幅、封板结果或 T+1 outcome。
+    - Top3/TopN 是 agent 重点审计与解释输出，不是策略声明“只监控这些票”。实盘 runner 的订阅/扫描池应来自更大的 daily strategy candidate pool；不要把 MVP 的 Top3 审计边界误写成策略边界。
     - 严格 as-of replay 的初始 Top3 阶段只使用 `get_daily_strategy_candidate_pool` / `get_strategy_watchlist` / `get_historical_first_board_watchlist` 返回的事实池。跳过标准实时工作流里的 `get_market_sentiment_gate`、`get_active_strategy_prior`、`get_theme_leaders`、`get_promotion_dossier`、实时盘口/分钟回放等工具，除非用户在 Top3 之后明确要求补充验证。
     - 对每只入选标的，必须逐条说明：近10日均成交额是否大于50亿、T-1/as-of-day是否缩量、T日是否突破前高、板块持续性数据是否充分、候选来自 `first_board_watchlist` 还是 `large_turnover_trend_seed`。`theme_continuity.continuity_label` 只能作为市场内板块持续性事实；盘外新闻/财联社若未接入，必须列为缺口，不得脑补。当前策略暂不使用“5日均线斜率30°到60°”。
     - 不要机械地把“缩量”排在“放量”之前。T-1 缩量是锁仓/抛压证据，但强题材、超大成交额、突破结构、机构参与或板块内核心地位可以构成保留放量票的理由；反过来，缩量但方向弱、题材衰退、距前高过远，也不能因为缩量而入选。若保留放量票，必须说明放量是突破动能/机构参与/主线共振，还是散筹兑现风险。

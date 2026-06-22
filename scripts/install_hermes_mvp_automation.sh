@@ -105,12 +105,25 @@ cd "$PROJECT_ROOT"
 PYTHONPATH=src .venv/bin/python scripts/mvp_pilot.py cron-context report
 EOF
 
+cat > "$HERMES_SCRIPTS_DIR/aegis_alpha_mvp_export_subscription.sh" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$PROJECT_ROOT"
+PYTHONPATH=src .venv/bin/python scripts/mvp_pilot.py export-subscription \\
+  --scan-limit "\${AEGIS_ALPHA_SCAN_LIMIT:-50}" \\
+  --allow-current-proxy-scan \\
+  --update-env-local
+launchctl kickstart -k "gui/\$(id -u)/com.aegis-alpha.runner" >/dev/null 2>&1 || true
+EOF
+
 chmod +x "$HERMES_SCRIPTS_DIR/aegis_alpha_mvp_prepare_context.sh"
 chmod +x "$HERMES_SCRIPTS_DIR/aegis_alpha_mvp_report_context.sh"
+chmod +x "$HERMES_SCRIPTS_DIR/aegis_alpha_mvp_export_subscription.sh"
 
 echo "Installed Hermes context scripts:"
 echo "  $HERMES_SCRIPTS_DIR/aegis_alpha_mvp_prepare_context.sh"
 echo "  $HERMES_SCRIPTS_DIR/aegis_alpha_mvp_report_context.sh"
+echo "  $HERMES_SCRIPTS_DIR/aegis_alpha_mvp_export_subscription.sh"
 
 if [[ "$INSTALL_GATEWAY" == "true" ]]; then
   update_env_key "$HERMES_ENV_FILE" WEBHOOK_ENABLED true
@@ -154,7 +167,7 @@ event_id={summary.event_id}
     --script "aegis_alpha_mvp_prepare_context.sh" \
     --deliver "local" \
     "10 16 * * 1-5" \
-    "根据脚本输出的 hermes_cron_context，站在 suggested_as_of_day 收盘，调用 get_daily_strategy_candidate_pool，选择 Top3，并调用 record_selection_audit。完成后输出 audit_id、Top3、主要缺口和 runner 应订阅的 symbols。不要读取未来 target_day 结果，不要输出买卖指令。"
+    "根据脚本输出的 hermes_cron_context，站在 suggested_as_of_day 收盘，调用 get_daily_strategy_candidate_pool(candidate_limit)，选择 Top3 作为重点审计对象，并调用 record_selection_audit。Top3 不是 runner 的全部扫描范围；runner 应使用更大的 strategy scan pool。完成后输出 audit_id、Top3、主要缺口和 scan_limit。不要读取未来 target_day 结果，不要输出买卖指令。"
 
   hermes cron create \
     --name "aegis-alpha-morning-report" \
@@ -163,7 +176,16 @@ event_id={summary.event_id}
     --script "aegis_alpha_mvp_report_context.sh" \
     --deliver "local" \
     "5 10 * * 1-5" \
-    "根据脚本输出的 hermes_cron_context，读取最新 selection audit、runner alerts、get_selection_trigger_validation，并解释今天早盘是否触发主策略。区分主策略触发、强势延续未触发、二板接力路径和未启动；不要输出买卖指令。"
+    "根据脚本输出的 hermes_cron_context，读取最新 selection audit、runner alerts、runner subscribed symbols、get_selection_trigger_validation，并解释今天早盘是否触发主策略。说明 Top3 审计结果和更大 scan pool alert 是两层；区分主策略触发、强势延续未触发、二板接力路径和未启动；不要输出买卖指令。"
+
+  hermes cron create \
+    --name "aegis-alpha-export-subscription" \
+    --workdir "$PROJECT_ROOT" \
+    --script "aegis_alpha_mvp_export_subscription.sh" \
+    --no-agent \
+    --deliver "local" \
+    "20 16 * * 1-5" \
+    "Export latest Aegis Alpha scan-pool subscription and restart runner."
 
   echo "Hermes cron jobs and webhook subscription created."
   echo "Runner webhook env written to: $PROJECT_ENV_FILE"
