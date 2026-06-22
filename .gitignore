@@ -21,6 +21,7 @@ data/*.db
 data/*.db-*
 data/*.json
 data/agent_eval_runs/
+data/mvp_pilot/
 data/runner_status.json
 data/parquet/
 logs/

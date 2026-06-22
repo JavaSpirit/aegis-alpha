@@ -332,6 +332,7 @@ class AegisAlphaRunner:
 
     def _maybe_alert_from_events(self, events: list[MarketEvent]) -> None:
         try:
+            from aegis_alpha.alerts.hermes_webhook import post_alert_to_hermes
             from aegis_alpha.alerts.notifier import notify_macos
             from aegis_alpha.alerts.store import AlertStore
         except Exception:
@@ -365,6 +366,7 @@ class AegisAlphaRunner:
                 theme=event.theme,
             )
             notify_macos(alert)
+            post_alert_to_hermes(alert, self.config)
 
     def detect_buypoints_in_window(self, symbols: list[str]) -> list:
         """Window-gated live buy-point replay — runs only inside the configured monitor windows.
@@ -382,6 +384,7 @@ class AegisAlphaRunner:
         from aegis_alpha.measurements.buypoint_replay import replay_buypoint
         from aegis_alpha.measurements.minute_bars import rolling_points_to_minute_bars
         from aegis_alpha.models import MinuteReplaySnapshot
+        from aegis_alpha.alerts.hermes_webhook import post_alert_to_hermes
         from aegis_alpha.alerts.notifier import notify_macos
         from aegis_alpha.alerts.store import AlertStore
 
@@ -470,6 +473,7 @@ class AegisAlphaRunner:
                         symbol=symbol,
                     )
                     notify_macos(alert)
+                    post_alert_to_hermes(alert, self.config)
 
             except Exception:
                 # Buy-point detection is advisory; runner liveness must not depend on it
@@ -496,6 +500,7 @@ class AegisAlphaRunner:
 
     def _run_selection_validation(self) -> list:
         from aegis_alpha.alerts.store import AlertStore
+        from aegis_alpha.alerts.hermes_webhook import post_alert_to_hermes
         from aegis_alpha.alerts.notifier import notify_macos
         from aegis_alpha.mcp.server import get_selection_trigger_validation
 
@@ -519,6 +524,7 @@ class AegisAlphaRunner:
             body=body[:480], severity="info", event_id=event_id,
         )
         notify_macos(alert)
+        post_alert_to_hermes(alert, self.config)
         return [result]
 
     def _latest_prior_selection_audit(self, today: str):

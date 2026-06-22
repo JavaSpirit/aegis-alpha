@@ -30,8 +30,19 @@ def test_validation_disabled_by_config(monkeypatch):
     assert called["v"] is False
 
 
-def test_validation_skips_when_no_prior_audit(monkeypatch):
-    r = AegisAlphaRunner(connect=False)
+def test_validation_skips_when_no_prior_audit(tmp_path, monkeypatch):
+    config_path = tmp_path / "runner.yaml"
+    config_path.write_text(
+        f"""
+storage:
+  sqlite_path: "{tmp_path / 'empty.db'}"
+  status_path: "{tmp_path / 'status.json'}"
+selection_validation:
+  enabled: true
+  after: "00:00"
+""".strip()
+    )
+    r = AegisAlphaRunner(str(config_path), connect=False)
     r.config["selection_validation"] = {"enabled": True, "after": "00:00"}
     # empty store → no prior audit → returns [] without exception
     result = r.validate_selections_next_day()

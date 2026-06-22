@@ -431,6 +431,40 @@ def test_strategy_decision_packet_bundles_facts_without_program_grade(monkeypatc
     assert item["orderflow_confirmation"]["can_compute_big_order_buy_ratio"] is False
 
 
+def test_strategy_decision_packet_can_attach_mvp_proxy_context(monkeypatch):
+    monkeypatch.setenv("AEGIS_ALPHA_MARKET_DATA_PROVIDER", "mock")
+    from aegis_alpha.adapters.news_alignment import cninfo_source
+    from aegis_alpha.mcp.dependencies import reset_singletons
+    from aegis_alpha.mcp.server import get_strategy_decision_packet
+
+    monkeypatch.setattr(
+        cninfo_source,
+        "_load_announcements_raw",
+        lambda *a, **k: [{"title": "通信设备产业链公告", "date": "2026-05-25"}],
+    )
+    reset_singletons()
+    result = get_strategy_decision_packet(
+        "2026-05-25",
+        "2026-05-26",
+        symbols="002230",
+        limit=3,
+        window_start="09:31",
+        window_end="10:00",
+        include_mvp_proxy_context=True,
+    )
+
+    item = result["results"][0]
+    assert "mvp_proxy_context" in item
+    context = item["mvp_proxy_context"]
+    assert context["data_mode"] == "strategy_mvp_proxy_context"
+    assert "avg_turnover_10d" in context["data_tiers"]["exact"]
+    assert "orderflow_confirmation" in context["data_tiers"]["proxy"]
+    assert "exchange_verified_active_buy_sell_direction" in context["data_tiers"]["missing_or_not_truth"]
+    assert context["orderflow_proxy_layer"]["tick_rule_proxy_sampled_in_packet"] is False
+    assert "grade" not in item
+    assert "promotion_likelihood" not in item
+
+
 def test_second_board_next_day_outcomes_tool_accepts_symbol_string(monkeypatch):
     monkeypatch.setenv("AEGIS_ALPHA_MARKET_DATA_PROVIDER", "mock")
     from aegis_alpha.mcp.dependencies import reset_singletons

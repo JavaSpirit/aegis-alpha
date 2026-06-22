@@ -40,6 +40,26 @@ def test_trend_outcome_labels_gap_and_fade() -> None:
     assert result["outcome_label"] == "gap_and_fade"
 
 
+def test_trend_outcome_marks_gap_up_followthrough() -> None:
+    result = summarize_trend_window_outcome(
+        _snapshot([("09:31", 10.33), ("09:45", 10.5), ("10:00", 10.67)])
+    )
+
+    assert result["morning_followthrough"] is True
+    assert result["gap_up_followthrough"] is True
+    assert result["continuation_pattern"] == "gap_up_followthrough"
+
+
+def test_trend_outcome_marks_instant_limit_or_strong_hold() -> None:
+    result = summarize_trend_window_outcome(
+        _snapshot([("09:31", 10.95), ("09:35", 11.0), ("10:00", 11.0)])
+    )
+
+    assert result["morning_followthrough"] is True
+    assert result["instant_limit_or_strong_hold"] is True
+    assert result["continuation_pattern"] == "instant_limit_or_strong_hold"
+
+
 def test_trend_outcome_marks_missing_previous_close() -> None:
     result = summarize_trend_window_outcome(
         _snapshot([("09:31", 10.5)], previous_close=0.0)

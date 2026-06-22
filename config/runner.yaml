@@ -45,3 +45,9 @@ post_close:
 selection_validation:
   enabled: true
   after: "10:00"
+
+hermes_webhook:
+  enabled: false
+  url_env: HERMES_AEGIS_WEBHOOK_URL
+  secret_env: HERMES_AEGIS_WEBHOOK_SECRET
+  timeout_seconds: 3

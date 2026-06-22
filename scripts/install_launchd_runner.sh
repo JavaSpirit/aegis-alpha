@@ -6,6 +6,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 LABEL="${LABEL:-com.aegis-alpha.runner}"
 TEMPLATE="${TEMPLATE:-$REPO_ROOT/.launchd/$LABEL.plist.template}"
 TARGET="${TARGET:-$HOME/Library/LaunchAgents/$LABEL.plist}"
+LOG_ROOT="${LOG_ROOT:-$HOME/Library/Logs/AegisAlpha}"
 LOAD=true
 
 usage() {
@@ -18,6 +19,7 @@ Usage:
 Options:
   --no-load       Install the plist but do not bootstrap it.
   --target PATH   LaunchAgent plist path. Defaults to ~/Library/LaunchAgents/com.aegis-alpha.runner.plist.
+  --log-root PATH LaunchAgent stdout/stderr directory. Defaults to ~/Library/Logs/AegisAlpha.
   -h, --help      Show this help.
 USAGE
 }
@@ -30,6 +32,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --target)
       TARGET="$2"
+      shift 2
+      ;;
+    --log-root)
+      LOG_ROOT="$2"
       shift 2
       ;;
     -h|--help)
@@ -49,10 +55,12 @@ if [[ ! -f "$TEMPLATE" ]]; then
   exit 1
 fi
 
-mkdir -p "$(dirname "$TARGET")" "$REPO_ROOT/logs" "$REPO_ROOT/data"
+mkdir -p "$(dirname "$TARGET")" "$LOG_ROOT" "$REPO_ROOT/data"
 
 tmp_file="$(mktemp "${TMPDIR:-/tmp}/aegis-alpha-runner.XXXXXX.plist")"
-awk -v root="$REPO_ROOT" '{ gsub(/__PROJECT_ROOT__/, root); print }' "$TEMPLATE" > "$tmp_file"
+awk -v root="$REPO_ROOT" -v log_root="$LOG_ROOT" '
+  { gsub(/__PROJECT_ROOT__/, root); gsub(/__LOG_ROOT__/, log_root); print }
+' "$TEMPLATE" > "$tmp_file"
 plutil -lint "$tmp_file" >/dev/null
 
 if [[ -f "$TARGET" ]]; then

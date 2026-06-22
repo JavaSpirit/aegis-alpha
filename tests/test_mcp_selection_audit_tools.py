@@ -14,6 +14,7 @@ def test_record_and_get_selection_audit_roundtrip(monkeypatch, tmp_path):
     assert rec["as_of_day"] == "2026-06-19"
     assert rec["equals_baseline"] in (True, False)
     assert "confidence_label" in rec
+    assert rec["audit_quality"] == "ok"
 
     got = server.get_selection_audit("2026-06-19")
     assert got["picks"][0]["symbol"] == "002491"
@@ -39,6 +40,24 @@ def test_record_with_rejected_roundtrips(monkeypatch, tmp_path):
     got = server.get_selection_audit("2026-06-19")
     assert got["rejected"][0]["symbol"] == "300475"
     assert got["rejected"][0]["beat_by"] == "002491"
+
+
+def test_record_selection_audit_flags_incomplete_agent_explanation(monkeypatch, tmp_path):
+    from aegis_alpha.storage import AegisAlphaStore
+    store = AegisAlphaStore(str(tmp_path / "t.db"))
+    monkeypatch.setattr(server, "get_store", lambda: store)
+
+    picks = json.dumps([{"symbol": "002491"}])
+    rejected = json.dumps([{"symbol": "300475"}])
+
+    rec = server.record_selection_audit("2026-06-19", picks, rejected_json=rejected)
+
+    assert rec["audit_quality"] == "incomplete"
+    assert "audit_quality_warnings" in rec
+    assert any("002491: rank" in item for item in rec["audit_quality_warnings"])
+    assert any("002491: relative_reason" in item for item in rec["audit_quality_warnings"])
+    assert any("300475: why_rejected" in item for item in rec["audit_quality_warnings"])
+    assert any("300475: beat_by" in item for item in rec["audit_quality_warnings"])
 
 
 def test_record_equals_baseline_when_picks_match_seal_amount_top(monkeypatch, tmp_path):

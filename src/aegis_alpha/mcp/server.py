@@ -1017,6 +1017,7 @@ def get_strategy_decision_packet(
     window_end: str = "10:00",
     include_minute_volume_proxy: bool = False,
     include_full_theme_copump: bool = False,
+    include_mvp_proxy_context: bool = False,
 ) -> dict:
     """Bundle facts needed for the user's strategy without assigning grades.
 
@@ -1100,6 +1101,14 @@ def get_strategy_decision_packet(
                 "orderflow_confirmation": orderflow,
                 "intraday_theme_copump": theme_copump,
             }
+            if include_mvp_proxy_context:
+                item["mvp_proxy_context"] = _strategy_mvp_proxy_context(
+                    adapter=adapter,
+                    result=result,
+                    orderflow_confirmation=orderflow,
+                    as_of_day=safe_as_of,
+                    target_day=safe_target,
+                )
             if include_minute_volume_proxy:
                 item["historical_minute_volume_proxy"] = adapter.simulate_historical_orderflow_proxy(
                     symbol,
@@ -1128,10 +1137,99 @@ def get_strategy_decision_packet(
                 "Order-flow fields separate unavailable active big-order buy ratio from weak proxies.",
                 "Default co-pump is packet-local for speed; full same-theme replay is explicit.",
                 "Minute-volume proxy is included only when explicitly requested.",
+                "Set include_mvp_proxy_context=true to attach existing proxy layers for the full MVP strategy.",
             ],
         }
 
     return _call_tool(build)
+
+
+def _strategy_mvp_proxy_context(
+    *,
+    adapter: Any,
+    result: dict,
+    orderflow_confirmation: dict,
+    as_of_day: str,
+    target_day: str,
+) -> dict:
+    """Attach existing exact/proxy/missing context for the user's full MVP strategy."""
+    symbol = str(result.get("symbol") or "")
+    theme = str(result.get("theme") or "").strip() or "unknown"
+    strategy_coverage = result.get("strategy_coverage") or {}
+
+    def _safe_unavailable(layer: str, reason: str) -> dict:
+        return {"data_mode": "unavailable", "layer": layer, "reason": reason}
+
+    try:
+        theme_continuity = (
+            adapter.get_theme_continuity(theme, as_of_day, 14)
+            if theme != "unknown"
+            else _safe_unavailable("theme_continuity", "theme unknown")
+        )
+        if hasattr(theme_continuity, "model_dump"):
+            theme_continuity = theme_continuity.model_dump()
+    except Exception as exc:
+        theme_continuity = _safe_unavailable("theme_continuity", str(exc))
+
+    try:
+        news_alignment = get_news_alignment(theme if theme != "unknown" else symbol, lookback_days=7)
+    except Exception as exc:
+        news_alignment = _safe_unavailable("news_alignment", str(exc))
+
+    active_truth_available = bool(
+        orderflow_confirmation.get("can_compute_big_order_buy_ratio")
+        or orderflow_confirmation.get("historical_big_order_buy_ratio_available")
+    )
+    orderflow_proxy_layer = {
+        "data_mode": "proxy_context",
+        "active_big_order_buy_ratio_truth_available": active_truth_available,
+        "primary_proxy": orderflow_confirmation,
+        "tick_rule_proxy_tool": "get_tick_rule_orderflow_proxy",
+        "tick_rule_proxy_sampled_in_packet": False,
+        "notes": [
+            "Historical packet does not sample live tick-rule proxy automatically.",
+            "Use get_tick_rule_orderflow_proxy during live observation windows when realtime lv2 sample is available.",
+        ],
+    }
+
+    return {
+        "data_mode": "strategy_mvp_proxy_context",
+        "symbol": symbol,
+        "theme": theme,
+        "as_of_day": as_of_day,
+        "target_day": target_day,
+        "data_tiers": {
+            "exact": [
+                "avg_turnover_10d",
+                "prev_day_volume_ratio",
+                "previous_high_break",
+                "target_day_minute_replay",
+            ],
+            "proxy": [
+                "theme_two_week_continuity",
+                "intraday_theme_copump",
+                "orderflow_confirmation",
+                "news_alignment_cninfo",
+                "tick_rule_orderflow_proxy_live_only",
+            ],
+            "missing_or_not_truth": [
+                "exchange_verified_active_buy_sell_direction",
+                "true_trigger_window_big_order_buy_ratio",
+                "caixin_cls_popup_original_text",
+            ],
+        },
+        "coverage": {
+            "avg_turnover_10d": bool(strategy_coverage.get("avg_turnover_10d")),
+            "prev_day_shrink": bool(strategy_coverage.get("prev_day_shrink")),
+            "previous_high_break": bool(strategy_coverage.get("previous_high_break")),
+            "theme_two_week_continuity": bool(strategy_coverage.get("theme_two_week_continuity")),
+            "intraday_big_order_ratio_truth": active_truth_available,
+            "news_alignment_proxy": news_alignment.get("data_mode") != "unavailable",
+        },
+        "theme_continuity_proxy": theme_continuity,
+        "news_alignment_proxy": news_alignment,
+        "orderflow_proxy_layer": orderflow_proxy_layer,
+    }
 
 
 @mcp.tool
@@ -1219,6 +1317,12 @@ def get_strategy_trend_outcomes(
                     outcome["trigger_outcome_label"] = "triggered_but_faded"
                 elif trigger.get("buy_point_triggered"):
                     outcome["trigger_outcome_label"] = "triggered_with_followthrough"
+                elif outcome.get("continuation_pattern") in {
+                    "instant_limit_or_strong_hold",
+                    "gap_up_followthrough",
+                    "strong_trend_continuation",
+                }:
+                    outcome["trigger_outcome_label"] = "strong_continuation_without_buy_point"
                 elif trigger.get("crossed_previous_high"):
                     outcome["trigger_outcome_label"] = "crossed_without_buy_point"
                 else:
@@ -1923,6 +2027,20 @@ def record_selection_audit(
     rejected = [RejectedCandidate.model_validate(r) for r in _json.loads(rejected_json or "[]")]
     pick_symbols = [p.symbol for p in picks]
 
+    quality_warnings: list[str] = []
+    for pick in picks:
+        if pick.rank <= 0:
+            quality_warnings.append(f"{pick.symbol}: rank 缺失或非法,应为从 1 开始的名次。")
+        if not pick.relative_reason.strip():
+            quality_warnings.append(
+                f"{pick.symbol}: relative_reason 为空,无法审计它相对 near-miss 的 alpha 判断。"
+            )
+    for rejected_item in rejected:
+        if not rejected_item.why_rejected.strip():
+            quality_warnings.append(f"{rejected_item.symbol}: why_rejected 为空。")
+        if not rejected_item.beat_by.strip():
+            quality_warnings.append(f"{rejected_item.symbol}: beat_by 为空,无法说明被谁胜出。")
+
     def _run(store):
         baseline = _build_naive_baselines(as_of_day, len(pick_symbols))
         equals = compute_equals_baseline(pick_symbols, baseline)
@@ -1941,6 +2059,11 @@ def record_selection_audit(
             result["anti_mechanical_warning"] = (
                 "你的 TopN 等同某朴素基准(封单额/封成比/首封时间),未体现额外 alpha;请重新评估或明确标注。"
             )
+        if quality_warnings:
+            result["audit_quality_warnings"] = quality_warnings
+            result["audit_quality"] = "incomplete"
+        else:
+            result["audit_quality"] = "ok"
         return result
 
     return _call_store(_run)
@@ -2082,6 +2205,16 @@ def get_selection_trigger_validation(
             trend = trend_by_symbol.get(str(pick.symbol).split(".", 1)[0], {})
             if trig.get("triggered") is True:
                 triggered += 1
+            post_hoc_label = _post_hoc_attribution_label(
+                triggered=trig.get("triggered"),
+                sealed_second_board=outcome.get("sealed_second_board"),
+                touched_limit_up=outcome.get("touched_limit_up"),
+                trend_outcome_label=trend.get("outcome_label", ""),
+                trigger_outcome_label=trend.get("trigger_outcome_label", ""),
+                continuation_pattern=trend.get("continuation_pattern", ""),
+                max_gain_pct=trend.get("max_gain_pct"),
+                window_end_pct=trend.get("window_end_pct"),
+            )
             per_pick.append({
                 "symbol": pick.symbol, "rank": pick.rank,
                 "relative_reason": pick.relative_reason,
@@ -2095,6 +2228,11 @@ def get_selection_trigger_validation(
                 "next_day_open_pct": outcome.get("next_day_open_pct"),
                 "trend_outcome_label": trend.get("outcome_label", ""),
                 "trigger_outcome_label": trend.get("trigger_outcome_label", ""),
+                "continuation_pattern": trend.get("continuation_pattern", ""),
+                "gap_up_followthrough": trend.get("gap_up_followthrough"),
+                "instant_limit_or_strong_hold": trend.get("instant_limit_or_strong_hold"),
+                "strong_trend_continuation": trend.get("strong_trend_continuation"),
+                "post_hoc_attribution_label": post_hoc_label,
                 "max_gain_pct": trend.get("max_gain_pct"),
                 "window_end_pct": trend.get("window_end_pct"),
                 "drawdown_after_high_pct": trend.get("drawdown_after_high_pct"),
@@ -2114,11 +2252,45 @@ def get_selection_trigger_validation(
             "per_pick": per_pick,
             "notes": [
                 "盘中 triggered 严格表示买点状态机触发；crossed_previous_high 单独列示，不等同于触发。",
+                "post_hoc_attribution_label 仅用于事后归因,不参与选股或买点触发。",
                 "样本不足时 confidence_label=exploratory,勿过度解读。",
             ],
         }
 
     return _call_store(_run)
+
+
+def _post_hoc_attribution_label(
+    *,
+    triggered: Any,
+    sealed_second_board: Any,
+    touched_limit_up: Any,
+    trend_outcome_label: str,
+    trigger_outcome_label: str,
+    continuation_pattern: str,
+    max_gain_pct: Any,
+    window_end_pct: Any,
+) -> str:
+    """Classify validation results after the fact without changing strategy logic."""
+    max_gain = float(max_gain_pct or 0.0)
+    window_end = float(window_end_pct or 0.0)
+    if triggered is True and trigger_outcome_label == "triggered_with_followthrough":
+        return "post_hoc_trend_breakout_path"
+    if triggered is True and trigger_outcome_label == "triggered_but_faded":
+        return "post_hoc_triggered_but_faded"
+    if trigger_outcome_label == "strong_continuation_without_buy_point":
+        return "post_hoc_strong_continuation_without_buy_point"
+    if sealed_second_board is True or touched_limit_up is True:
+        return "post_hoc_second_board_relay_path"
+    if trend_outcome_label == "morning_followthrough" or continuation_pattern in {
+        "gap_up_followthrough",
+        "instant_limit_or_strong_hold",
+        "strong_trend_continuation",
+    }:
+        return "post_hoc_trend_continuation_path"
+    if max_gain >= 3.0 and window_end < 2.0:
+        return "post_hoc_intraday_spike_without_hold"
+    return "post_hoc_no_breakout_or_wait"
 
 
 def main() -> None:

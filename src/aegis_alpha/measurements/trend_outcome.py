@@ -36,6 +36,22 @@ def summarize_trend_window_outcome(
     low_pct = _pct(low_bar.last_price, previous_close)
     window_end_pct = _pct(end_bar.last_price, previous_close)
     drawdown_after_high_pct = _pct(low_after_high.last_price, high_bar.last_price)
+    gap_up_followthrough = (
+        opening_pct >= 2.0
+        and max_gain_pct >= 3.0
+        and window_end_pct >= opening_pct
+        and drawdown_after_high_pct > -3.0
+    )
+    instant_limit_or_strong_hold = (
+        max_gain_pct >= 9.5
+        and window_end_pct >= 8.0
+        and drawdown_after_high_pct > -2.0
+    )
+    strong_trend_continuation = (
+        max_gain_pct >= 3.0
+        and window_end_pct >= 2.0
+        and drawdown_after_high_pct > -3.0
+    )
 
     return {
         "symbol": snapshot.symbol,
@@ -59,6 +75,15 @@ def summarize_trend_window_outcome(
         "drawdown_after_high_pct": drawdown_after_high_pct,
         "gap_and_fade": opening_pct >= 3.0 and drawdown_after_high_pct <= -2.0 and window_end_pct < opening_pct,
         "morning_followthrough": max_gain_pct >= 3.0 and window_end_pct >= 2.0 and drawdown_after_high_pct > -3.0,
+        "gap_up_followthrough": gap_up_followthrough,
+        "instant_limit_or_strong_hold": instant_limit_or_strong_hold,
+        "strong_trend_continuation": strong_trend_continuation,
+        "continuation_pattern": _continuation_pattern(
+            gap_and_fade=opening_pct >= 3.0 and drawdown_after_high_pct <= -2.0 and window_end_pct < opening_pct,
+            gap_up_followthrough=gap_up_followthrough,
+            instant_limit_or_strong_hold=instant_limit_or_strong_hold,
+            strong_trend_continuation=strong_trend_continuation,
+        ),
         "weak_no_followthrough": max_gain_pct < 2.0 and window_end_pct <= 0.0,
         "outcome_label": _label(
             opening_pct=opening_pct,
@@ -120,6 +145,24 @@ def _label(
     if max_gain_pct < 2.0 and window_end_pct <= 0.0:
         return "weak_no_followthrough"
     return "mixed"
+
+
+def _continuation_pattern(
+    *,
+    gap_and_fade: bool,
+    gap_up_followthrough: bool,
+    instant_limit_or_strong_hold: bool,
+    strong_trend_continuation: bool,
+) -> str:
+    if gap_and_fade:
+        return "gap_and_fade"
+    if instant_limit_or_strong_hold:
+        return "instant_limit_or_strong_hold"
+    if gap_up_followthrough:
+        return "gap_up_followthrough"
+    if strong_trend_continuation:
+        return "strong_trend_continuation"
+    return "none"
 
 
 def _pct(price: float, base: float) -> float:
