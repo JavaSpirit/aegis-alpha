@@ -594,7 +594,7 @@ class JvQuantMarketDataAdapter:
     def get_historical_second_board_candidates(self, trading_day: str, limit: int = 50) -> list[dict[str, Any]]:
         safe_day = trading_day.strip()
         safe_limit = max(1, min(int(limit or 50), 200))
-        calendar = HSB.resolve_adjacent_trading_days(self.client, safe_day)
+        calendar = HSB.resolve_adjacent_trading_days(self.client, safe_day, require_next=False)
         if not calendar.get("ok"):
             return [
                 {
@@ -643,7 +643,7 @@ class JvQuantMarketDataAdapter:
     def get_historical_first_board_watchlist(self, as_of_day: str, limit: int = 50) -> list[dict[str, Any]]:
         safe_day = as_of_day.strip()
         safe_limit = max(1, min(int(limit or 50), 200))
-        calendar = HSB.resolve_adjacent_trading_days(self.client, safe_day)
+        calendar = HSB.resolve_adjacent_trading_days(self.client, safe_day, require_next=False)
         if not calendar.get("ok"):
             return [
                 {
@@ -655,7 +655,7 @@ class JvQuantMarketDataAdapter:
             ]
 
         prev_day = str(calendar["prev_day"])
-        target_day = str(calendar["next_day"])
+        target_day = str(calendar.get("next_day") or "")
         query = HSB.historical_first_board_watchlist_query(safe_day, prev_day)
         payload = self._query(query, sort_key="涨停封单额")
         prev_payload = self._query(HSB.historical_limit_up_symbols_query(prev_day))
@@ -704,7 +704,7 @@ class JvQuantMarketDataAdapter:
     def get_strategy_watchlist(self, as_of_day: str, limit: int = 50) -> list[dict[str, Any]]:
         safe_day = as_of_day.strip()
         safe_limit = max(1, min(int(limit or 50), 100))
-        calendar = HSB.resolve_adjacent_trading_days(self.client, safe_day)
+        calendar = HSB.resolve_adjacent_trading_days(self.client, safe_day, require_next=False)
         if not calendar.get("ok"):
             return [
                 {
@@ -716,7 +716,7 @@ class JvQuantMarketDataAdapter:
             ]
 
         prev_day = str(calendar["prev_day"])
-        target_day = str(calendar["next_day"])
+        target_day = str(calendar.get("next_day") or "")
         seed_items_by_symbol: dict[str, dict[str, Any]] = {}
 
         for item in self.get_historical_first_board_watchlist(safe_day, 100):
@@ -731,6 +731,8 @@ class JvQuantMarketDataAdapter:
             }
 
         trend_queries = HSB.historical_large_turnover_strategy_queries(safe_day)
+        if not calendar.get("next_day_known"):
+            trend_queries = [*trend_queries, *HSB.current_large_turnover_strategy_queries()]
         trend_source_fields: list[str] = []
         for trend_query in trend_queries:
             trend_payload = self._query(trend_query, sort_key="成交额")
@@ -750,6 +752,11 @@ class JvQuantMarketDataAdapter:
                     target_day=target_day,
                     query=trend_query,
                 )
+                if "@" not in trend_query:
+                    trend_item["data_mode"] = "current_provider_as_of"
+                    trend_item.setdefault("notes", []).append(
+                        "Current semantic query seed; date is inferred from provider field names and kline facts."
+                    )
                 if symbol in seed_items_by_symbol:
                     existing = seed_items_by_symbol[symbol]
                     existing["candidate_sources"] = sorted(

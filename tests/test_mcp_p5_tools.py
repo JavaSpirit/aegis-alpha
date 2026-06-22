@@ -195,6 +195,31 @@ def test_daily_strategy_candidate_pool_returns_agent_selection_inputs(monkeypatc
     assert "promotion_likelihood" not in item
 
 
+def test_daily_strategy_candidate_pool_filters_unavailable_rows(monkeypatch):
+    monkeypatch.setenv("AEGIS_ALPHA_MARKET_DATA_PROVIDER", "mock")
+    from aegis_alpha.mcp.dependencies import reset_singletons
+    import aegis_alpha.mcp.server as srv
+
+    class EmptyAdapter:
+        def get_strategy_watchlist(self, _day, _limit):
+            return [
+                {
+                    "symbol": "",
+                    "data_mode": "unavailable",
+                    "error": "provider returned wrong date fields",
+                }
+            ]
+
+    reset_singletons()
+    monkeypatch.setattr(srv, "_call_tool", lambda fn: fn(EmptyAdapter()))
+
+    result = srv.get_daily_strategy_candidate_pool("2026-06-19", limit=5)
+
+    assert result["result_count"] == 0
+    assert result["candidates"] == []
+    assert result["candidate_generation"]["source_counts"] == {}
+
+
 def test_theme_continuity_tool_returns_market_internal_facts(monkeypatch):
     monkeypatch.setenv("AEGIS_ALPHA_MARKET_DATA_PROVIDER", "mock")
     from aegis_alpha.mcp.dependencies import reset_singletons

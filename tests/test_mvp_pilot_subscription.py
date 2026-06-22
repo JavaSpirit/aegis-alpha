@@ -65,16 +65,17 @@ def test_subscription_export_uses_scan_pool_not_only_audit_top3(tmp_path, monkey
 def test_strategy_scan_pool_can_fall_back_to_current_proxy(monkeypatch):
     pilot = _load_mvp_pilot()
 
-    class _Server:
-        @staticmethod
-        def get_daily_strategy_candidate_pool(_as_of_day, limit):
-            return {
-                "data_mode": "daily_strategy_candidate_pool",
-                "result_count": 1,
-                "candidates": [{"symbol": "", "data_mode": "unavailable"}],
-            }
+    import aegis_alpha.mcp.server as srv
 
-    monkeypatch.setitem(__import__("sys").modules, "aegis_alpha.mcp.server", _Server)
+    monkeypatch.setattr(
+        srv,
+        "get_daily_strategy_candidate_pool",
+        lambda _as_of_day, limit: {
+            "data_mode": "daily_strategy_candidate_pool",
+            "result_count": 1,
+            "candidates": [{"symbol": "", "data_mode": "unavailable"}],
+        },
+    )
     monkeypatch.setattr(
         pilot,
         "current_limitup_scan_pool_symbols",

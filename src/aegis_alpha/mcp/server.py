@@ -110,6 +110,17 @@ def _daily_strategy_candidate_item(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _is_real_strategy_candidate(item: dict[str, Any]) -> bool:
+    symbol = str(item.get("symbol") or "").strip()
+    if not symbol:
+        return False
+    if str(item.get("data_mode") or "").lower() == "unavailable":
+        return False
+    if item.get("error"):
+        return False
+    return True
+
+
 def _time_lte(value: str, boundary: str) -> bool:
     return bool(value and boundary and value <= boundary)
 
@@ -702,7 +713,7 @@ def get_strategy_watchlist(as_of_day: str, limit: int = 50) -> list[dict] | dict
         items = [
             _compact_strategy_watchlist_item(item)
             for item in adapter.get_strategy_watchlist(safe_day, safe_limit)
-            if isinstance(item, dict)
+            if isinstance(item, dict) and _is_real_strategy_candidate(item)
         ]
         return {
             "as_of_day": safe_day,
@@ -739,7 +750,7 @@ def get_daily_strategy_candidate_pool(as_of_day: str, limit: int = 30) -> dict:
         raw_items = [
             item
             for item in adapter.get_strategy_watchlist(safe_day, safe_limit)
-            if isinstance(item, dict)
+            if isinstance(item, dict) and _is_real_strategy_candidate(item)
         ]
         candidates = [_daily_strategy_candidate_item(item) for item in raw_items]
         source_counts: dict[str, int] = {}

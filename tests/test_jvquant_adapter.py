@@ -640,6 +640,48 @@ def test_jvquant_strategy_watchlist_from_fake_client() -> None:
     assert "promotion_likelihood" not in first
 
 
+def test_jvquant_strategy_watchlist_allows_missing_next_day_for_current_prepare() -> None:
+    class NoNextClient(FakeJvQuantClient):
+        def query(self, query: str, page: int, sort_type: int, sort_key: str) -> dict:
+            if "成交额大于30亿" in query and "@" not in query:
+                fields = [
+                    "代码",
+                    "名称",
+                    "涨跌幅2026-05-27",
+                    "收盘价(日线不复权)2026-05-27",
+                    "成交额2026-05-27",
+                    "行业分类二级",
+                ]
+                rows = [["300475", "香农芯创", "2.1", "42.00", "45.00亿", "半导体"]]
+                return {"code": 0, "message": "", "data": {"count": len(rows), "fields": fields, "list": rows}}
+            return super().query(query, page, sort_type, sort_key)
+
+        def kline(self, code: str, cate: str, fq: str, type: str, limit: int) -> dict:
+            payload = super().kline(code, cate, fq, type, limit)
+            if code == "000001" and type == "day":
+                payload["data"]["list"] = [
+                    row for row in payload["data"]["list"] if row[0] <= "2026-05-27"
+                ]
+            if code == "300475" and type == "day":
+                payload["data"]["list"] = [
+                    *payload["data"]["list"],
+                    ["2026-05-26", "38.40", "41.00", "41.50", "38.00", "100", "4400000000", "4.0", "6.8", "2.60", "3.0"],
+                    ["2026-05-27", "41.00", "42.00", "42.50", "40.50", "100", "4500000000", "4.0", "2.1", "1.00", "3.0"],
+                ]
+            return payload
+
+    adapter = JvQuantMarketDataAdapter(token="fake")
+    adapter._client = NoNextClient()
+
+    rows = adapter.get_strategy_watchlist("2026-05-27", limit=5)
+
+    assert rows
+    assert rows[0]["symbol"] == "300475"
+    assert rows[0]["target_second_board_day"] == ""
+    assert rows[0]["data_mode"] == "current_provider_as_of"
+    assert rows[0]["strategy_filter_pass"] is True
+
+
 def test_jvquant_theme_continuity_from_fake_client() -> None:
     adapter = JvQuantMarketDataAdapter(token="fake")
     adapter._client = FakeJvQuantClient()
