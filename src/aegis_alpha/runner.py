@@ -23,7 +23,8 @@ from aegis_alpha.extensions.sector_events import (
     detect_sector_rotation,
     detect_theme_leader_break_board,
 )
-from aegis_alpha.models import MarketEvent, RunnerStatus
+from aegis_alpha.models import MarketEvent, RealtimeConnectionStatus, RunnerStatus
+from aegis_alpha.realtime_discovery import discover_realtime_symbols, merge_symbols
 from aegis_alpha.storage import AegisAlphaStore, read_runner_status, write_runner_status
 
 
@@ -91,6 +92,51 @@ def reconnect_delay_seconds(config: dict, failure_count: int, *, jitter: float |
     jitter_ratio = max(0.0, min(1.0, float(config.get("reconnect_jitter_ratio") or 0.20)))
     jitter_value = random.uniform(0.0, jitter_ratio) if jitter is None else max(0.0, min(jitter_ratio, jitter))
     return round(delay * (1.0 + jitter_value), 3)
+
+
+def _parse_iso_datetime(value: str) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def realtime_feed_health_error(
+    config: dict,
+    connection: RealtimeConnectionStatus,
+    *,
+    connected_at: str = "",
+    now: datetime | None = None,
+) -> str:
+    if not connection.connected:
+        return connection.last_error
+    if connection.last_error:
+        return connection.last_error
+
+    current = now or now_dt()
+    stale_after = max(1, int(config.get("stale_after_seconds") or 180))
+    no_message_grace = max(
+        1,
+        int(config.get("realtime_no_message_grace_seconds") or stale_after),
+    )
+
+    last_message_at = _parse_iso_datetime(connection.last_message_at)
+    if last_message_at is None:
+        connected_since = _parse_iso_datetime(connected_at)
+        if connected_since is None:
+            return ""
+        age_seconds = (current - connected_since).total_seconds()
+        if age_seconds >= no_message_grace:
+            return f"no_realtime_messages_after_{int(age_seconds)}s"
+        return ""
+
+    lag_seconds = (current - last_message_at).total_seconds()
+    if lag_seconds >= stale_after:
+        return f"stale_realtime_messages_after_{int(lag_seconds)}s"
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -194,6 +240,12 @@ class AegisAlphaRunner:
         self.detector = EventDetector(load_event_scoring_config())
         self._last_persist_counts: dict[str, int] = {"snapshots": 0, "events": 0}
         self._sector_events_adapter = None  # lazy-built on first _collect_sector_events
+        self._feed_connected_at = ""
+        self._runtime_symbols: list[str] = []
+        self._last_discovery_at = 0.0
+        self._last_discovery_notes: list[str] = []
+        self._last_discovery_errors: list[str] = []
+        self._last_discovery_source_counts: dict[str, int] = {}
 
     def request_stop(self, *_args: object) -> None:
         self.stop_requested = True
@@ -218,6 +270,10 @@ class AegisAlphaRunner:
                 "Runner does not call LLMs, place orders, or expose raw WebSocket messages.",
                 f"last_persisted_snapshots={self._last_persist_counts['snapshots']}",
                 f"last_persisted_events={self._last_persist_counts['events']}",
+                f"runtime_symbols={len(self._runtime_symbols)}",
+                f"last_discovery_source_counts={self._last_discovery_source_counts}",
+                *self._last_discovery_notes[-4:],
+                *[f"discovery_error={error}" for error in self._last_discovery_errors[-3:]],
             ],
         )
         write_runner_status(status, self.status_path)
@@ -242,12 +298,34 @@ class AegisAlphaRunner:
             return self.write_status("DEGRADED", next_action="connect_disabled")
 
         try:
-            symbols = subscription_symbols(self.config)
+            symbols = self._runtime_subscription_symbols()
             levels = subscription_levels(self.config)
             connection = self.client.status()
             if not connection.connected:
+                self._feed_connected_at = ""
                 self.write_status("STARTING", next_action="connect_websocket")
                 connection = self.client.subscribe(symbols, levels)
+            if connection.connected and not self._feed_connected_at:
+                self._feed_connected_at = now_iso()
+            health_error = realtime_feed_health_error(
+                self.config,
+                connection,
+                connected_at=self._feed_connected_at,
+            )
+            if health_error:
+                self.client.disconnect()
+                self._feed_connected_at = ""
+                status = self.write_status("DEGRADED", next_action="reconnect", last_error=health_error)
+                self.store.save_provider_run(
+                    provider=status.provider,
+                    run_type="runner_cycle",
+                    status=status.state,
+                    started_at=self.started_at,
+                    ended_at=status.updated_at,
+                    payload=status.model_dump(),
+                )
+                return status
+            symbols = self._maybe_expand_runtime_symbols(symbols, levels)
             self.persist_buffer_outputs(symbols)
             try:
                 self.detect_buypoints_in_window(symbols)
@@ -273,6 +351,57 @@ class AegisAlphaRunner:
             payload=status.model_dump(),
         )
         return status
+
+    def _runtime_subscription_symbols(self) -> list[str]:
+        base_symbols = subscription_symbols(self.config)
+        if not self._runtime_symbols:
+            self._runtime_symbols = merge_symbols(base_symbols, cap=self._runtime_symbol_cap())
+        else:
+            self._runtime_symbols = merge_symbols(self._runtime_symbols, base_symbols, cap=self._runtime_symbol_cap())
+        return list(self._runtime_symbols)
+
+    def _runtime_symbol_cap(self) -> int:
+        cfg = self.config.get("realtime_discovery", {}) or {}
+        return max(1, int(cfg.get("max_symbols") or self.config.get("max_realtime_symbols") or 200))
+
+    def _maybe_expand_runtime_symbols(self, symbols: list[str], levels: list[str]) -> list[str]:
+        cfg = self.config.get("realtime_discovery", {}) or {}
+        if not cfg.get("enabled", False):
+            return symbols
+
+        interval = max(30, int(cfg.get("interval_seconds") or 300))
+        current = time.time()
+        if self._last_discovery_at and current - self._last_discovery_at < interval:
+            return symbols
+        self._last_discovery_at = current
+
+        try:
+            if self._sector_events_adapter is None:
+                self._sector_events_adapter = create_market_data_adapter()
+            result = discover_realtime_symbols(
+                self._sector_events_adapter,
+                base_symbols=symbols,
+                max_symbols=self._runtime_symbol_cap(),
+                seed_turnover_yi=int(cfg.get("seed_turnover_yi") or 30),
+                include_current_limitup=bool(cfg.get("include_current_limitup", True)),
+                include_current_large_turnover=bool(cfg.get("include_current_large_turnover", True)),
+            )
+            previous = set(self._runtime_symbols)
+            self._runtime_symbols = result.symbols
+            new_symbols = [symbol for symbol in self._runtime_symbols if symbol not in previous]
+            self._last_discovery_source_counts = result.source_counts
+            self._last_discovery_errors = result.errors
+            self._last_discovery_notes = [
+                f"realtime_discovery_new_symbols={len(new_symbols)}",
+                f"realtime_discovery_total_symbols={len(self._runtime_symbols)}",
+                *result.notes,
+            ]
+            if new_symbols and self.client.status().connected:
+                self.client.subscribe(new_symbols, levels)
+            return list(self._runtime_symbols)
+        except Exception as exc:  # noqa: BLE001 - discovery must not kill runner
+            self._last_discovery_errors = [f"runtime_discovery:{type(exc).__name__}"]
+            return symbols
 
     def persist_buffer_outputs(self, symbols: list[str]) -> None:
         events = []
@@ -335,6 +464,7 @@ class AegisAlphaRunner:
             from aegis_alpha.alerts.hermes_webhook import post_alert_to_hermes
             from aegis_alpha.alerts.notifier import notify_macos
             from aegis_alpha.alerts.store import AlertStore
+            from aegis_alpha.alerts.weclaw_notifier import post_alert_to_weclaw
         except Exception:
             return
         alert_store = AlertStore(self.store)
@@ -367,6 +497,7 @@ class AegisAlphaRunner:
             )
             notify_macos(alert)
             post_alert_to_hermes(alert, self.config)
+            post_alert_to_weclaw(alert, self.config)
 
     def detect_buypoints_in_window(self, symbols: list[str]) -> list:
         """Window-gated live buy-point replay — runs only inside the configured monitor windows.
@@ -387,6 +518,7 @@ class AegisAlphaRunner:
         from aegis_alpha.alerts.hermes_webhook import post_alert_to_hermes
         from aegis_alpha.alerts.notifier import notify_macos
         from aegis_alpha.alerts.store import AlertStore
+        from aegis_alpha.alerts.weclaw_notifier import post_alert_to_weclaw
 
         now_hhmm = now_dt().strftime("%H:%M")
         windows = monitor_windows_from_config(self.config)
@@ -474,6 +606,7 @@ class AegisAlphaRunner:
                     )
                     notify_macos(alert)
                     post_alert_to_hermes(alert, self.config)
+                    post_alert_to_weclaw(alert, self.config)
 
             except Exception:
                 # Buy-point detection is advisory; runner liveness must not depend on it
@@ -502,6 +635,7 @@ class AegisAlphaRunner:
         from aegis_alpha.alerts.store import AlertStore
         from aegis_alpha.alerts.hermes_webhook import post_alert_to_hermes
         from aegis_alpha.alerts.notifier import notify_macos
+        from aegis_alpha.alerts.weclaw_notifier import post_alert_to_weclaw
         from aegis_alpha.mcp.server import get_selection_trigger_validation
 
         today = now_dt().date().isoformat()
@@ -525,6 +659,7 @@ class AegisAlphaRunner:
         )
         notify_macos(alert)
         post_alert_to_hermes(alert, self.config)
+        post_alert_to_weclaw(alert, self.config)
         return [result]
 
     def _latest_prior_selection_audit(self, today: str):
