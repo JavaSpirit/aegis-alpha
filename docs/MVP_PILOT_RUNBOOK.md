@@ -22,16 +22,18 @@ Hermes owns scheduling and event-triggered agent runs. Aegis Alpha owns market-d
 Completed in this MVP slice:
 
 - Hermes cron runs the daily prepare and morning report jobs.
+- Hermes cron runs periodic intraday agent market-observer jobs.
 - Hermes webhook accepts signed Aegis runner alert events.
 - Aegis runner can stay alive under launchd outside trading hours and report `WAITING`.
 - Runner alerts can optionally POST to Hermes webhook without affecting runner liveness.
+- Hermes can record `AgentObservation` rows and explicitly pass urgent/important observations through the deterministic WeClaw notification gate.
 - MVP proxy/context fields are available for post-hoc explanation while staying outside strategy scoring.
 
 Next work:
 
 - Validate jvQuant WebSocket subscription during a live trading session.
 - Confirm real `BUYPOINT_ALERT` and `SELECTION_VALIDATION` events flow from runner to Hermes webhook.
-- Decide the final delivery channel for Hermes reports: log, macOS notification, Telegram/Slack, or later WeChat.
+- Confirm useful `AgentObservation` quality over several live sessions and tune only the skill wording if the agent is too noisy or too timid.
 - Add provider-paid data only if the local MVP shows useful signal quality.
 
 ## Install Hermes Automation
@@ -160,6 +162,54 @@ Hermes should read the latest audit, runner status, pending alerts, and `get_sel
 - whether the later move was a second-board relay path
 - which facts are exact, proxy, or missing
 
+## Intraday Agent Observer Jobs
+
+Hermes cron runs periodic observer jobs during the trading session:
+
+```text
+42 9  * * 1-5  aegis-alpha-market-observer-0942
+15 10 * * 1-5  aegis-alpha-market-observer-1015
+18 11 * * 1-5  aegis-alpha-market-observer-1118
+35 13 * * 1-5  aegis-alpha-market-observer-1335
+20 14 * * 1-5  aegis-alpha-market-observer-1420
+55 14 * * 1-5  aegis-alpha-market-observer-1455
+```
+
+The cron job injects context from:
+
+```bash
+~/.hermes/scripts/aegis_alpha_market_observer_context.sh
+```
+
+Hermes should then:
+
+- call `get_intraday_market_context`
+- investigate notable symbols with `get_realtime_symbol_context`
+- investigate same-theme movement with `get_intraday_theme_context`
+- write useful observations with `record_agent_observation`
+- call `notify_agent_observation` only when the returned grade is `urgent` or `important`
+
+It may output zero observations. A forced observation is worse than no observation.
+
+## Agent Observations And WeClaw
+
+Agent observations are stored in SQLite as `agent_observations`. Query them through Hermes MCP:
+
+```text
+list_agent_observations(trading_day=YYYY-MM-DD)
+get_agent_observation(observation_id=...)
+```
+
+WeClaw pushes remain opt-in through `config/runner.yaml` and env:
+
+```bash
+AEGIS_ALPHA_WECLAW_ENABLED=true
+AEGIS_ALPHA_WECLAW_API_URL=http://127.0.0.1:18011/api/send
+AEGIS_ALPHA_WECLAW_TO=...
+```
+
+`notify_agent_observation` computes the notification grade deterministically and returns whether a push was attempted/succeeded. Hermes must not invent a push result.
+
 ## Manual Debug Commands
 
 Generate context without running Hermes:
@@ -167,6 +217,7 @@ Generate context without running Hermes:
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/mvp_pilot.py cron-context prepare
 PYTHONPATH=src .venv/bin/python scripts/mvp_pilot.py cron-context report
+~/.hermes/scripts/aegis_alpha_market_observer_context.sh
 ```
 
 Manually run the old local report helper when needed:

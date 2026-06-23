@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import datetime, timedelta
 from typing import Any
 
 from fastmcp import FastMCP
@@ -2438,6 +2439,60 @@ def list_agent_observations(
     return _call_store(_run)
 
 
+@mcp.tool
+def notify_agent_observation(observation_id: str) -> dict:
+    """按确定性通知策略尝试推送一条 AgentObservation 到 WeClaw。
+
+    只读取已持久化 observation。是否真正推送由 runner.yaml 与 env 开关决定;
+    notification_grade 仍由程序计算,不是 agent 自填。
+    """
+    from aegis_alpha.alerts.weclaw_notifier import (
+        post_observation_to_weclaw,
+        should_post_observation_to_weclaw,
+        weclaw_notification_enabled,
+    )
+    from aegis_alpha.config import load_project_env
+    from aegis_alpha.feedback.agent_observation import observation_notification_grade
+    from aegis_alpha.runner import load_runner_config
+
+    safe_id = observation_id.strip()
+    if not safe_id:
+        return {"data_mode": "unavailable", "error": "observation_id is required"}
+
+    def _run(store):
+        obs = store.get_agent_observation(safe_id)
+        if obs is None:
+            return {
+                "data_mode": "unavailable",
+                "observation_id": safe_id,
+                "posted": False,
+                "notes": ["无该观察记录。"],
+            }
+        load_project_env()
+        config = load_runner_config()
+        grade = observation_notification_grade(obs)
+        enabled = weclaw_notification_enabled(config)
+        eligible = should_post_observation_to_weclaw(obs, config)
+        posted = post_observation_to_weclaw(obs, config) if eligible else False
+        notes: list[str] = []
+        if not enabled:
+            notes.append("WeClaw notification disabled by config/env.")
+        elif not eligible:
+            notes.append("Observation grade is not eligible for configured WeClaw push.")
+        elif not posted:
+            notes.append("WeClaw push attempted but failed or target/url is missing.")
+        return {
+            "data_mode": "ok",
+            "observation_id": safe_id,
+            "notification_grade": grade,
+            "eligible": eligible,
+            "posted": posted,
+            "notes": notes,
+        }
+
+    return _call_store(_run)
+
+
 def _freshness_label(events: list[Any], snapshot: Any) -> str:
     """Summarize how trustworthy the aggregated facts are right now."""
     statuses = [getattr(e, "freshness_status", "unknown") for e in events]
@@ -2450,6 +2505,33 @@ def _freshness_label(events: list[Any], snapshot: Any) -> str:
     if all(s == "stale" for s in statuses):
         return "all_stale"
     return "unknown"
+
+
+def _parse_event_dt(value: str) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _event_dt(event: Any) -> datetime | None:
+    return (
+        _parse_event_dt(getattr(event, "received_at", ""))
+        or _parse_event_dt(getattr(event, "provider_timestamp", ""))
+    )
+
+
+def _filter_events_by_recent_window(events: list[Any], lookback_minutes: int) -> list[Any]:
+    """Filter relative to the newest stored event, so tests/replay stay stable."""
+    dated = [(event, _event_dt(event)) for event in events]
+    anchor = max((dt for _, dt in dated if dt is not None), default=None)
+    if anchor is None:
+        return events
+    cutoff = anchor - timedelta(minutes=max(1, lookback_minutes))
+    return [event for event, dt in dated if dt is None or dt >= cutoff]
 
 
 @mcp.tool
@@ -2466,7 +2548,9 @@ def get_realtime_symbol_context(symbol: str, lookback_minutes: int = 30) -> dict
 
     def _run(store):
         snapshot = store.latest_signal_snapshot(safe_symbol)
-        all_events = store.recent_market_events(limit=100)
+        all_events = _filter_events_by_recent_window(
+            store.recent_market_events(limit=100), safe_lookback,
+        )
         sym_key = safe_symbol.split(".")[0]
         events = [
             e for e in all_events
@@ -2496,6 +2580,100 @@ def get_realtime_symbol_context(symbol: str, lookback_minutes: int = 30) -> dict
 
 
 @mcp.tool
+def get_intraday_theme_context(theme_or_symbol: str, lookback_minutes: int = 30, peer_limit: int = 20) -> dict:
+    """盘中题材事实包 (facts-only)，供 agent 观察同题材动作。
+
+    读取当前 store 中结构化 MarketEvent / SignalSnapshot，不访问 raw WebSocket，
+    不下结论。`theme_or_symbol` 可传题材名，也可传股票代码；传代码时优先从
+    最新快照/事件推断 theme。
+    """
+    query = theme_or_symbol.strip()
+    if not query:
+        return {"data_mode": "unavailable", "error": "theme_or_symbol is required"}
+    safe_lookback = max(1, min(int(lookback_minutes or 30), 240))
+    safe_peer_limit = max(1, min(int(peer_limit or 20), 100))
+
+    def _run(store):
+        all_events = _filter_events_by_recent_window(
+            store.recent_market_events(limit=100), safe_lookback,
+        )
+        symbol_key = query.split(".")[0]
+        resolved_from_symbol = False
+        snapshot = store.latest_signal_snapshot(symbol_key)
+        theme = ""
+        if snapshot is not None and str(snapshot.theme or "").strip() not in {"", "unknown"}:
+            theme = snapshot.theme
+            resolved_from_symbol = True
+        if not theme:
+            for event in all_events:
+                if str(getattr(event, "symbol", "")).split(".")[0] == symbol_key:
+                    event_theme = str(getattr(event, "theme", "") or "")
+                    if event_theme and event_theme != "unknown":
+                        theme = event_theme
+                        resolved_from_symbol = True
+                        break
+        if not theme:
+            theme = query
+
+        theme_events = [
+            event for event in all_events
+            if str(getattr(event, "theme", "") or "") == theme
+        ]
+        counts: dict[str, int] = {}
+        active_symbols: dict[str, dict[str, Any]] = {}
+        for event in theme_events:
+            counts[event.event_type] = counts.get(event.event_type, 0) + 1
+            sym = str(event.symbol or "").split(".")[0]
+            if sym and (sym not in active_symbols or event.score > active_symbols[sym]["max_score"]):
+                active_symbols[sym] = {
+                    "symbol": sym,
+                    "name": event.name,
+                    "theme": event.theme,
+                    "max_score": event.score,
+                    "event_type": event.event_type,
+                    "freshness_status": event.freshness_status,
+                }
+        strongest = sorted(theme_events, key=lambda e: float(getattr(e, "score", 0.0)), reverse=True)
+        data_gaps: list[str] = []
+        if not theme_events:
+            data_gaps.append("该题材在当前结构化事件窗口内无事件;可能无触发、runner 未覆盖或 feed 降级。")
+        if theme == "unknown":
+            data_gaps.append("题材无法从快照/事件可靠推断。")
+        return {
+            "data_mode": "ok",
+            "theme_or_symbol": query,
+            "theme": theme,
+            "resolved_from_symbol": resolved_from_symbol,
+            "lookback_minutes": safe_lookback,
+            "recent_event_count": len(theme_events),
+            "event_count_by_type": counts,
+            "active_symbol_count": len(active_symbols),
+            "active_symbols": sorted(
+                active_symbols.values(), key=lambda x: float(x["max_score"]), reverse=True,
+            )[:safe_peer_limit],
+            "same_theme_events": [
+                {"event_id": e.event_id, "event_type": e.event_type,
+                 "symbol": e.symbol, "score": e.score,
+                 "freshness_status": e.freshness_status}
+                for e in strongest[:safe_peer_limit]
+            ],
+            "approaching_limit_up": [
+                {"symbol": e.symbol, "score": e.score}
+                for e in strongest
+                if e.event_type == "APPROACHING_LIMIT_UP"
+            ][:safe_peer_limit],
+            "freshness": _freshness_label(theme_events, snapshot if resolved_from_symbol else None),
+            "data_gaps": data_gaps,
+            "notes": [
+                "facts-only:基于已结构化 MarketEvent/SignalSnapshot 聚合,不含 raw WebSocket。",
+                "这是当前 runner/store 的题材共振代理,不是全市场行业成分股实时宽度。",
+            ],
+        }
+
+    return _call_store(_run)
+
+
+@mcp.tool
 def get_intraday_market_context(lookback_minutes: int = 30) -> dict:
     """全市场盘中事实包 (facts-only)，供周期观察器使用。
 
@@ -2510,7 +2688,9 @@ def get_intraday_market_context(lookback_minutes: int = 30) -> dict:
         runner = {"state": "STOPPED", "notes": ["runner status unavailable"]}
 
     def _run(store):
-        events = store.recent_market_events(limit=100)
+        events = _filter_events_by_recent_window(
+            store.recent_market_events(limit=100), safe_lookback,
+        )
         counts: dict[str, int] = {}
         for e in events:
             counts[e.event_type] = counts.get(e.event_type, 0) + 1

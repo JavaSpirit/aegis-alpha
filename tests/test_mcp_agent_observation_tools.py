@@ -43,6 +43,35 @@ def test_get_observation_unavailable(monkeypatch, tmp_path):
     assert res["data_mode"] == "unavailable"
 
 
+def test_notify_observation_disabled_by_default(monkeypatch, tmp_path):
+    monkeypatch.setenv("AEGIS_ALPHA_WECLAW_ENABLED", "false")
+    _store(monkeypatch, tmp_path)
+    rec = server.record_agent_observation(
+        trading_day="2026-06-23",
+        title="可通知观察",
+        summary="同题材多只标的拉升",
+        observation_type="theme_rotation",
+        theme="AI算力",
+        stance="actionable_watch",
+        confidence="medium",
+        evidence_json=json.dumps(["APPROACHING_LIMIT_UP count=2"]),
+        data_gaps_json=json.dumps(["主动买盘方向为代理数据"]),
+    )
+    res = server.notify_agent_observation(rec["observation_id"])
+    assert res["data_mode"] == "ok"
+    assert res["notification_grade"] == "important"
+    assert res["eligible"] is False
+    assert res["posted"] is False
+    assert any("disabled" in note for note in res["notes"])
+
+
+def test_notify_observation_missing_id(monkeypatch, tmp_path):
+    _store(monkeypatch, tmp_path)
+    res = server.notify_agent_observation("missing")
+    assert res["data_mode"] == "unavailable"
+    assert res["posted"] is False
+
+
 def test_record_flags_incomplete_when_no_evidence(monkeypatch, tmp_path):
     _store(monkeypatch, tmp_path)
     rec = server.record_agent_observation(

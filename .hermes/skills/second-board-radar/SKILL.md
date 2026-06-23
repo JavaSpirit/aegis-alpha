@@ -53,6 +53,13 @@ Core tools:
 - `run_historical_strategy_replay`
 - `run_historical_trigger_validation`
 - `get_intraday_theme_copump`
+- `get_realtime_symbol_context`
+- `get_intraday_theme_context`
+- `get_intraday_market_context`
+- `record_agent_observation`
+- `get_agent_observation`
+- `list_agent_observations`
+- `notify_agent_observation`
 - `get_intraday_orderflow_confirmation`
 - `sample_realtime_large_trade_proxy`
 - `simulate_historical_orderflow_proxy`
@@ -134,6 +141,14 @@ TopN is an audit/explanation layer, not the full live monitoring universe. For l
 In validation output, `intraday_theme_copump` is the closest current proxy for the user's "同板块一起拉升" condition. It counts same-theme names inside the strategy watchlist sample that had crossed previous high or triggered before this signal time. Use it as a supportive co-pump fact, but say explicitly that it is not full-market realtime sector breadth.
 
 `get_intraday_theme_copump(symbol, as_of_day, target_day, trigger_time, window_start, window_end, peer_limit)` checks same-theme peers from the full strategy watchlist, not just the displayed validation sample. Use it when the user asks whether a specific trigger had sector/theme co-pump. It is still a proxy: direct full-market industry-member breadth is not reliable from current jvQuant semantic queries.
+
+`get_realtime_symbol_context(symbol, lookback_minutes)` returns the latest structured snapshot plus recent stored events for one symbol. Use it for event-triggered agent enrichment before writing an observation. It is facts-only and may report stale/missing/proxy data.
+
+`get_intraday_theme_context(theme_or_symbol, lookback_minutes, peer_limit)` returns the current store's same-theme MarketEvent aggregation. Use it for live/near-live theme co-movement checks in the observer flow. This is a runner/store proxy, not full-market sector breadth; if it returns no events, record the gap rather than inventing sector action.
+
+`get_intraday_market_context(lookback_minutes)` returns runner state, monitored universe size, recent event counts, strongest events, and freshness. Use it as the first call for periodic market-observer jobs and as the market backdrop for alert enrichment.
+
+`record_agent_observation(trading_day, title, summary, source, observation_type, symbol, theme, stance, confidence, evidence_json, counter_evidence_json, data_gaps_json, linked_event_ids_json, linked_alert_ids_json, provider, model)` writes the agent's auditable interpretation. The agent must provide evidence, counter-evidence, data gaps, stance, and confidence; Aegis Alpha computes `notification_grade` deterministically. Never put buy/sell/order language in the observation. Use `get_agent_observation` and `list_agent_observations` to inspect prior observations and avoid repeated conclusions. If the returned `notification_grade` is `urgent` or `important`, call `notify_agent_observation(observation_id)` to let the deterministic WeClaw policy decide whether to push.
 
 `get_intraday_orderflow_confirmation(symbol, trading_day, trigger_time, window_start, window_end)` checks whether order-flow confirmation is available around a replay/live trigger. Current jvQuant historical wiring does NOT provide verified minute-level active big-order buy ratio; the tool exposes that as `historical_big_order_buy_ratio_available=false` and may return only a weak daily capital-flow proxy (`主力净额` / `超大单净额` / `大单净额` divided by daily turnover). It also exposes `realtime_orderflow_capability`: current `lv2` can support a directionless large-trade amount proxy, but `active_trade_side_available=false`, so `can_compute_big_order_buy_ratio=false`. Do not convert this proxy into a trigger-window buy-ratio claim. Use it to name the missing盘口资金 condition clearly and to provide weak context when daily flow is available.
 
@@ -269,6 +284,14 @@ Use `get_runner_status` when the user asks whether realtime monitoring is active
     - 盘中历史 replay：当用户要求“用已发生数据模拟当时事实”或“模拟买点触发”时，优先调用 `get_strategy_decision_packet(as_of_day, target_day, symbols, limit, window_start, window_end, include_minute_volume_proxy=false, include_full_theme_copump=false, include_mvp_proxy_context=true)`，除非用户只要求单只票的原始 replay。输出必须分清：收盘观察池事实、target_day 分钟级触发事实、packet-local 同题材共振事实、缺失数据（历史大单买入占比/财联社/盘外新闻）、以及是否出现 research alert。不要把 research alert 写成买入指令。
     - 复盘时若某票 `triggered=false` 但 `trend_outcome_label=morning_followthrough`、`trigger_outcome_label=strong_continuation_without_buy_point`、`continuation_pattern=gap_up_followthrough|instant_limit_or_strong_hold|strong_trend_continuation` 或窗口内 `max_gain_pct` 很强，必须把它标成“主买点状态机未覆盖的强势延续/跳空延续候选”，而不是简单判为失败。当前买点状态机仍以过前高→回踩缩量→重新上冲为主链；跳空高开后持续走强、秒板强封、未过前高但窗口持续抬升，是待验证的辅助形态。
     - 历史样本验证：当用户要求“验证可用性”“跑一段历史样本”“看看触发器命中率/误报”时，调用 `run_historical_trigger_validation(end_day, lookback_days, limit, window_start, window_end)`。必须区分 replay 触发事实和 post-trigger outcome；后者只能用于校准。
+
+23. Agent 市场观察 / 盘中 observer：
+    - 当 Hermes webhook 收到 runner alert，或 cron 触发周期性 observer 时，先调用 `get_intraday_market_context(lookback_minutes=30)`。若有具体 symbol，再调用 `get_realtime_symbol_context(symbol, lookback_minutes=30)`；若能识别 theme，再调用 `get_intraday_theme_context(theme_or_symbol, lookback_minutes=30)`。
+    - 你可以输出零条观察。只有当事实显示 strategy-adjacent 信息时，才调用 `record_agent_observation`。常见类型包括 `buy_point_quality`、`theme_rotation`、`market_regime_shift`、`strong_continuation_without_buy_point`、`watchlist_observation`、`data_gap`、`noise_or_rejected_trigger`。
+    - `stance` 只允许表达研究观察态度：`actionable_watch` / `monitor_only` / `insufficient_data` / `reject`。不要把 `actionable_watch` 写成买入建议；它只表示值得中断提醒的人类观察项。
+    - `evidence_json`、`counter_evidence_json`、`data_gaps_json` 必须是 JSON 数组字符串。至少写一条证据和一条数据缺口；若你认为无缺口，也写明 `["未发现新增数据缺口"]`，避免不可审计的空观察。
+    - 不要自填或口头承诺 notification grade。`record_agent_observation` 返回的 `notification_grade` 才是 WeClaw 推送门控依据。若 grade 为 `urgent` 或 `important`，调用 `notify_agent_observation`；若返回 `posted=false`，只汇报原因，不重试刷屏。
+    - 如果 runner 非 `RUNNING`、facts stale、或事件不足，只能记录 `data_gap` / `insufficient_data` 或直接输出无观察；不得强行给出市场方向判断。
 
 ## Strategy Prior
 

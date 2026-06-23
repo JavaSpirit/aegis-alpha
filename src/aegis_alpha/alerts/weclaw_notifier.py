@@ -18,7 +18,9 @@ DEFAULT_OBSERVATION_GRADES = ("urgent", "important")
 
 def weclaw_notification_enabled(config: dict[str, Any]) -> bool:
     cfg = config.get("weclaw_notification", {}) or {}
-    raw = cfg.get("enabled", os.environ.get("AEGIS_ALPHA_WECLAW_ENABLED", "false"))
+    raw = os.environ.get("AEGIS_ALPHA_WECLAW_ENABLED")
+    if raw is None:
+        raw = cfg.get("enabled", "false")
     return str(raw).strip().lower() in {"1", "true", "yes", "y"}
 
 

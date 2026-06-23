@@ -24,8 +24,15 @@ def _obs(**kw) -> AgentObservation:
     return AgentObservation(**base)
 
 
-def test_observation_disabled_by_default():
+def test_observation_disabled_by_default(monkeypatch):
+    monkeypatch.delenv("AEGIS_ALPHA_WECLAW_ENABLED", raising=False)
     assert should_post_observation_to_weclaw(_obs(), {}) is False
+
+
+def test_observation_enabled_by_env(monkeypatch):
+    monkeypatch.setenv("AEGIS_ALPHA_WECLAW_ENABLED", "true")
+    config = {"weclaw_notification": {"enabled": False}}
+    assert should_post_observation_to_weclaw(_obs(), config) is True
 
 
 def test_observation_important_pushed_when_enabled():

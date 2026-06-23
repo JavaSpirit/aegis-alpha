@@ -61,11 +61,71 @@ def test_symbol_context_with_data(monkeypatch, tmp_path):
     assert res["freshness"] == "has_fresh"
 
 
+def test_symbol_context_honors_recent_window(monkeypatch, tmp_path):
+    store = _store(monkeypatch, tmp_path)
+    store.save_market_events([
+        MarketEvent(
+            event_id="old", event_type="APPROACHING_LIMIT_UP", symbol="002491", theme="AI算力",
+            score=90.0, received_at="2026-06-23T09:00:00+08:00", freshness_status="fresh",
+        ),
+        MarketEvent(
+            event_id="new", event_type="BIG_ORDER_INFLOW_SPIKE", symbol="002491", theme="AI算力",
+            score=60.0, received_at="2026-06-23T09:40:00+08:00", freshness_status="fresh",
+        ),
+    ])
+    res = server.get_realtime_symbol_context("002491", lookback_minutes=30)
+    assert [e["event_id"] for e in res["recent_events"]] == ["new"]
+
+
 def test_symbol_context_stale_only(monkeypatch, tmp_path):
     store = _store(monkeypatch, tmp_path)
     store.save_market_events([_event("e1", "APPROACHING_LIMIT_UP", "002491", 50.0, fresh="stale")])
     res = server.get_realtime_symbol_context("002491")
     assert res["freshness"] == "all_stale"
+
+
+# --- get_intraday_theme_context ---
+
+def test_theme_context_with_theme_name(monkeypatch, tmp_path):
+    store = _store(monkeypatch, tmp_path)
+    store.save_market_events([
+        _event("e1", "APPROACHING_LIMIT_UP", "002491", 90.0, theme="AI算力"),
+        _event("e2", "BIG_ORDER_INFLOW_SPIKE", "300475", 70.0, theme="AI算力"),
+        _event("e3", "SEAL_ORDER_DECAY", "600519", 55.0, theme="白酒"),
+    ])
+    res = server.get_intraday_theme_context("AI算力")
+    assert res["data_mode"] == "ok"
+    assert res["theme"] == "AI算力"
+    assert res["recent_event_count"] == 2
+    assert res["active_symbol_count"] == 2
+    assert res["event_count_by_type"]["APPROACHING_LIMIT_UP"] == 1
+    assert res["same_theme_events"][0]["symbol"] == "002491"
+
+
+def test_theme_context_resolves_symbol_theme_from_snapshot(monkeypatch, tmp_path):
+    store = _store(monkeypatch, tmp_path)
+    store.save_signal_snapshot(SignalSnapshot(
+        symbol="002491", theme="机器人",
+        data_timestamp="2026-06-23T09:40:00+08:00",
+        provider_timestamp="2026-06-23T09:40:00+08:00",
+        received_at="2026-06-23T09:40:00+08:00", freshness_status="fresh",
+    ))
+    store.save_market_events([
+        _event("e1", "APPROACHING_LIMIT_UP", "002491", 90.0, theme="机器人"),
+        _event("e2", "BIG_ORDER_INFLOW_SPIKE", "300475", 70.0, theme="机器人"),
+    ])
+    res = server.get_intraday_theme_context("002491")
+    assert res["resolved_from_symbol"] is True
+    assert res["theme"] == "机器人"
+    assert res["active_symbol_count"] == 2
+
+
+def test_theme_context_empty(monkeypatch, tmp_path):
+    _store(monkeypatch, tmp_path)
+    res = server.get_intraday_theme_context("AI算力")
+    assert res["data_mode"] == "ok"
+    assert res["recent_event_count"] == 0
+    assert any("无事件" in gap for gap in res["data_gaps"])
 
 
 # --- get_intraday_market_context ---

@@ -64,6 +64,13 @@ mcp_servers:
         - run_historical_strategy_replay
         - run_historical_trigger_validation
         - get_intraday_theme_copump
+        - get_realtime_symbol_context
+        - get_intraday_theme_context
+        - get_intraday_market_context
+        - record_agent_observation
+        - get_agent_observation
+        - list_agent_observations
+        - notify_agent_observation
         - get_intraday_orderflow_confirmation
         - sample_realtime_large_trade_proxy
         - simulate_historical_orderflow_proxy
