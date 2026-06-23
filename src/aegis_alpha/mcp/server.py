@@ -2304,6 +2304,253 @@ def _post_hoc_attribution_label(
     return "post_hoc_no_breakout_or_wait"
 
 
+@mcp.tool
+def record_agent_observation(
+    trading_day: str,
+    title: str,
+    summary: str = "",
+    source: str = "periodic_market_scan",
+    observation_type: str = "watchlist_observation",
+    symbol: str = "",
+    theme: str = "",
+    stance: str = "monitor_only",
+    confidence: str = "low",
+    evidence_json: str = "",
+    counter_evidence_json: str = "",
+    data_gaps_json: str = "",
+    linked_event_ids_json: str = "",
+    linked_alert_ids_json: str = "",
+    expires_at: str = "",
+    provider: str = "",
+    model: str = "",
+) -> dict:
+    """记录一条 agent 市场观察 (facts-only, 非交易指令)。
+
+    去重:同 trading_day+source+observation_type+symbol/theme 折叠为一条。
+    notification_grade 由确定性策略从 stance+confidence+observation_type 计算,
+    agent 不自填。空 evidence/data_gaps 会给出质量提醒。
+    """
+    import json as _json
+    from aegis_alpha.models import AgentObservation
+    from aegis_alpha.feedback.agent_observation import (
+        compute_observation_id,
+        observation_notification_grade,
+    )
+
+    def _list(raw: str) -> list[str]:
+        if not raw.strip():
+            return []
+        try:
+            parsed = _json.loads(raw)
+        except _json.JSONDecodeError:
+            return []
+        return [str(x) for x in parsed] if isinstance(parsed, list) else []
+
+    observation = AgentObservation(
+        observation_id=compute_observation_id(
+            trading_day=trading_day, source=source,
+            observation_type=observation_type, symbol=symbol, theme=theme,
+        ),
+        trading_day=trading_day,
+        source=source,
+        observation_type=observation_type,
+        symbol=symbol,
+        theme=theme,
+        title=title,
+        summary=summary,
+        stance=stance,
+        confidence=confidence,
+        evidence=_list(evidence_json),
+        counter_evidence=_list(counter_evidence_json),
+        data_gaps=_list(data_gaps_json),
+        linked_event_ids=_list(linked_event_ids_json),
+        linked_alert_ids=_list(linked_alert_ids_json),
+        expires_at=expires_at,
+        provider=provider,
+        model=model,
+    )
+
+    quality_warnings: list[str] = []
+    if not observation.evidence:
+        quality_warnings.append("evidence 为空,无法审计该观察依据。")
+    if not observation.data_gaps:
+        quality_warnings.append("data_gaps 为空;诚实标注缺失数据是该层的硬要求,确认无缺口才留空。")
+    if not observation.summary.strip():
+        quality_warnings.append("summary 为空,观察不可读。")
+
+    def _run(store):
+        saved = store.save_agent_observation(observation)
+        grade = observation_notification_grade(saved)
+        result = {**saved.model_dump(), "notification_grade": grade, "data_mode": "ok"}
+        if quality_warnings:
+            result["observation_quality"] = "incomplete"
+            result["observation_quality_warnings"] = quality_warnings
+        else:
+            result["observation_quality"] = "ok"
+        return result
+
+    return _call_store(_run)
+
+
+@mcp.tool
+def get_agent_observation(observation_id: str) -> dict:
+    """按 observation_id 取一条观察 (facts-only)。无记录返回 unavailable。"""
+    from aegis_alpha.feedback.agent_observation import observation_notification_grade
+
+    def _run(store):
+        obs = store.get_agent_observation(observation_id)
+        if obs is None:
+            return {"observation_id": observation_id, "data_mode": "unavailable",
+                    "notes": ["无该观察记录。"]}
+        return {**obs.model_dump(),
+                "notification_grade": observation_notification_grade(obs),
+                "data_mode": "ok"}
+
+    return _call_store(_run)
+
+
+@mcp.tool
+def list_agent_observations(
+    trading_day: str = "",
+    source: str = "",
+    observation_type: str = "",
+    symbol: str = "",
+    limit: int = 50,
+) -> dict:
+    """列出观察,可按 trading_day/source/observation_type/symbol 过滤 (facts-only)。"""
+    from aegis_alpha.feedback.agent_observation import observation_notification_grade
+
+    def _run(store):
+        rows = store.list_agent_observations(
+            trading_day=trading_day, source=source,
+            observation_type=observation_type, symbol=symbol, limit=limit,
+        )
+        return {
+            "data_mode": "ok",
+            "count": len(rows),
+            "observations": [
+                {**obs.model_dump(),
+                 "notification_grade": observation_notification_grade(obs)}
+                for obs in rows
+            ],
+        }
+
+    return _call_store(_run)
+
+
+def _freshness_label(events: list[Any], snapshot: Any) -> str:
+    """Summarize how trustworthy the aggregated facts are right now."""
+    statuses = [getattr(e, "freshness_status", "unknown") for e in events]
+    if snapshot is not None:
+        statuses.append(getattr(snapshot, "freshness_status", "unknown"))
+    if not statuses:
+        return "no_data"
+    if any(s == "fresh" for s in statuses):
+        return "has_fresh"
+    if all(s == "stale" for s in statuses):
+        return "all_stale"
+    return "unknown"
+
+
+@mcp.tool
+def get_realtime_symbol_context(symbol: str, lookback_minutes: int = 30) -> dict:
+    """单标的盘中事实包 (facts-only)，供 agent 调查用。
+
+    薄聚合 store 中已结构化的快照 + 近期事件,不消费 raw WebSocket,
+    不下结论。每段标注 data_mode/freshness,缺失数据如实标注。
+    """
+    safe_symbol = symbol.strip()
+    if not safe_symbol:
+        return {"data_mode": "unavailable", "error": "symbol is required"}
+    safe_lookback = max(1, min(int(lookback_minutes or 30), 240))
+
+    def _run(store):
+        snapshot = store.latest_signal_snapshot(safe_symbol)
+        all_events = store.recent_market_events(limit=100)
+        sym_key = safe_symbol.split(".")[0]
+        events = [
+            e for e in all_events
+            if str(getattr(e, "symbol", "")).split(".")[0] == sym_key
+        ][:20]
+        data_gaps: list[str] = []
+        if snapshot is None:
+            data_gaps.append("无该标的结构化快照;盘中价格/涨速/大单代理不可用。")
+        if not events:
+            data_gaps.append("近期无该标的结构化事件。")
+        return {
+            "data_mode": "ok",
+            "symbol": safe_symbol,
+            "lookback_minutes": safe_lookback,
+            "snapshot": snapshot.model_dump() if snapshot is not None else None,
+            "recent_events": [e.model_dump() for e in events],
+            "recent_event_count": len(events),
+            "freshness": _freshness_label(events, snapshot),
+            "data_gaps": data_gaps,
+            "notes": [
+                "facts-only:聚合结构化快照与事件,不含 raw WebSocket,不下买卖结论。",
+                "大单/封单为代理事实,非交易所真值。",
+            ],
+        }
+
+    return _call_store(_run)
+
+
+@mcp.tool
+def get_intraday_market_context(lookback_minutes: int = 30) -> dict:
+    """全市场盘中事实包 (facts-only)，供周期观察器使用。
+
+    薄聚合 runner 健康度 + 监控标的数 + 近期事件按类型计数 + 最强事件,
+    每段标注 data_mode/freshness。不下市场结论。
+    """
+    safe_lookback = max(1, min(int(lookback_minutes or 30), 240))
+
+    try:
+        runner = status_payload()
+    except Exception:
+        runner = {"state": "STOPPED", "notes": ["runner status unavailable"]}
+
+    def _run(store):
+        events = store.recent_market_events(limit=100)
+        counts: dict[str, int] = {}
+        for e in events:
+            counts[e.event_type] = counts.get(e.event_type, 0) + 1
+        strongest = sorted(events, key=lambda e: float(getattr(e, "score", 0.0)), reverse=True)[:10]
+        approaching = [e for e in events if e.event_type == "APPROACHING_LIMIT_UP"][:10]
+        snapshot_count = store.signal_snapshot_count()
+        data_gaps: list[str] = []
+        if not events:
+            data_gaps.append("近期无结构化事件;可能盘前/无触发/feed 降级。")
+        if str(runner.get("state")) != "RUNNING":
+            data_gaps.append(f"runner 状态={runner.get('state')},盘中事实可能不完整。")
+        return {
+            "data_mode": "ok",
+            "lookback_minutes": safe_lookback,
+            "runner_state": runner.get("state"),
+            "monitored_symbol_count": len(runner.get("subscribed", []) or []),
+            "stored_snapshot_count": snapshot_count,
+            "event_count_by_type": counts,
+            "total_recent_events": len(events),
+            "strongest_events": [
+                {"event_id": e.event_id, "event_type": e.event_type,
+                 "symbol": e.symbol, "theme": e.theme, "score": e.score,
+                 "freshness_status": e.freshness_status}
+                for e in strongest
+            ],
+            "approaching_limit_up": [
+                {"symbol": e.symbol, "theme": e.theme, "score": e.score}
+                for e in approaching
+            ],
+            "freshness": _freshness_label(events, None),
+            "data_gaps": data_gaps,
+            "notes": [
+                "facts-only:全市场聚合,不下市场结论,不发买卖指令。",
+                "同题材联动事实请配合 get_intraday_theme_copump 使用。",
+            ],
+        }
+
+    return _call_store(_run)
+
+
 def main() -> None:
     mcp.run()
 

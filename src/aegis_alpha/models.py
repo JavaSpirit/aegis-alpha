@@ -119,6 +119,33 @@ NewStockTier = Literal[
     "tier_aged_out",
     "unknown",
 ]
+ObservationSource = Literal[
+    "trigger_enrichment",
+    "periodic_market_scan",
+    "manual_wechat_query",
+    "post_close_review",
+]
+ObservationType = Literal[
+    "buy_point_quality",
+    "watchlist_observation",
+    "market_regime_shift",
+    "theme_rotation",
+    "strong_continuation_without_buy_point",
+    "noise_or_rejected_trigger",
+    "data_gap",
+]
+# The agent records its own stance + confidence; it never authors the
+# notification grade. severity (info/watch/important/urgent) from the plan is
+# deliberately dropped — it duplicated stance, and notification urgency is
+# computed deterministically by observation_notification_grade() instead.
+ObservationStance = Literal[
+    "actionable_watch",
+    "monitor_only",
+    "reject",
+    "insufficient_data",
+]
+ObservationConfidence = Literal["high", "medium", "low"]
+ObservationNotificationGrade = Literal["urgent", "important", "watch", "suppress"]
 
 
 class SignalEvidence(BaseModel):
@@ -1098,3 +1125,32 @@ class SelectionAudit(BaseModel):
     provider: str = ""
     model: str = ""
     created_at: str = ""
+
+
+class AgentObservation(BaseModel):
+    """An auditable agent interpretation of current market facts.
+
+    Not a trade instruction. The agent supplies evidence, counter-evidence,
+    data gaps, stance, and confidence; notification urgency is computed
+    downstream by a deterministic policy, never authored by the agent.
+    """
+
+    observation_id: str = ""
+    created_at: str = ""
+    trading_day: str
+    source: ObservationSource = "periodic_market_scan"
+    observation_type: ObservationType = "watchlist_observation"
+    symbol: str = ""
+    theme: str = ""
+    title: str = ""
+    summary: str = ""
+    stance: ObservationStance = "monitor_only"
+    confidence: ObservationConfidence = "low"
+    evidence: list[str] = Field(default_factory=list)
+    counter_evidence: list[str] = Field(default_factory=list)
+    data_gaps: list[str] = Field(default_factory=list)
+    linked_event_ids: list[str] = Field(default_factory=list)
+    linked_alert_ids: list[str] = Field(default_factory=list)
+    expires_at: str = ""
+    provider: str = ""
+    model: str = ""

@@ -13,6 +13,7 @@ from aegis_alpha.models import (
     AgentAlert,
     AgentCorrectionAction,
     AgentCorrectionSummary,
+    AgentObservation,
     AgentReview,
     AgentReviewCorrection,
     BacktestRun,
@@ -1389,6 +1390,85 @@ class AegisAlphaStore:
                 "SELECT COUNT(DISTINCT as_of_day) FROM selection_audits"
             ).fetchone()
         return int(row[0]) if row else 0
+
+    def save_agent_observation(self, observation: AgentObservation) -> AgentObservation:
+        """Persist an agent observation. Idempotent on observation_id.
+
+        Like AlertStore.create, a colliding observation_id returns the stored
+        record unchanged — this is the dedup primitive the periodic observer
+        relies on to avoid re-notifying the same observation.
+        """
+        if not observation.created_at:
+            observation = observation.model_copy(update={"created_at": now_iso()})
+        existing = self.get_agent_observation(observation.observation_id) if observation.observation_id else None
+        if existing is not None:
+            return existing
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO agent_observations (
+                    observation_id, trading_day, source, observation_type,
+                    symbol, theme, stance, confidence, expires_at,
+                    created_at, payload_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(observation_id) DO NOTHING
+                """,
+                (
+                    observation.observation_id,
+                    observation.trading_day,
+                    observation.source,
+                    observation.observation_type,
+                    observation.symbol,
+                    observation.theme,
+                    observation.stance,
+                    observation.confidence,
+                    observation.expires_at,
+                    observation.created_at,
+                    observation.model_dump_json(),
+                ),
+            )
+        return observation
+
+    def get_agent_observation(self, observation_id: str) -> AgentObservation | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload_json FROM agent_observations WHERE observation_id = ?",
+                (observation_id,),
+            ).fetchone()
+        return AgentObservation.model_validate_json(row[0]) if row else None
+
+    def list_agent_observations(
+        self,
+        *,
+        trading_day: str = "",
+        source: str = "",
+        observation_type: str = "",
+        symbol: str = "",
+        limit: int = 50,
+    ) -> list[AgentObservation]:
+        safe_limit = max(1, min(int(limit or 50), 200))
+        clauses: list[str] = []
+        params: list[object] = []
+        if trading_day:
+            clauses.append("trading_day = ?")
+            params.append(trading_day)
+        if source:
+            clauses.append("source = ?")
+            params.append(source)
+        if observation_type:
+            clauses.append("observation_type = ?")
+            params.append(observation_type)
+        if symbol:
+            clauses.append("symbol = ?")
+            params.append(symbol)
+        query = "SELECT payload_json FROM agent_observations"
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(safe_limit)
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [AgentObservation.model_validate_json(row[0]) for row in rows]
 
 
 def write_runner_status(status: RunnerStatus, path: str | Path | None = None) -> Path:
