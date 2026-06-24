@@ -56,10 +56,18 @@ Core tools:
 - `run_historical_strategy_replay`
 - `run_historical_trigger_validation`
 - `get_intraday_theme_copump`
+- `get_realtime_symbol_context`
+- `get_intraday_theme_context`
+- `get_intraday_market_context`
+- `record_agent_observation`
+- `get_agent_observation`
+- `list_agent_observations`
+- `notify_agent_observation`
 - `get_intraday_orderflow_confirmation`
 - `sample_realtime_large_trade_proxy`
 - `simulate_historical_orderflow_proxy`
 - `get_strategy_decision_packet`
+- `get_strategy_trend_outcomes`
 - `get_second_board_next_day_outcomes`
 - `get_second_board_candidate_data_quality`
 - `explain_second_board_candidate`
@@ -123,6 +131,8 @@ Useful supporting tools:
 
 `get_daily_strategy_candidate_pool(as_of_day, limit)` is the preferred first step for the user's final workflow: close-day facts -> agent selects observation TopN -> target-day trigger facts. It returns a facts-only daily pool from first-board and large-turnover trend seeds, with 10-day turnover, T-1/as-of-day shrink, previous-high facts, market-internal theme continuity, source counts, coverage, and explicit data gaps. It does NOT rank by alpha, grade, score, or probability. Provider order is not an agent ranking.
 
+TopN is an audit/explanation layer, not the full live monitoring universe. For live or simulated early-session scanning, the runner should monitor the broader strategy candidate pool exported by `mvp_pilot.py` (`subscription_mode=strategy_scan_pool_with_audit_priority`), with TopN picks only prioritized for review. If a user asks why a valid trigger was missed, check whether the symbol was outside the exported scan pool before changing the trigger rules.
+
 `get_strategy_watchlist(as_of_day)` is the lower-level strict replay entrypoint for the user's broad trend strategy. It returns `{result_count, candidates, data_gaps}` where candidates come from merged first-board and large-turnover trend seeds, then expose 10-day turnover baseline, T-1/as-of-day shrink, previous-high break, candidate source, and partial same-theme breadth. It still does not return program scores, probabilities, or grades. Prefer `get_daily_strategy_candidate_pool` for daily TopN selection unless you need the older compact shape. Do not treat MA5 slope as part of the user's current strategy; that rule is intentionally removed for now.
 
 `get_theme_continuity(theme, as_of_day, lookback_days)` returns market-internal two-week continuity facts for a theme: active days, burst days, total limit-ups, max daily count, recent counts, and a descriptive label such as weak/emerging/persistent/fading. It does NOT check off-platform news or CLS popups, and it is not a buy/sell score.
@@ -135,13 +145,25 @@ In validation output, `intraday_theme_copump` is the closest current proxy for t
 
 `get_intraday_theme_copump(symbol, as_of_day, target_day, trigger_time, window_start, window_end, peer_limit)` checks same-theme peers from the full strategy watchlist, not just the displayed validation sample. Use it when the user asks whether a specific trigger had sector/theme co-pump. It is still a proxy: direct full-market industry-member breadth is not reliable from current jvQuant semantic queries.
 
+`get_realtime_symbol_context(symbol, lookback_minutes)` returns the latest structured snapshot plus recent stored events for one symbol. Use it for event-triggered agent enrichment before writing an observation. It is facts-only and may report stale/missing/proxy data.
+
+`get_intraday_theme_context(theme_or_symbol, lookback_minutes, peer_limit)` returns the current store's same-theme MarketEvent aggregation. Use it for live/near-live theme co-movement checks in the observer flow. This is a runner/store proxy, not full-market sector breadth; if it returns no events, record the gap rather than inventing sector action.
+
+`get_intraday_market_context(lookback_minutes)` returns runner state, monitored universe size, recent event counts, strongest events, and freshness. Use it as the first call for periodic market-observer jobs and as the market backdrop for alert enrichment.
+
+`record_agent_observation(trading_day, title, summary, source, observation_type, symbol, theme, stance, confidence, evidence_json, counter_evidence_json, data_gaps_json, linked_event_ids_json, linked_alert_ids_json, provider, model)` writes the agent's auditable interpretation. The agent must provide evidence, counter-evidence, data gaps, stance, and confidence; Aegis Alpha computes `notification_grade` deterministically. Never put buy/sell/order language in the observation. Use `get_agent_observation` and `list_agent_observations` to inspect prior observations and avoid repeated conclusions. If the returned `notification_grade` is `urgent` or `important`, call `notify_agent_observation(observation_id)` to let the deterministic WeClaw policy decide whether to push.
+
 `get_intraday_orderflow_confirmation(symbol, trading_day, trigger_time, window_start, window_end)` checks whether order-flow confirmation is available around a replay/live trigger. Current jvQuant historical wiring does NOT provide verified minute-level active big-order buy ratio; the tool exposes that as `historical_big_order_buy_ratio_available=false` and may return only a weak daily capital-flow proxy (`主力净额` / `超大单净额` / `大单净额` divided by daily turnover). It also exposes `realtime_orderflow_capability`: current `lv2` can support a directionless large-trade amount proxy, but `active_trade_side_available=false`, so `can_compute_big_order_buy_ratio=false`. Do not convert this proxy into a trigger-window buy-ratio claim. Use it to name the missing盘口资金 condition clearly and to provide weak context when daily flow is available.
 
 `sample_realtime_large_trade_proxy(symbol, duration_seconds, threshold_cny, window_start, window_end)` opens a short read-only lv2 sample and returns `directionless_large_trade_amount_cny` stats: trade count, total amount, max trade amount, and recent sample trades above the threshold. This is a weak盘口活跃度 proxy only. It cannot classify active buy vs active sell and must never be described as `big_order_buy_ratio`. If `sample_available=false` or `raw_message_count=0`, say the realtime provider did not deliver lv2 messages during the sample; do not interpret zero trade count as a true absence of large trades.
 
 `simulate_historical_orderflow_proxy(symbol, trading_day, window_start, window_end, volume_ratio_threshold)` simulates weak盘口活跃度 from historical minute bars. It flags minutes whose volume is elevated versus the opening baseline. This is useful when the user asks to simulate without market hours, but it is NOT historical Level-2, NOT tick-level large trades, and NOT active buy/sell direction.
 
-`get_strategy_decision_packet(as_of_day, target_day, symbols, limit, window_start, window_end, include_minute_volume_proxy, include_full_theme_copump)` is the preferred end-to-end fact bundle when the user wants a full strategy-style answer. It reduces tool-wandering by bundling as-of strategy facts, target-day replay, packet-local same-theme co-pump, and order-flow availability/proxy facts. It does NOT assign grades or scores; Hermes must still make the Top3/grade/promotion_likelihood judgment. Keep `include_minute_volume_proxy=false` unless the user explicitly wants offline simulation. Keep `include_full_theme_copump=false` by default; turn it on only when the user asks for broader same-theme replay because it is slower.
+`get_strategy_decision_packet(as_of_day, target_day, symbols, limit, window_start, window_end, include_minute_volume_proxy, include_full_theme_copump, include_mvp_proxy_context)` is the preferred end-to-end fact bundle when the user wants a full strategy-style answer. It reduces tool-wandering by bundling as-of strategy facts, target-day replay, packet-local same-theme co-pump, and order-flow availability/proxy facts. It does NOT assign grades or scores; Hermes must still make the Top3/grade/promotion_likelihood judgment. Keep `include_minute_volume_proxy=false` unless the user explicitly wants offline simulation. Keep `include_full_theme_copump=false` by default; turn it on only when the user asks for broader same-theme replay because it is slower. For the user's MVP strategy, set `include_mvp_proxy_context=true` so each result includes exact/proxy/missing tiers, theme-continuity proxy, cninfo news-alignment proxy, and orderflow proxy context in one packet.
+
+`get_strategy_trend_outcomes(as_of_day, target_day, symbols, limit, window_start, window_end)` is the preferred broad-strategy validation outcome after the agent has selected TopN. It is not second-board-only. It returns target-day window facts such as max_gain_pct, drawdown_after_high_pct, window_end_pct, gap_and_fade, morning_followthrough, buy_point_triggered, crossed_previous_high, and trigger_outcome_label. Use this before relying on second-board-specific `sealed_next_day` labels for the user's large-turnover trend strategy.
+
+`post_hoc_attribution_label` appears only in validation output. It is a post-hoc explanation label, not a strategy input, not a buy-point condition, and not a scoring rule. Use it to avoid misattributing outcomes: `post_hoc_trend_breakout_path` means the original breakout/retest/resurge path explains the result; `post_hoc_strong_continuation_without_buy_point` means direction was strong but the main buy-point state machine did not trigger; `post_hoc_second_board_relay_path` means the later outcome came from first-to-second-board relay behavior rather than the user's trend-breakout buy point.
 
 `get_historical_second_board_candidates(trading_day)` and `get_second_board_next_day_outcomes(trading_day, symbols)` return historical FACTS and objective T+1 labels. They do not return program scores, probabilities, or grades. Use them when the user asks whether the approach is usable, asks for replay/backtest-like evidence, asks why a judgment failed, or asks for historical comparison before trusting a live candidate. These are post-hoc tools for a known trading day; they are not valid as the initial candidate pool for an as-of-close replay.
 
@@ -150,6 +172,8 @@ In validation output, `intraday_theme_copump` is the closest current proxy for t
 `get_news_alignment(symbol_or_theme, lookback_days)` 提供合规新闻/公告对齐事实(巨潮资讯公告)。这是合规替代,**明确不是财联社电报原文**(`source_is_caixin=false`);只作题材持续性的弱证据辅助,不作主信号。取数失败时降级,不得伪造消息面。
 
 `get_tick_rule_orderflow_proxy(symbol, window_start, window_end, big_trade_threshold_cny, limit_up_price)` 用 tick-rule 从 lv2 逐笔价格序列推断大单主动买入占比。**这是推断代理,非交易所真值 BS flag**(`is_exchange_truth=false`、`method="tick_rule"`);A股实测精度约70-80%,且封板博弈时系统性虚高——当 `sealing_distortion_warning=true`(价格触及/接近涨停)时该占比不可信,不得当作主动买入真值。它是买点的资金确认弱证据层,买点主链(过前高→回踩缩量→重新上冲)不依赖此值。与 `sample_realtime_large_trade_proxy`(无方向金额)互补。
+
+Hard data boundary: Aegis Alpha currently does not have exchange-verified intraday active buy/sell direction. Treat directionless lv2 large-trade amount, tick-rule inference, and daily semantic capital-flow fields as proxies only. Never describe any of them as true trigger-window active big-order buy ratio.
 
 If these tools are unavailable, first ask Hermes to reload MCP with `/reload-mcp` or inspect the Hermes MCP configuration. Do not fabricate live data.
 
@@ -248,8 +272,10 @@ Use `get_runner_status` when the user asks whether realtime monitoring is active
 
 22. 历史 replay / 可用性验证（按需使用）：
     - 严格 as-of replay：当用户说「站在 YYYY-MM-DD 收盘，选明日最值得观察的二板 Top3」或「生成明日观察池」时，优先调用 `get_daily_strategy_candidate_pool(as_of_day=YYYY-MM-DD)`。如果该工具不可用，才退回 `get_strategy_watchlist(as_of_day=YYYY-MM-DD)`；再不可用才退回 `get_historical_first_board_watchlist(as_of_day=YYYY-MM-DD)`，并明确说明策略字段不足。在给出 Top3 之前，不要调用 `get_historical_second_board_candidates(target_day)`，不要读取 `target_day` 的涨跌幅、封板结果或 T+1 outcome。
+    - Top3/TopN 是 agent 重点审计与解释输出，不是策略声明“只监控这些票”。实盘 runner 的订阅/扫描池应来自更大的 daily strategy candidate pool；不要把 MVP 的 Top3 审计边界误写成策略边界。
     - 严格 as-of replay 的初始 Top3 阶段只使用 `get_daily_strategy_candidate_pool` / `get_strategy_watchlist` / `get_historical_first_board_watchlist` 返回的事实池。跳过标准实时工作流里的 `get_market_sentiment_gate`、`get_active_strategy_prior`、`get_theme_leaders`、`get_promotion_dossier`、实时盘口/分钟回放等工具，除非用户在 Top3 之后明确要求补充验证。
     - 对每只入选标的，必须逐条说明：近10日均成交额是否大于50亿、T-1/as-of-day是否缩量、T日是否突破前高、板块持续性数据是否充分、候选来自 `first_board_watchlist` 还是 `large_turnover_trend_seed`。`theme_continuity.continuity_label` 只能作为市场内板块持续性事实；盘外新闻/财联社若未接入，必须列为缺口，不得脑补。当前策略暂不使用“5日均线斜率30°到60°”。
+    - 不要机械地把“缩量”排在“放量”之前。T-1 缩量是锁仓/抛压证据，但强题材、超大成交额、突破结构、机构参与或板块内核心地位可以构成保留放量票的理由；反过来，缩量但方向弱、题材衰退、距前高过远，也不能因为缩量而入选。若保留放量票，必须说明放量是突破动能/机构参与/主线共振，还是散筹兑现风险。
     - 当用户问「这个方向能不能验证」「为什么 agent 这么判断」「今天二板环境与历史相似吗」时，先调用 `get_historical_second_board_candidates(trading_day)` 取历史候选事实，再调用 `get_second_board_next_day_outcomes(trading_day, symbols)` 取 T+1 结果。
     - 你的任务是用历史事实校准自己的判断，不要要求程序提供评分权重。程序只给数据；agent 给 `promotion_likelihood` 和 `grade`。
     - 对比至少三个朴素基准：封单额优先、封成比/封成比近似优先、首次封板时间优先。先列出这三个基准 Top3，再给你的 agent Top3。
@@ -258,8 +284,17 @@ Use `get_runner_status` when the user asks whether realtime monitoring is active
     - 封成比/封单额只能作为封板质量证据，不得作为唯一或主排序理由。在 strict as-of replay 的 Top3 生成阶段，不要引用同一 replay 的未来失败/成功案例；这些只能在明确标注为 post-hoc validation 的段落里使用。
     - 输出历史 replay 结论时，区分「胜过候选池平均」和「胜过简单基准」。前者只能说明有基础筛选价值；后者才说明 agent 判断可能有额外价值。
     - 不要从单日 replay 推断稳定胜率。若样本少于 10 个交易日，结论必须标为 exploratory。
-    - 盘中历史 replay：当用户要求“用已发生数据模拟当时事实”或“模拟买点触发”时，优先调用 `get_strategy_decision_packet(as_of_day, target_day, symbols, limit, window_start, window_end, include_minute_volume_proxy=false, include_full_theme_copump=false)`，除非用户只要求单只票的原始 replay。输出必须分清：收盘观察池事实、target_day 分钟级触发事实、packet-local 同题材共振事实、缺失数据（历史大单买入占比/财联社/盘外新闻）、以及是否出现 research alert。不要把 research alert 写成买入指令。
+    - 盘中历史 replay：当用户要求“用已发生数据模拟当时事实”或“模拟买点触发”时，优先调用 `get_strategy_decision_packet(as_of_day, target_day, symbols, limit, window_start, window_end, include_minute_volume_proxy=false, include_full_theme_copump=false, include_mvp_proxy_context=true)`，除非用户只要求单只票的原始 replay。输出必须分清：收盘观察池事实、target_day 分钟级触发事实、packet-local 同题材共振事实、缺失数据（历史大单买入占比/财联社/盘外新闻）、以及是否出现 research alert。不要把 research alert 写成买入指令。
+    - 复盘时若某票 `triggered=false` 但 `trend_outcome_label=morning_followthrough`、`trigger_outcome_label=strong_continuation_without_buy_point`、`continuation_pattern=gap_up_followthrough|instant_limit_or_strong_hold|strong_trend_continuation` 或窗口内 `max_gain_pct` 很强，必须把它标成“主买点状态机未覆盖的强势延续/跳空延续候选”，而不是简单判为失败。当前买点状态机仍以过前高→回踩缩量→重新上冲为主链；跳空高开后持续走强、秒板强封、未过前高但窗口持续抬升，是待验证的辅助形态。
     - 历史样本验证：当用户要求“验证可用性”“跑一段历史样本”“看看触发器命中率/误报”时，调用 `run_historical_trigger_validation(end_day, lookback_days, limit, window_start, window_end)`。必须区分 replay 触发事实和 post-trigger outcome；后者只能用于校准。
+
+23. Agent 市场观察 / 盘中 observer：
+    - 当 Hermes webhook 收到 runner alert，或 cron 触发周期性 observer 时，先调用 `get_intraday_market_context(lookback_minutes=30)`。若有具体 symbol，再调用 `get_realtime_symbol_context(symbol, lookback_minutes=30)`；若能识别 theme，再调用 `get_intraday_theme_context(theme_or_symbol, lookback_minutes=30)`。
+    - 你可以输出零条观察。只有当事实显示 strategy-adjacent 信息时，才调用 `record_agent_observation`。常见类型包括 `buy_point_quality`、`theme_rotation`、`market_regime_shift`、`strong_continuation_without_buy_point`、`watchlist_observation`、`data_gap`、`noise_or_rejected_trigger`。
+    - `stance` 只允许表达研究观察态度：`actionable_watch` / `monitor_only` / `insufficient_data` / `reject`。不要把 `actionable_watch` 写成买入建议；它只表示值得中断提醒的人类观察项。
+    - `evidence_json`、`counter_evidence_json`、`data_gaps_json` 必须是 JSON 数组字符串。至少写一条证据和一条数据缺口；若你认为无缺口，也写明 `["未发现新增数据缺口"]`，避免不可审计的空观察。
+    - 不要自填或口头承诺 notification grade。`record_agent_observation` 返回的 `notification_grade` 才是 WeClaw 推送门控依据。若 grade 为 `urgent` 或 `important`，调用 `notify_agent_observation`；若返回 `posted=false`，只汇报原因，不重试刷屏。
+    - 如果 runner 非 `RUNNING`、facts stale、或事件不足，只能记录 `data_gap` / `insufficient_data` 或直接输出无观察；不得强行给出市场方向判断。
 
 ## Strategy Prior
 
@@ -369,7 +404,7 @@ This is a self-calibration mirror, not a program grade and not an order. Read it
 
 ## 闭环验证（二期A，#3+#4）
 
-闭环验证(二期A,#3+#4):收盘 agent 从候选池选完 TopN 后,调 `record_selection_audit(as_of_day, picks_json, rejected_json, candidate_pool_size)` 持久化选股决策——picks_json 每只含 symbol/rank/relative_reason(相对理由:为什么它胜过某只更高封单额/封成比的落选股)/caveats(缺失数据,如盘外新闻未确认);rejected_json 记录落选 near-miss 及 why_rejected/beat_by。程序自动用当天历史二板事实算三朴素基准 TopN(封单额/封成比/首封时间)并标记 `equals_baseline`:若为 true,说明你的 TopN 等同机械基准、未体现额外 alpha,返回里会带 anti_mechanical_warning,你必须重评或明确说明。`confidence_label` 在累计选股记录 <10 个交易日时强制 exploratory。次日(或任意目标日)调 `get_selection_trigger_validation(as_of_day, target_day, window_start, window_end)` 对照闭环:逐只 pick 给出 09:31-10:00 盘中是否过前高/买点触发(trigger_time)+ 次日封板/开盘涨幅,汇总 trigger_rate;盘中/次日事实任一不可用时该字段 data_mode 标 unavailable,不脑补。runner 在交易日 10:00 后自动对最近一条昨收审计跑一次验证并发 SELECTION_VALIDATION 告警(advisory,只读审计+写告警,绝不下单),通过 get_pending_alerts 拉取。样本不足时所有结论标 exploratory,不得据单日/小样本下稳定胜率结论。
+闭环验证(二期A,#3+#4):收盘 agent 从候选池选完 TopN 后,调 `record_selection_audit(as_of_day, picks_json, rejected_json, candidate_pool_size)` 持久化选股决策——picks_json 每只含 symbol/rank/relative_reason(相对理由:为什么它胜过某只更高封单额/封成比的落选股)/caveats(缺失数据,如盘外新闻未确认);rejected_json 记录落选 near-miss 及 why_rejected/beat_by。程序自动用同日候选池/历史二板事实算三朴素基准 TopN(封单额/封成比/首封时间)并标记 `equals_baseline`:若为 true,说明你的 TopN 等同某朴素基准、未体现额外 alpha,返回里会带 anti_mechanical_warning,你必须重评或明确说明。若返回 `audit_quality=incomplete` 或 `audit_quality_warnings`,说明 rank/相对理由/落选解释不足,必须补全审计后重新调用 `record_selection_audit`,不要直接进入次日验证。`confidence_label` 在累计选股记录 <10 个交易日时强制 exploratory。次日(或任意目标日)调 `get_selection_trigger_validation(as_of_day, target_day, window_start, window_end)` 对照闭环:逐只 pick 分开给出 09:31-10:00 是否过前高(crossed_previous_high/cross_time)、买点状态机是否真正触发(triggered/trigger_time/no_signal_reason)、宽策略趋势 outcome(trend_outcome_label/trigger_outcome_label/max_gain_pct/window_end_pct/drawdown_after_high_pct)、事后归因(post_hoc_attribution_label)、次日触板/封板/开盘涨幅,汇总 trigger_rate;注意 trigger_rate 只统计真正买点触发,不把单纯过前高算作触发。`post_hoc_attribution_label` 只能用于复盘解释,不得反向写成策略筛选条件或买点。盘中/次日事实任一不可用时该字段 data_mode 标 unavailable,不脑补。runner 在交易日 10:00 后自动对最近一条昨收审计跑一次验证并发 SELECTION_VALIDATION 告警(advisory,只读审计+写告警,绝不下单),通过 get_pending_alerts 拉取。样本不足时所有结论标 exploratory,不得据单日/小样本下稳定胜率结论。
 
 ## Scheduled Use
 

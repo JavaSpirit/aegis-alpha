@@ -5,9 +5,27 @@ from aegis_alpha.storage import AegisAlphaStore
 from aegis_alpha.mcp import server as srv
 
 
+def _patch_trend_unavailable(monkeypatch):
+    monkeypatch.setattr(
+        srv,
+        "get_strategy_trend_outcomes",
+        lambda *a, **k: {"data_mode": "unavailable", "outcomes": []},
+    )
+
+
+def _patch_baselines(monkeypatch):
+    monkeypatch.setattr(
+        srv,
+        "_build_naive_baselines",
+        lambda *a, **k: {"seal_amount": [], "seal_ratio": [], "first_seal_time": [], "source": "test"},
+    )
+
+
 def test_trigger_validation_joins_audit_and_facts(monkeypatch, tmp_path):
     store = AegisAlphaStore(str(tmp_path / "t.db"))
     monkeypatch.setattr(srv, "get_store", lambda: store)
+    _patch_trend_unavailable(monkeypatch)
+    _patch_baselines(monkeypatch)
 
     picks = json.dumps([{"symbol": "002491", "rank": 1, "relative_reason": "胜过X"}])
     srv.record_selection_audit("2026-06-18", picks)
@@ -37,6 +55,8 @@ def test_trigger_validation_no_audit_unavailable(monkeypatch, tmp_path):
 def test_trigger_validation_degrades_when_upstream_fails(monkeypatch, tmp_path):
     store = AegisAlphaStore(str(tmp_path / "t.db"))
     monkeypatch.setattr(srv, "get_store", lambda: store)
+    _patch_trend_unavailable(monkeypatch)
+    _patch_baselines(monkeypatch)
     picks = json.dumps([{"symbol": "002491", "rank": 1}])
     srv.record_selection_audit("2026-06-18", picks)
     # upstream helpers degrade (return None triggered / unavailable) — must not crash
@@ -53,6 +73,8 @@ def test_trigger_validation_degrades_when_upstream_fails(monkeypatch, tmp_path):
 def test_trigger_validation_propagates_upstream_unavailable(monkeypatch, tmp_path):
     store = AegisAlphaStore(str(tmp_path / "t.db"))
     monkeypatch.setattr(srv, "get_store", lambda: store)
+    _patch_trend_unavailable(monkeypatch)
+    _patch_baselines(monkeypatch)
     srv.record_selection_audit("2026-06-18", json.dumps([{"symbol": "002491", "rank": 1}]))
     monkeypatch.setattr(srv, "get_strategy_decision_packet", lambda *a, **k: {"data_mode": "unavailable"})
     monkeypatch.setattr(srv, "get_second_board_next_day_outcomes", lambda *a, **k: {"data_mode": "unavailable"})
@@ -61,3 +83,227 @@ def test_trigger_validation_propagates_upstream_unavailable(monkeypatch, tmp_pat
     assert res["per_pick"][0]["trigger_data_mode"] == "unavailable"
     assert res["per_pick"][0]["outcome_data_mode"] == "unavailable"
     assert res["triggered_count"] == 0
+
+
+def test_trigger_validation_does_not_count_opening_cross_as_buy_point(monkeypatch, tmp_path):
+    store = AegisAlphaStore(str(tmp_path / "t.db"))
+    monkeypatch.setattr(srv, "get_store", lambda: store)
+    _patch_trend_unavailable(monkeypatch)
+    _patch_baselines(monkeypatch)
+    srv.record_selection_audit("2026-06-18", json.dumps([{"symbol": "002491", "rank": 1}]))
+    monkeypatch.setattr(
+        srv,
+        "get_strategy_decision_packet",
+        lambda *a, **k: {
+            "data_mode": "strategy_decision_packet",
+            "results": [
+                {
+                    "symbol": "002491",
+                    "signal_count": 0,
+                    "first_triggered_at": "",
+                    "pattern_diagnostics": {
+                        "crossed_previous_high": True,
+                        "first_cross_time": "09:31",
+                        "opening_window_crossed_previous_high": True,
+                        "no_signal_reason": "opening_breakout_candidate_but_no_qualified_pullback_resurge",
+                    },
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(srv, "get_second_board_next_day_outcomes", lambda *a, **k: {"outcomes": []})
+
+    res = srv.get_selection_trigger_validation("2026-06-18", "2026-06-19")
+
+    assert res["triggered_count"] == 0
+    assert res["per_pick"][0]["triggered"] is False
+    assert res["per_pick"][0]["crossed_previous_high"] is True
+    assert res["per_pick"][0]["cross_time"] == "09:31"
+    assert res["per_pick"][0]["no_signal_reason"] == "opening_breakout_candidate_but_no_qualified_pullback_resurge"
+
+
+def test_trigger_validation_maps_sealed_next_day_field(monkeypatch, tmp_path):
+    store = AegisAlphaStore(str(tmp_path / "t.db"))
+    monkeypatch.setattr(srv, "get_store", lambda: store)
+    _patch_trend_unavailable(monkeypatch)
+    _patch_baselines(monkeypatch)
+    srv.record_selection_audit("2026-06-18", json.dumps([{"symbol": "002491", "rank": 1}]))
+    monkeypatch.setattr(
+        srv,
+        "_validation_intraday_trigger",
+        lambda *a: {
+            "triggered": True,
+            "crossed_previous_high": True,
+            "trigger_time": "09:41",
+            "cross_time": "09:32",
+            "no_signal_reason": "signal_triggered",
+            "data_mode": "ok",
+        },
+    )
+    monkeypatch.setattr(
+        srv,
+        "get_second_board_next_day_outcomes",
+        lambda *a, **k: {
+            "outcomes": [
+                {"symbol": "002491", "sealed_next_day": True, "next_day_open_pct": 3.2}
+            ]
+        },
+    )
+
+    res = srv.get_selection_trigger_validation("2026-06-18", "2026-06-19")
+
+    assert res["per_pick"][0]["sealed_second_board"] is True
+
+
+def test_trigger_validation_includes_trend_outcome(monkeypatch, tmp_path):
+    store = AegisAlphaStore(str(tmp_path / "t.db"))
+    monkeypatch.setattr(srv, "get_store", lambda: store)
+    _patch_baselines(monkeypatch)
+    srv.record_selection_audit("2026-06-18", json.dumps([{"symbol": "002491", "rank": 1}]))
+    monkeypatch.setattr(
+        srv,
+        "_validation_intraday_trigger",
+        lambda *a: {
+            "triggered": True,
+            "crossed_previous_high": True,
+            "trigger_time": "09:41",
+            "cross_time": "09:32",
+            "no_signal_reason": "signal_triggered",
+            "data_mode": "ok",
+        },
+    )
+    monkeypatch.setattr(
+        srv,
+        "_validation_next_day_outcome",
+        lambda *a: {"sealed_second_board": None, "next_day_open_pct": 1.2, "data_mode": "ok"},
+    )
+    monkeypatch.setattr(
+        srv,
+        "get_strategy_trend_outcomes",
+        lambda *a, **k: {
+            "data_mode": "strategy_trend_outcomes",
+            "outcomes": [
+                {
+                    "symbol": "002491",
+                    "data_mode": "trend_window_outcome",
+                    "outcome_label": "gap_and_fade",
+                    "trigger_outcome_label": "triggered_but_faded",
+                    "max_gain_pct": 8.4,
+                    "window_end_pct": 1.1,
+                    "drawdown_after_high_pct": -6.2,
+                }
+            ],
+        },
+    )
+
+    res = srv.get_selection_trigger_validation("2026-06-18", "2026-06-19")
+
+    assert res["per_pick"][0]["trend_outcome_label"] == "gap_and_fade"
+    assert res["per_pick"][0]["trigger_outcome_label"] == "triggered_but_faded"
+    assert res["per_pick"][0]["max_gain_pct"] == 8.4
+
+
+def test_trigger_validation_marks_strong_continuation_without_buy_point(monkeypatch, tmp_path):
+    store = AegisAlphaStore(str(tmp_path / "t.db"))
+    monkeypatch.setattr(srv, "get_store", lambda: store)
+    _patch_baselines(monkeypatch)
+    srv.record_selection_audit("2026-06-18", json.dumps([{"symbol": "603083", "rank": 1}]))
+    monkeypatch.setattr(
+        srv,
+        "_validation_intraday_trigger",
+        lambda *a: {
+            "triggered": False,
+            "crossed_previous_high": False,
+            "trigger_time": "",
+            "cross_time": "",
+            "no_signal_reason": "never_crossed_previous_high",
+            "data_mode": "ok",
+        },
+    )
+    monkeypatch.setattr(
+        srv,
+        "_validation_next_day_outcome",
+        lambda *a: {"sealed_second_board": False, "next_day_open_pct": 3.3, "data_mode": "ok"},
+    )
+    monkeypatch.setattr(
+        srv,
+        "get_strategy_trend_outcomes",
+        lambda *a, **k: {
+            "data_mode": "strategy_trend_outcomes",
+            "outcomes": [
+                {
+                    "symbol": "603083",
+                    "data_mode": "trend_window_outcome",
+                    "outcome_label": "morning_followthrough",
+                    "trigger_outcome_label": "strong_continuation_without_buy_point",
+                    "continuation_pattern": "gap_up_followthrough",
+                    "gap_up_followthrough": True,
+                    "instant_limit_or_strong_hold": False,
+                    "strong_trend_continuation": True,
+                    "max_gain_pct": 6.7,
+                    "window_end_pct": 6.7,
+                    "drawdown_after_high_pct": 0.0,
+                }
+            ],
+        },
+    )
+
+    res = srv.get_selection_trigger_validation("2026-06-18", "2026-06-19")
+
+    item = res["per_pick"][0]
+    assert item["triggered"] is False
+    assert item["trend_outcome_label"] == "morning_followthrough"
+    assert item["trigger_outcome_label"] == "strong_continuation_without_buy_point"
+    assert item["continuation_pattern"] == "gap_up_followthrough"
+    assert item["gap_up_followthrough"] is True
+    assert item["post_hoc_attribution_label"] == "post_hoc_strong_continuation_without_buy_point"
+
+
+def test_trigger_validation_marks_post_hoc_second_board_relay_path(monkeypatch, tmp_path):
+    store = AegisAlphaStore(str(tmp_path / "t.db"))
+    monkeypatch.setattr(srv, "get_store", lambda: store)
+    _patch_baselines(monkeypatch)
+    srv.record_selection_audit("2026-06-18", json.dumps([{"symbol": "002428", "rank": 1}]))
+    monkeypatch.setattr(
+        srv,
+        "_validation_intraday_trigger",
+        lambda *a: {
+            "triggered": False,
+            "crossed_previous_high": False,
+            "trigger_time": "",
+            "cross_time": "",
+            "no_signal_reason": "never_crossed_previous_high",
+            "data_mode": "ok",
+        },
+    )
+    monkeypatch.setattr(
+        srv,
+        "_validation_next_day_outcome",
+        lambda *a: {"sealed_second_board": True, "touched_limit_up": True, "next_day_open_pct": 2.9, "data_mode": "ok"},
+    )
+    monkeypatch.setattr(
+        srv,
+        "get_strategy_trend_outcomes",
+        lambda *a, **k: {
+            "data_mode": "strategy_trend_outcomes",
+            "outcomes": [
+                {
+                    "symbol": "002428",
+                    "data_mode": "trend_window_outcome",
+                    "outcome_label": "mixed",
+                    "trigger_outcome_label": "no_breakout",
+                    "continuation_pattern": "none",
+                    "max_gain_pct": 5.1,
+                    "window_end_pct": 1.0,
+                }
+            ],
+        },
+    )
+
+    res = srv.get_selection_trigger_validation("2026-06-18", "2026-06-19")
+
+    item = res["per_pick"][0]
+    assert item["triggered"] is False
+    assert item["trigger_outcome_label"] == "no_breakout"
+    assert item["post_hoc_attribution_label"] == "post_hoc_second_board_relay_path"
+    assert any("仅用于事后归因" in note for note in res["notes"])

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import datetime, timedelta
 from typing import Any
 
 from fastmcp import FastMCP
@@ -108,6 +109,17 @@ def _daily_strategy_candidate_item(item: dict[str, Any]) -> dict[str, Any]:
         "strategy_coverage": item.get("strategy_coverage", {}),
         "strategy_notes": item.get("strategy_notes", item.get("notes", [])),
     }
+
+
+def _is_real_strategy_candidate(item: dict[str, Any]) -> bool:
+    symbol = str(item.get("symbol") or "").strip()
+    if not symbol:
+        return False
+    if str(item.get("data_mode") or "").lower() == "unavailable":
+        return False
+    if item.get("error"):
+        return False
+    return True
 
 
 def _time_lte(value: str, boundary: str) -> bool:
@@ -702,7 +714,7 @@ def get_strategy_watchlist(as_of_day: str, limit: int = 50) -> list[dict] | dict
         items = [
             _compact_strategy_watchlist_item(item)
             for item in adapter.get_strategy_watchlist(safe_day, safe_limit)
-            if isinstance(item, dict)
+            if isinstance(item, dict) and _is_real_strategy_candidate(item)
         ]
         return {
             "as_of_day": safe_day,
@@ -739,7 +751,7 @@ def get_daily_strategy_candidate_pool(as_of_day: str, limit: int = 30) -> dict:
         raw_items = [
             item
             for item in adapter.get_strategy_watchlist(safe_day, safe_limit)
-            if isinstance(item, dict)
+            if isinstance(item, dict) and _is_real_strategy_candidate(item)
         ]
         candidates = [_daily_strategy_candidate_item(item) for item in raw_items]
         source_counts: dict[str, int] = {}
@@ -1017,6 +1029,7 @@ def get_strategy_decision_packet(
     window_end: str = "10:00",
     include_minute_volume_proxy: bool = False,
     include_full_theme_copump: bool = False,
+    include_mvp_proxy_context: bool = False,
 ) -> dict:
     """Bundle facts needed for the user's strategy without assigning grades.
 
@@ -1100,6 +1113,14 @@ def get_strategy_decision_packet(
                 "orderflow_confirmation": orderflow,
                 "intraday_theme_copump": theme_copump,
             }
+            if include_mvp_proxy_context:
+                item["mvp_proxy_context"] = _strategy_mvp_proxy_context(
+                    adapter=adapter,
+                    result=result,
+                    orderflow_confirmation=orderflow,
+                    as_of_day=safe_as_of,
+                    target_day=safe_target,
+                )
             if include_minute_volume_proxy:
                 item["historical_minute_volume_proxy"] = adapter.simulate_historical_orderflow_proxy(
                     symbol,
@@ -1128,10 +1149,216 @@ def get_strategy_decision_packet(
                 "Order-flow fields separate unavailable active big-order buy ratio from weak proxies.",
                 "Default co-pump is packet-local for speed; full same-theme replay is explicit.",
                 "Minute-volume proxy is included only when explicitly requested.",
+                "Set include_mvp_proxy_context=true to attach existing proxy layers for the full MVP strategy.",
             ],
         }
 
     return _call_tool(build)
+
+
+def _strategy_mvp_proxy_context(
+    *,
+    adapter: Any,
+    result: dict,
+    orderflow_confirmation: dict,
+    as_of_day: str,
+    target_day: str,
+) -> dict:
+    """Attach existing exact/proxy/missing context for the user's full MVP strategy."""
+    symbol = str(result.get("symbol") or "")
+    theme = str(result.get("theme") or "").strip() or "unknown"
+    strategy_coverage = result.get("strategy_coverage") or {}
+
+    def _safe_unavailable(layer: str, reason: str) -> dict:
+        return {"data_mode": "unavailable", "layer": layer, "reason": reason}
+
+    try:
+        theme_continuity = (
+            adapter.get_theme_continuity(theme, as_of_day, 14)
+            if theme != "unknown"
+            else _safe_unavailable("theme_continuity", "theme unknown")
+        )
+        if hasattr(theme_continuity, "model_dump"):
+            theme_continuity = theme_continuity.model_dump()
+    except Exception as exc:
+        theme_continuity = _safe_unavailable("theme_continuity", str(exc))
+
+    try:
+        news_alignment = get_news_alignment(theme if theme != "unknown" else symbol, lookback_days=7)
+    except Exception as exc:
+        news_alignment = _safe_unavailable("news_alignment", str(exc))
+
+    active_truth_available = bool(
+        orderflow_confirmation.get("can_compute_big_order_buy_ratio")
+        or orderflow_confirmation.get("historical_big_order_buy_ratio_available")
+    )
+    orderflow_proxy_layer = {
+        "data_mode": "proxy_context",
+        "active_big_order_buy_ratio_truth_available": active_truth_available,
+        "primary_proxy": orderflow_confirmation,
+        "tick_rule_proxy_tool": "get_tick_rule_orderflow_proxy",
+        "tick_rule_proxy_sampled_in_packet": False,
+        "notes": [
+            "Historical packet does not sample live tick-rule proxy automatically.",
+            "Use get_tick_rule_orderflow_proxy during live observation windows when realtime lv2 sample is available.",
+        ],
+    }
+
+    return {
+        "data_mode": "strategy_mvp_proxy_context",
+        "symbol": symbol,
+        "theme": theme,
+        "as_of_day": as_of_day,
+        "target_day": target_day,
+        "data_tiers": {
+            "exact": [
+                "avg_turnover_10d",
+                "prev_day_volume_ratio",
+                "previous_high_break",
+                "target_day_minute_replay",
+            ],
+            "proxy": [
+                "theme_two_week_continuity",
+                "intraday_theme_copump",
+                "orderflow_confirmation",
+                "news_alignment_cninfo",
+                "tick_rule_orderflow_proxy_live_only",
+            ],
+            "missing_or_not_truth": [
+                "exchange_verified_active_buy_sell_direction",
+                "true_trigger_window_big_order_buy_ratio",
+                "caixin_cls_popup_original_text",
+            ],
+        },
+        "coverage": {
+            "avg_turnover_10d": bool(strategy_coverage.get("avg_turnover_10d")),
+            "prev_day_shrink": bool(strategy_coverage.get("prev_day_shrink")),
+            "previous_high_break": bool(strategy_coverage.get("previous_high_break")),
+            "theme_two_week_continuity": bool(strategy_coverage.get("theme_two_week_continuity")),
+            "intraday_big_order_ratio_truth": active_truth_available,
+            "news_alignment_proxy": news_alignment.get("data_mode") != "unavailable",
+        },
+        "theme_continuity_proxy": theme_continuity,
+        "news_alignment_proxy": news_alignment,
+        "orderflow_proxy_layer": orderflow_proxy_layer,
+    }
+
+
+@mcp.tool
+def get_strategy_trend_outcomes(
+    as_of_day: str,
+    target_day: str,
+    symbols: str = "",
+    limit: int = 10,
+    window_start: str = "09:31",
+    window_end: str = "10:00",
+) -> dict:
+    """Return broad trend-strategy outcome facts for target-day replay.
+
+    This is not second-board-only. It labels target-day window behavior such as
+    morning follow-through or gap-and-fade, while keeping buy-point trigger facts
+    separate from simple previous-high crossing.
+    """
+    from aegis_alpha.measurements.trend_outcome import summarize_trend_window_outcome
+
+    safe_as_of = as_of_day.strip()
+    safe_target = target_day.strip()
+    if not safe_as_of:
+        return {"data_mode": "unavailable", "error": "as_of_day is required"}
+    if not safe_target:
+        return {"data_mode": "unavailable", "error": "target_day is required"}
+    requested = [item.strip() for item in symbols.replace(",", "|").split("|") if item.strip()]
+    safe_limit = max(1, min(int(limit or 10), 50))
+    safe_window_start = window_start.strip() or "09:31"
+    safe_window_end = window_end.strip() or "10:00"
+
+    def _run(adapter: Any) -> dict:
+        selected = requested
+        if not selected:
+            pool = get_daily_strategy_candidate_pool(safe_as_of, safe_limit)
+            selected = [
+                str(item.get("symbol") or "")
+                for item in (pool.get("candidates", []) if isinstance(pool, dict) else [])
+                if str(item.get("symbol") or "")
+            ][:safe_limit]
+
+        packet = get_strategy_decision_packet(
+            safe_as_of,
+            safe_target,
+            "|".join(selected),
+            safe_limit,
+            safe_window_start,
+            safe_window_end,
+            False,
+            False,
+        )
+        trigger_by_symbol: dict[str, dict[str, Any]] = {}
+        if isinstance(packet, dict):
+            for item in packet.get("results", []):
+                if not isinstance(item, dict):
+                    continue
+                symbol_key = str(item.get("symbol") or "").split(".", 1)[0]
+                diagnostics = item.get("pattern_diagnostics") or {}
+                trigger_by_symbol[symbol_key] = {
+                    "buy_point_triggered": bool(item.get("first_triggered_at") or int(item.get("signal_count") or 0) > 0),
+                    "trigger_time": str(item.get("first_triggered_at") or ""),
+                    "crossed_previous_high": bool(diagnostics.get("crossed_previous_high")),
+                    "cross_time": str(diagnostics.get("first_cross_time") or ""),
+                    "no_signal_reason": str(diagnostics.get("no_signal_reason") or ""),
+                    "trigger_data_mode": item.get("data_mode", ""),
+                }
+
+        outcomes = []
+        for symbol in selected[:safe_limit]:
+            snapshot = adapter.get_stock_minute_replay_snapshot(
+                symbol,
+                safe_target,
+                1,
+                max_bars=240,
+            )
+            outcome = summarize_trend_window_outcome(
+                snapshot,
+                window_start=safe_window_start,
+                window_end=safe_window_end,
+            )
+            symbol_key = str(symbol).split(".", 1)[0]
+            trigger = trigger_by_symbol.get(symbol_key, {})
+            if trigger:
+                outcome.update(trigger)
+                if trigger.get("buy_point_triggered") and outcome.get("outcome_label") in {"gap_and_fade", "failed_intraday_breakout"}:
+                    outcome["trigger_outcome_label"] = "triggered_but_faded"
+                elif trigger.get("buy_point_triggered"):
+                    outcome["trigger_outcome_label"] = "triggered_with_followthrough"
+                elif outcome.get("continuation_pattern") in {
+                    "instant_limit_or_strong_hold",
+                    "gap_up_followthrough",
+                    "strong_trend_continuation",
+                }:
+                    outcome["trigger_outcome_label"] = "strong_continuation_without_buy_point"
+                elif trigger.get("crossed_previous_high"):
+                    outcome["trigger_outcome_label"] = "crossed_without_buy_point"
+                else:
+                    outcome["trigger_outcome_label"] = "no_breakout"
+            else:
+                outcome["trigger_data_mode"] = "unavailable"
+            outcomes.append(outcome)
+
+        return {
+            "as_of_day": safe_as_of,
+            "target_day": safe_target,
+            "data_mode": "strategy_trend_outcomes",
+            "window": {"start": safe_window_start, "end": safe_window_end},
+            "symbols": selected[:safe_limit],
+            "result_count": len(outcomes),
+            "outcomes": outcomes,
+            "notes": [
+                "Broad trend outcome facts; not limited to second-board sealing labels.",
+                "No exchange-verified active buy/sell direction is available.",
+                "buy_point_triggered is separated from crossed_previous_high.",
+            ],
+        }
+
+    return _call_tool(_run)
 
 
 @mcp.tool
@@ -1738,13 +1965,22 @@ def get_tick_rule_orderflow_proxy(
 
 
 def _build_naive_baselines(as_of_day: str, top_n: int) -> dict:
-    """三朴素基准 TopN(封单额/封成比/首封时间)。任一不可用→[]。失败降级,不抛。"""
+    """三朴素基准 TopN。优先用 daily pool 同宇宙；失败降级到历史二板池。"""
     n = max(1, int(top_n or 1))
     try:
-        rows = get_historical_second_board_candidates(as_of_day, limit=50)
-        items = rows if isinstance(rows, list) else (rows.get("candidates", []) if isinstance(rows, dict) else [])
+        pool = get_daily_strategy_candidate_pool(as_of_day, limit=100)
+        items = pool.get("candidates", []) if isinstance(pool, dict) else []
+        source = "daily_strategy_candidate_pool"
     except Exception:
-        return {"seal_amount": [], "seal_ratio": [], "first_seal_time": []}
+        items = []
+        source = "unavailable"
+    if not items:
+        try:
+            rows = get_historical_second_board_candidates(as_of_day, limit=50)
+            items = rows if isinstance(rows, list) else (rows.get("candidates", []) if isinstance(rows, dict) else [])
+            source = "historical_second_board_candidates"
+        except Exception:
+            return {"seal_amount": [], "seal_ratio": [], "first_seal_time": [], "source": "unavailable"}
 
     def _top(key: str, reverse: bool) -> list[str]:
         try:
@@ -1756,11 +1992,31 @@ def _build_naive_baselines(as_of_day: str, top_n: int) -> dict:
         except Exception:
             return []
 
-    return {
+    baselines = {
         "seal_amount": _top("seal_amount_cny", True),
         "seal_ratio": _top("seal_to_turnover_ratio", True),
         "first_seal_time": _top("first_limit_up_time", False),
+        "source": source,
     }
+    if (
+        source == "daily_strategy_candidate_pool"
+        and not baselines["seal_amount"]
+        and not baselines["seal_ratio"]
+        and not baselines["first_seal_time"]
+    ):
+        try:
+            rows = get_historical_second_board_candidates(as_of_day, limit=50)
+            items = rows if isinstance(rows, list) else (rows.get("candidates", []) if isinstance(rows, dict) else [])
+            source = "historical_second_board_candidates"
+            baselines = {
+                "seal_amount": _top("seal_amount_cny", True),
+                "seal_ratio": _top("seal_to_turnover_ratio", True),
+                "first_seal_time": _top("first_limit_up_time", False),
+                "source": source,
+            }
+        except Exception:
+            pass
+    return baselines
 
 
 @mcp.tool
@@ -1783,6 +2039,20 @@ def record_selection_audit(
     rejected = [RejectedCandidate.model_validate(r) for r in _json.loads(rejected_json or "[]")]
     pick_symbols = [p.symbol for p in picks]
 
+    quality_warnings: list[str] = []
+    for pick in picks:
+        if pick.rank <= 0:
+            quality_warnings.append(f"{pick.symbol}: rank 缺失或非法,应为从 1 开始的名次。")
+        if not pick.relative_reason.strip():
+            quality_warnings.append(
+                f"{pick.symbol}: relative_reason 为空,无法审计它相对 near-miss 的 alpha 判断。"
+            )
+    for rejected_item in rejected:
+        if not rejected_item.why_rejected.strip():
+            quality_warnings.append(f"{rejected_item.symbol}: why_rejected 为空。")
+        if not rejected_item.beat_by.strip():
+            quality_warnings.append(f"{rejected_item.symbol}: beat_by 为空,无法说明被谁胜出。")
+
     def _run(store):
         baseline = _build_naive_baselines(as_of_day, len(pick_symbols))
         equals = compute_equals_baseline(pick_symbols, baseline)
@@ -1801,6 +2071,11 @@ def record_selection_audit(
             result["anti_mechanical_warning"] = (
                 "你的 TopN 等同某朴素基准(封单额/封成比/首封时间),未体现额外 alpha;请重新评估或明确标注。"
             )
+        if quality_warnings:
+            result["audit_quality_warnings"] = quality_warnings
+            result["audit_quality"] = "incomplete"
+        else:
+            result["audit_quality"] = "ok"
         return result
 
     return _call_store(_run)
@@ -1834,13 +2109,32 @@ def _validation_intraday_trigger(symbol: str, as_of_day: str, target_day: str,
                 continue
             if str(it.get("symbol", "")).split(".")[0] == symbol.split(".")[0]:
                 diag = it.get("pattern_diagnostics") or {}
-                triggered = bool(it.get("first_triggered_at") or diag.get("opening_window_crossed_previous_high"))
-                return {"triggered": triggered,
-                        "trigger_time": str(it.get("first_triggered_at", "")),
-                        "data_mode": "ok"}
-        return {"triggered": False, "trigger_time": "", "data_mode": "ok"}
+                triggered = bool(it.get("first_triggered_at") or int(it.get("signal_count") or 0) > 0)
+                return {
+                    "triggered": triggered,
+                    "crossed_previous_high": bool(diag.get("crossed_previous_high")),
+                    "trigger_time": str(it.get("first_triggered_at", "")),
+                    "cross_time": str(diag.get("first_cross_time", "")),
+                    "no_signal_reason": str(diag.get("no_signal_reason", "")),
+                    "data_mode": "ok",
+                }
+        return {
+            "triggered": False,
+            "crossed_previous_high": False,
+            "trigger_time": "",
+            "cross_time": "",
+            "no_signal_reason": "symbol_not_in_packet_results",
+            "data_mode": "ok",
+        }
     except Exception:
-        return {"triggered": None, "trigger_time": "", "data_mode": "unavailable"}
+        return {
+            "triggered": None,
+            "crossed_previous_high": None,
+            "trigger_time": "",
+            "cross_time": "",
+            "no_signal_reason": "",
+            "data_mode": "unavailable",
+        }
 
 
 def _validation_next_day_outcome(symbol: str, target_day: str) -> dict:
@@ -1854,12 +2148,46 @@ def _validation_next_day_outcome(symbol: str, target_day: str) -> dict:
             if not isinstance(o, dict):
                 continue
             if str(o.get("symbol", "")).split(".")[0] == symbol.split(".")[0]:
-                return {"sealed_second_board": o.get("sealed_second_board"),
-                        "next_day_open_pct": o.get("next_day_open_pct"),
-                        "data_mode": "ok"}
+                sealed = o.get("sealed_second_board")
+                if sealed is None:
+                    sealed = o.get("sealed_next_day")
+                return {
+                    "sealed_second_board": sealed,
+                    "touched_limit_up": o.get("touched_limit_up"),
+                    "next_day_open_pct": o.get("next_day_open_pct"),
+                    "data_mode": "ok",
+                }
         return {"sealed_second_board": None, "next_day_open_pct": None, "data_mode": "ok"}
     except Exception:
         return {"sealed_second_board": None, "next_day_open_pct": None, "data_mode": "unavailable"}
+
+
+def _validation_trend_outcomes(
+    as_of_day: str,
+    target_day: str,
+    symbols: list[str],
+    window_start: str,
+    window_end: str,
+) -> dict[str, dict[str, Any]]:
+    """Fetch broad trend outcomes for a batch. Failure should not break validation."""
+    try:
+        raw = get_strategy_trend_outcomes(
+            as_of_day,
+            target_day,
+            "|".join(symbols),
+            len(symbols),
+            window_start,
+            window_end,
+        )
+        if not isinstance(raw, dict) or raw.get("data_mode") == "unavailable":
+            return {}
+        return {
+            str(item.get("symbol") or "").split(".", 1)[0]: item
+            for item in raw.get("outcomes", [])
+            if isinstance(item, dict) and str(item.get("symbol") or "")
+        }
+    except Exception:
+        return {}
 
 
 @mcp.tool
@@ -1873,20 +2201,54 @@ def get_selection_trigger_validation(
         if audit is None:
             return {"as_of_day": as_of_day, "target_day": target_day,
                     "data_mode": "unavailable", "notes": ["该日无选股审计,无法对照。"]}
+        symbols = [pick.symbol for pick in audit.picks]
+        trend_by_symbol = _validation_trend_outcomes(
+            as_of_day,
+            target_day,
+            symbols,
+            window_start,
+            window_end,
+        )
         per_pick = []
         triggered = 0
         for pick in audit.picks:
             trig = _validation_intraday_trigger(pick.symbol, as_of_day, target_day, window_start, window_end)
             outcome = _validation_next_day_outcome(pick.symbol, target_day)
+            trend = trend_by_symbol.get(str(pick.symbol).split(".", 1)[0], {})
             if trig.get("triggered") is True:
                 triggered += 1
+            post_hoc_label = _post_hoc_attribution_label(
+                triggered=trig.get("triggered"),
+                sealed_second_board=outcome.get("sealed_second_board"),
+                touched_limit_up=outcome.get("touched_limit_up"),
+                trend_outcome_label=trend.get("outcome_label", ""),
+                trigger_outcome_label=trend.get("trigger_outcome_label", ""),
+                continuation_pattern=trend.get("continuation_pattern", ""),
+                max_gain_pct=trend.get("max_gain_pct"),
+                window_end_pct=trend.get("window_end_pct"),
+            )
             per_pick.append({
                 "symbol": pick.symbol, "rank": pick.rank,
                 "relative_reason": pick.relative_reason,
                 "triggered": trig.get("triggered"),
+                "crossed_previous_high": trig.get("crossed_previous_high"),
                 "trigger_time": trig.get("trigger_time", ""),
+                "cross_time": trig.get("cross_time", ""),
+                "no_signal_reason": trig.get("no_signal_reason", ""),
                 "sealed_second_board": outcome.get("sealed_second_board"),
+                "touched_limit_up": outcome.get("touched_limit_up"),
                 "next_day_open_pct": outcome.get("next_day_open_pct"),
+                "trend_outcome_label": trend.get("outcome_label", ""),
+                "trigger_outcome_label": trend.get("trigger_outcome_label", ""),
+                "continuation_pattern": trend.get("continuation_pattern", ""),
+                "gap_up_followthrough": trend.get("gap_up_followthrough"),
+                "instant_limit_or_strong_hold": trend.get("instant_limit_or_strong_hold"),
+                "strong_trend_continuation": trend.get("strong_trend_continuation"),
+                "post_hoc_attribution_label": post_hoc_label,
+                "max_gain_pct": trend.get("max_gain_pct"),
+                "window_end_pct": trend.get("window_end_pct"),
+                "drawdown_after_high_pct": trend.get("drawdown_after_high_pct"),
+                "trend_outcome_data_mode": trend.get("data_mode", "unavailable"),
                 "trigger_data_mode": trig.get("data_mode"),
                 "outcome_data_mode": outcome.get("data_mode"),
             })
@@ -1901,8 +2263,468 @@ def get_selection_trigger_validation(
             "window": {"start": window_start, "end": window_end},
             "per_pick": per_pick,
             "notes": [
-                "盘中触发=09:31-10:00 过前高/买点;次日结果=封板/开盘涨幅。",
+                "盘中 triggered 严格表示买点状态机触发；crossed_previous_high 单独列示，不等同于触发。",
+                "post_hoc_attribution_label 仅用于事后归因,不参与选股或买点触发。",
                 "样本不足时 confidence_label=exploratory,勿过度解读。",
+            ],
+        }
+
+    return _call_store(_run)
+
+
+def _post_hoc_attribution_label(
+    *,
+    triggered: Any,
+    sealed_second_board: Any,
+    touched_limit_up: Any,
+    trend_outcome_label: str,
+    trigger_outcome_label: str,
+    continuation_pattern: str,
+    max_gain_pct: Any,
+    window_end_pct: Any,
+) -> str:
+    """Classify validation results after the fact without changing strategy logic."""
+    max_gain = float(max_gain_pct or 0.0)
+    window_end = float(window_end_pct or 0.0)
+    if triggered is True and trigger_outcome_label == "triggered_with_followthrough":
+        return "post_hoc_trend_breakout_path"
+    if triggered is True and trigger_outcome_label == "triggered_but_faded":
+        return "post_hoc_triggered_but_faded"
+    if trigger_outcome_label == "strong_continuation_without_buy_point":
+        return "post_hoc_strong_continuation_without_buy_point"
+    if sealed_second_board is True or touched_limit_up is True:
+        return "post_hoc_second_board_relay_path"
+    if trend_outcome_label == "morning_followthrough" or continuation_pattern in {
+        "gap_up_followthrough",
+        "instant_limit_or_strong_hold",
+        "strong_trend_continuation",
+    }:
+        return "post_hoc_trend_continuation_path"
+    if max_gain >= 3.0 and window_end < 2.0:
+        return "post_hoc_intraday_spike_without_hold"
+    return "post_hoc_no_breakout_or_wait"
+
+
+@mcp.tool
+def record_agent_observation(
+    trading_day: str,
+    title: str,
+    summary: str = "",
+    source: str = "periodic_market_scan",
+    observation_type: str = "watchlist_observation",
+    symbol: str = "",
+    theme: str = "",
+    stance: str = "monitor_only",
+    confidence: str = "low",
+    evidence_json: str = "",
+    counter_evidence_json: str = "",
+    data_gaps_json: str = "",
+    linked_event_ids_json: str = "",
+    linked_alert_ids_json: str = "",
+    expires_at: str = "",
+    provider: str = "",
+    model: str = "",
+) -> dict:
+    """记录一条 agent 市场观察 (facts-only, 非交易指令)。
+
+    去重:同 trading_day+source+observation_type+symbol/theme 折叠为一条。
+    notification_grade 由确定性策略从 stance+confidence+observation_type 计算,
+    agent 不自填。空 evidence/data_gaps 会给出质量提醒。
+    """
+    import json as _json
+    from aegis_alpha.models import AgentObservation
+    from aegis_alpha.feedback.agent_observation import (
+        compute_observation_id,
+        observation_notification_grade,
+    )
+
+    def _list(raw: str) -> list[str]:
+        if not raw.strip():
+            return []
+        try:
+            parsed = _json.loads(raw)
+        except _json.JSONDecodeError:
+            return []
+        return [str(x) for x in parsed] if isinstance(parsed, list) else []
+
+    observation = AgentObservation(
+        observation_id=compute_observation_id(
+            trading_day=trading_day, source=source,
+            observation_type=observation_type, symbol=symbol, theme=theme,
+        ),
+        trading_day=trading_day,
+        source=source,
+        observation_type=observation_type,
+        symbol=symbol,
+        theme=theme,
+        title=title,
+        summary=summary,
+        stance=stance,
+        confidence=confidence,
+        evidence=_list(evidence_json),
+        counter_evidence=_list(counter_evidence_json),
+        data_gaps=_list(data_gaps_json),
+        linked_event_ids=_list(linked_event_ids_json),
+        linked_alert_ids=_list(linked_alert_ids_json),
+        expires_at=expires_at,
+        provider=provider,
+        model=model,
+    )
+
+    quality_warnings: list[str] = []
+    if not observation.evidence:
+        quality_warnings.append("evidence 为空,无法审计该观察依据。")
+    if not observation.data_gaps:
+        quality_warnings.append("data_gaps 为空;诚实标注缺失数据是该层的硬要求,确认无缺口才留空。")
+    if not observation.summary.strip():
+        quality_warnings.append("summary 为空,观察不可读。")
+
+    def _run(store):
+        saved = store.save_agent_observation(observation)
+        grade = observation_notification_grade(saved)
+        result = {**saved.model_dump(), "notification_grade": grade, "data_mode": "ok"}
+        if quality_warnings:
+            result["observation_quality"] = "incomplete"
+            result["observation_quality_warnings"] = quality_warnings
+        else:
+            result["observation_quality"] = "ok"
+        return result
+
+    return _call_store(_run)
+
+
+@mcp.tool
+def get_agent_observation(observation_id: str) -> dict:
+    """按 observation_id 取一条观察 (facts-only)。无记录返回 unavailable。"""
+    from aegis_alpha.feedback.agent_observation import observation_notification_grade
+
+    def _run(store):
+        obs = store.get_agent_observation(observation_id)
+        if obs is None:
+            return {"observation_id": observation_id, "data_mode": "unavailable",
+                    "notes": ["无该观察记录。"]}
+        return {**obs.model_dump(),
+                "notification_grade": observation_notification_grade(obs),
+                "data_mode": "ok"}
+
+    return _call_store(_run)
+
+
+@mcp.tool
+def list_agent_observations(
+    trading_day: str = "",
+    source: str = "",
+    observation_type: str = "",
+    symbol: str = "",
+    limit: int = 50,
+) -> dict:
+    """列出观察,可按 trading_day/source/observation_type/symbol 过滤 (facts-only)。"""
+    from aegis_alpha.feedback.agent_observation import observation_notification_grade
+
+    def _run(store):
+        rows = store.list_agent_observations(
+            trading_day=trading_day, source=source,
+            observation_type=observation_type, symbol=symbol, limit=limit,
+        )
+        return {
+            "data_mode": "ok",
+            "count": len(rows),
+            "observations": [
+                {**obs.model_dump(),
+                 "notification_grade": observation_notification_grade(obs)}
+                for obs in rows
+            ],
+        }
+
+    return _call_store(_run)
+
+
+@mcp.tool
+def notify_agent_observation(observation_id: str) -> dict:
+    """按确定性通知策略尝试推送一条 AgentObservation 到 WeClaw。
+
+    只读取已持久化 observation。是否真正推送由 runner.yaml 与 env 开关决定;
+    notification_grade 仍由程序计算,不是 agent 自填。
+    """
+    from aegis_alpha.alerts.weclaw_notifier import (
+        post_observation_to_weclaw,
+        should_post_observation_to_weclaw,
+        weclaw_notification_enabled,
+    )
+    from aegis_alpha.config import load_project_env
+    from aegis_alpha.feedback.agent_observation import observation_notification_grade
+    from aegis_alpha.runner import load_runner_config
+
+    safe_id = observation_id.strip()
+    if not safe_id:
+        return {"data_mode": "unavailable", "error": "observation_id is required"}
+
+    def _run(store):
+        obs = store.get_agent_observation(safe_id)
+        if obs is None:
+            return {
+                "data_mode": "unavailable",
+                "observation_id": safe_id,
+                "posted": False,
+                "notes": ["无该观察记录。"],
+            }
+        load_project_env()
+        config = load_runner_config()
+        grade = observation_notification_grade(obs)
+        enabled = weclaw_notification_enabled(config)
+        eligible = should_post_observation_to_weclaw(obs, config)
+        posted = post_observation_to_weclaw(obs, config) if eligible else False
+        notes: list[str] = []
+        if not enabled:
+            notes.append("WeClaw notification disabled by config/env.")
+        elif not eligible:
+            notes.append("Observation grade is not eligible for configured WeClaw push.")
+        elif not posted:
+            notes.append("WeClaw push attempted but failed or target/url is missing.")
+        return {
+            "data_mode": "ok",
+            "observation_id": safe_id,
+            "notification_grade": grade,
+            "eligible": eligible,
+            "posted": posted,
+            "notes": notes,
+        }
+
+    return _call_store(_run)
+
+
+def _freshness_label(events: list[Any], snapshot: Any) -> str:
+    """Summarize how trustworthy the aggregated facts are right now."""
+    statuses = [getattr(e, "freshness_status", "unknown") for e in events]
+    if snapshot is not None:
+        statuses.append(getattr(snapshot, "freshness_status", "unknown"))
+    if not statuses:
+        return "no_data"
+    if any(s == "fresh" for s in statuses):
+        return "has_fresh"
+    if all(s == "stale" for s in statuses):
+        return "all_stale"
+    return "unknown"
+
+
+def _parse_event_dt(value: str) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _event_dt(event: Any) -> datetime | None:
+    return (
+        _parse_event_dt(getattr(event, "received_at", ""))
+        or _parse_event_dt(getattr(event, "provider_timestamp", ""))
+    )
+
+
+def _filter_events_by_recent_window(events: list[Any], lookback_minutes: int) -> list[Any]:
+    """Filter relative to the newest stored event, so tests/replay stay stable."""
+    dated = [(event, _event_dt(event)) for event in events]
+    anchor = max((dt for _, dt in dated if dt is not None), default=None)
+    if anchor is None:
+        return events
+    cutoff = anchor - timedelta(minutes=max(1, lookback_minutes))
+    return [event for event, dt in dated if dt is None or dt >= cutoff]
+
+
+@mcp.tool
+def get_realtime_symbol_context(symbol: str, lookback_minutes: int = 30) -> dict:
+    """单标的盘中事实包 (facts-only)，供 agent 调查用。
+
+    薄聚合 store 中已结构化的快照 + 近期事件,不消费 raw WebSocket,
+    不下结论。每段标注 data_mode/freshness,缺失数据如实标注。
+    """
+    safe_symbol = symbol.strip()
+    if not safe_symbol:
+        return {"data_mode": "unavailable", "error": "symbol is required"}
+    safe_lookback = max(1, min(int(lookback_minutes or 30), 240))
+
+    def _run(store):
+        snapshot = store.latest_signal_snapshot(safe_symbol)
+        all_events = _filter_events_by_recent_window(
+            store.recent_market_events(limit=100), safe_lookback,
+        )
+        sym_key = safe_symbol.split(".")[0]
+        events = [
+            e for e in all_events
+            if str(getattr(e, "symbol", "")).split(".")[0] == sym_key
+        ][:20]
+        data_gaps: list[str] = []
+        if snapshot is None:
+            data_gaps.append("无该标的结构化快照;盘中价格/涨速/大单代理不可用。")
+        if not events:
+            data_gaps.append("近期无该标的结构化事件。")
+        return {
+            "data_mode": "ok",
+            "symbol": safe_symbol,
+            "lookback_minutes": safe_lookback,
+            "snapshot": snapshot.model_dump() if snapshot is not None else None,
+            "recent_events": [e.model_dump() for e in events],
+            "recent_event_count": len(events),
+            "freshness": _freshness_label(events, snapshot),
+            "data_gaps": data_gaps,
+            "notes": [
+                "facts-only:聚合结构化快照与事件,不含 raw WebSocket,不下买卖结论。",
+                "大单/封单为代理事实,非交易所真值。",
+            ],
+        }
+
+    return _call_store(_run)
+
+
+@mcp.tool
+def get_intraday_theme_context(theme_or_symbol: str, lookback_minutes: int = 30, peer_limit: int = 20) -> dict:
+    """盘中题材事实包 (facts-only)，供 agent 观察同题材动作。
+
+    读取当前 store 中结构化 MarketEvent / SignalSnapshot，不访问 raw WebSocket，
+    不下结论。`theme_or_symbol` 可传题材名，也可传股票代码；传代码时优先从
+    最新快照/事件推断 theme。
+    """
+    query = theme_or_symbol.strip()
+    if not query:
+        return {"data_mode": "unavailable", "error": "theme_or_symbol is required"}
+    safe_lookback = max(1, min(int(lookback_minutes or 30), 240))
+    safe_peer_limit = max(1, min(int(peer_limit or 20), 100))
+
+    def _run(store):
+        all_events = _filter_events_by_recent_window(
+            store.recent_market_events(limit=100), safe_lookback,
+        )
+        symbol_key = query.split(".")[0]
+        resolved_from_symbol = False
+        snapshot = store.latest_signal_snapshot(symbol_key)
+        theme = ""
+        if snapshot is not None and str(snapshot.theme or "").strip() not in {"", "unknown"}:
+            theme = snapshot.theme
+            resolved_from_symbol = True
+        if not theme:
+            for event in all_events:
+                if str(getattr(event, "symbol", "")).split(".")[0] == symbol_key:
+                    event_theme = str(getattr(event, "theme", "") or "")
+                    if event_theme and event_theme != "unknown":
+                        theme = event_theme
+                        resolved_from_symbol = True
+                        break
+        if not theme:
+            theme = query
+
+        theme_events = [
+            event for event in all_events
+            if str(getattr(event, "theme", "") or "") == theme
+        ]
+        counts: dict[str, int] = {}
+        active_symbols: dict[str, dict[str, Any]] = {}
+        for event in theme_events:
+            counts[event.event_type] = counts.get(event.event_type, 0) + 1
+            sym = str(event.symbol or "").split(".")[0]
+            if sym and (sym not in active_symbols or event.score > active_symbols[sym]["max_score"]):
+                active_symbols[sym] = {
+                    "symbol": sym,
+                    "name": event.name,
+                    "theme": event.theme,
+                    "max_score": event.score,
+                    "event_type": event.event_type,
+                    "freshness_status": event.freshness_status,
+                }
+        strongest = sorted(theme_events, key=lambda e: float(getattr(e, "score", 0.0)), reverse=True)
+        data_gaps: list[str] = []
+        if not theme_events:
+            data_gaps.append("该题材在当前结构化事件窗口内无事件;可能无触发、runner 未覆盖或 feed 降级。")
+        if theme == "unknown":
+            data_gaps.append("题材无法从快照/事件可靠推断。")
+        return {
+            "data_mode": "ok",
+            "theme_or_symbol": query,
+            "theme": theme,
+            "resolved_from_symbol": resolved_from_symbol,
+            "lookback_minutes": safe_lookback,
+            "recent_event_count": len(theme_events),
+            "event_count_by_type": counts,
+            "active_symbol_count": len(active_symbols),
+            "active_symbols": sorted(
+                active_symbols.values(), key=lambda x: float(x["max_score"]), reverse=True,
+            )[:safe_peer_limit],
+            "same_theme_events": [
+                {"event_id": e.event_id, "event_type": e.event_type,
+                 "symbol": e.symbol, "score": e.score,
+                 "freshness_status": e.freshness_status}
+                for e in strongest[:safe_peer_limit]
+            ],
+            "approaching_limit_up": [
+                {"symbol": e.symbol, "score": e.score}
+                for e in strongest
+                if e.event_type == "APPROACHING_LIMIT_UP"
+            ][:safe_peer_limit],
+            "freshness": _freshness_label(theme_events, snapshot if resolved_from_symbol else None),
+            "data_gaps": data_gaps,
+            "notes": [
+                "facts-only:基于已结构化 MarketEvent/SignalSnapshot 聚合,不含 raw WebSocket。",
+                "这是当前 runner/store 的题材共振代理,不是全市场行业成分股实时宽度。",
+            ],
+        }
+
+    return _call_store(_run)
+
+
+@mcp.tool
+def get_intraday_market_context(lookback_minutes: int = 30) -> dict:
+    """全市场盘中事实包 (facts-only)，供周期观察器使用。
+
+    薄聚合 runner 健康度 + 监控标的数 + 近期事件按类型计数 + 最强事件,
+    每段标注 data_mode/freshness。不下市场结论。
+    """
+    safe_lookback = max(1, min(int(lookback_minutes or 30), 240))
+
+    try:
+        runner = status_payload()
+    except Exception:
+        runner = {"state": "STOPPED", "notes": ["runner status unavailable"]}
+
+    def _run(store):
+        events = _filter_events_by_recent_window(
+            store.recent_market_events(limit=100), safe_lookback,
+        )
+        counts: dict[str, int] = {}
+        for e in events:
+            counts[e.event_type] = counts.get(e.event_type, 0) + 1
+        strongest = sorted(events, key=lambda e: float(getattr(e, "score", 0.0)), reverse=True)[:10]
+        approaching = [e for e in events if e.event_type == "APPROACHING_LIMIT_UP"][:10]
+        snapshot_count = store.signal_snapshot_count()
+        data_gaps: list[str] = []
+        if not events:
+            data_gaps.append("近期无结构化事件;可能盘前/无触发/feed 降级。")
+        if str(runner.get("state")) != "RUNNING":
+            data_gaps.append(f"runner 状态={runner.get('state')},盘中事实可能不完整。")
+        return {
+            "data_mode": "ok",
+            "lookback_minutes": safe_lookback,
+            "runner_state": runner.get("state"),
+            "monitored_symbol_count": len(runner.get("subscribed", []) or []),
+            "stored_snapshot_count": snapshot_count,
+            "event_count_by_type": counts,
+            "total_recent_events": len(events),
+            "strongest_events": [
+                {"event_id": e.event_id, "event_type": e.event_type,
+                 "symbol": e.symbol, "theme": e.theme, "score": e.score,
+                 "freshness_status": e.freshness_status}
+                for e in strongest
+            ],
+            "approaching_limit_up": [
+                {"symbol": e.symbol, "theme": e.theme, "score": e.score}
+                for e in approaching
+            ],
+            "freshness": _freshness_label(events, None),
+            "data_gaps": data_gaps,
+            "notes": [
+                "facts-only:全市场聚合,不下市场结论,不发买卖指令。",
+                "同题材联动事实请配合 get_intraday_theme_copump 使用。",
             ],
         }
 

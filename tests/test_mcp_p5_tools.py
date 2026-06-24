@@ -195,6 +195,31 @@ def test_daily_strategy_candidate_pool_returns_agent_selection_inputs(monkeypatc
     assert "promotion_likelihood" not in item
 
 
+def test_daily_strategy_candidate_pool_filters_unavailable_rows(monkeypatch):
+    monkeypatch.setenv("AEGIS_ALPHA_MARKET_DATA_PROVIDER", "mock")
+    from aegis_alpha.mcp.dependencies import reset_singletons
+    import aegis_alpha.mcp.server as srv
+
+    class EmptyAdapter:
+        def get_strategy_watchlist(self, _day, _limit):
+            return [
+                {
+                    "symbol": "",
+                    "data_mode": "unavailable",
+                    "error": "provider returned wrong date fields",
+                }
+            ]
+
+    reset_singletons()
+    monkeypatch.setattr(srv, "_call_tool", lambda fn: fn(EmptyAdapter()))
+
+    result = srv.get_daily_strategy_candidate_pool("2026-06-19", limit=5)
+
+    assert result["result_count"] == 0
+    assert result["candidates"] == []
+    assert result["candidate_generation"]["source_counts"] == {}
+
+
 def test_theme_continuity_tool_returns_market_internal_facts(monkeypatch):
     monkeypatch.setenv("AEGIS_ALPHA_MARKET_DATA_PROVIDER", "mock")
     from aegis_alpha.mcp.dependencies import reset_singletons
@@ -431,6 +456,40 @@ def test_strategy_decision_packet_bundles_facts_without_program_grade(monkeypatc
     assert item["orderflow_confirmation"]["can_compute_big_order_buy_ratio"] is False
 
 
+def test_strategy_decision_packet_can_attach_mvp_proxy_context(monkeypatch):
+    monkeypatch.setenv("AEGIS_ALPHA_MARKET_DATA_PROVIDER", "mock")
+    from aegis_alpha.adapters.news_alignment import cninfo_source
+    from aegis_alpha.mcp.dependencies import reset_singletons
+    from aegis_alpha.mcp.server import get_strategy_decision_packet
+
+    monkeypatch.setattr(
+        cninfo_source,
+        "_load_announcements_raw",
+        lambda *a, **k: [{"title": "通信设备产业链公告", "date": "2026-05-25"}],
+    )
+    reset_singletons()
+    result = get_strategy_decision_packet(
+        "2026-05-25",
+        "2026-05-26",
+        symbols="002230",
+        limit=3,
+        window_start="09:31",
+        window_end="10:00",
+        include_mvp_proxy_context=True,
+    )
+
+    item = result["results"][0]
+    assert "mvp_proxy_context" in item
+    context = item["mvp_proxy_context"]
+    assert context["data_mode"] == "strategy_mvp_proxy_context"
+    assert "avg_turnover_10d" in context["data_tiers"]["exact"]
+    assert "orderflow_confirmation" in context["data_tiers"]["proxy"]
+    assert "exchange_verified_active_buy_sell_direction" in context["data_tiers"]["missing_or_not_truth"]
+    assert context["orderflow_proxy_layer"]["tick_rule_proxy_sampled_in_packet"] is False
+    assert "grade" not in item
+    assert "promotion_likelihood" not in item
+
+
 def test_second_board_next_day_outcomes_tool_accepts_symbol_string(monkeypatch):
     monkeypatch.setenv("AEGIS_ALPHA_MARKET_DATA_PROVIDER", "mock")
     from aegis_alpha.mcp.dependencies import reset_singletons
@@ -445,6 +504,33 @@ def test_second_board_next_day_outcomes_tool_accepts_symbol_string(monkeypatch):
     assert len(result["outcomes"]) == 2
     assert result["outcomes"][0]["touched_limit_up"] is True
     assert "grade" not in result["outcomes"][0]
+
+
+def test_strategy_trend_outcomes_returns_broad_outcome_facts(monkeypatch):
+    monkeypatch.setenv("AEGIS_ALPHA_MARKET_DATA_PROVIDER", "mock")
+    from aegis_alpha.mcp.dependencies import reset_singletons
+    from aegis_alpha.mcp.server import get_strategy_trend_outcomes
+
+    reset_singletons()
+    result = get_strategy_trend_outcomes(
+        "2026-05-25",
+        "2026-05-26",
+        symbols="002230",
+        limit=1,
+        window_start="10:10",
+        window_end="10:16",
+    )
+
+    assert result["data_mode"] == "strategy_trend_outcomes"
+    assert result["result_count"] == 1
+    item = result["outcomes"][0]
+    assert item["symbol"] == "002230"
+    assert "max_gain_pct" in item
+    assert "window_end_pct" in item
+    assert "outcome_label" in item
+    assert "buy_point_triggered" in item
+    assert "sealed_second_board" not in item
+    assert any("not limited to second-board" in note for note in result["notes"])
 
 
 def test_get_active_seats_today_includes_data_mode_field():

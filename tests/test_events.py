@@ -294,6 +294,18 @@ def test_jvquant_lv2_callback_records_large_trade_proxy() -> None:
     assert stats["sample_trades"][0]["time"].endswith("T09:41:00+08:00")
 
 
+def test_jvquant_log_connection_lost_marks_disconnected() -> None:
+    from aegis_alpha.adapters.jvquant_websocket import JvQuantRealtimeClient
+
+    client = JvQuantRealtimeClient()
+    client._connected = True
+    client._on_log("Connection to remote host was lost.")
+
+    status = client.status()
+    assert status.connected is False
+    assert status.last_error == "provider_connection_lost"
+
+
 def test_sqlite_store_roundtrip(tmp_path) -> None:
     store = AegisAlphaStore(tmp_path / "aegis_alpha.db")
     detector = EventDetector(load_event_scoring_config())

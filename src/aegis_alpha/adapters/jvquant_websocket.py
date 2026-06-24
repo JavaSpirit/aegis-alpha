@@ -199,7 +199,11 @@ class JvQuantRealtimeClient:
         )
 
     def _on_log(self, message: str) -> None:
-        if "error" in message.lower() or "失败" in message:
+        text = str(message or "").lower()
+        if any(marker in text for marker in ("lost", "goodbye", "closed", "disconnect")):
+            self._connected = False
+            self._last_error = "provider_connection_lost"
+        elif "error" in text or "失败" in str(message or ""):
             self._last_error = "provider_log_error"
 
     def _on_raw_data(self, text: str) -> None:

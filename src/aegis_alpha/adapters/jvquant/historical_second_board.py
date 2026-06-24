@@ -59,6 +59,27 @@ def historical_large_turnover_strategy_queries(as_of_day: str, seed_turnover_yi:
     return [base, growth_board]
 
 
+def current_large_turnover_strategy_queries(seed_turnover_yi: int = 30) -> list[str]:
+    """Current-session semantic seed when @date queries are unavailable.
+
+    jvQuant may expose current-day semantic fields as names like
+    `成交额2026-06-22` even when historical `成交额@YYYY-MM-DD` queries fail.
+    These queries are only suitable for current-session preparation/monitoring;
+    callers must label them as current-provider facts, not strict historical
+    replay facts.
+    """
+    safe_seed = max(1, int(seed_turnover_yi or 30))
+    base = (
+        f"成交额大于{safe_seed}亿,非ST,"
+        "股票代码,股票简称,涨跌幅,价格,成交额,行业"
+    )
+    growth_board = (
+        f"创业板,成交额大于{safe_seed}亿,非ST,"
+        "股票代码,股票简称,涨跌幅,价格,成交额,行业"
+    )
+    return [base, growth_board]
+
+
 def historical_limit_up_symbols_query(day: str) -> str:
     return f"是否涨停@{day},股票代码,股票简称"
 
@@ -117,7 +138,7 @@ def kline_rows(client: Any, symbol: str, limit: int = 260) -> list[dict[str, Any
     return P._kline_rows(payload)
 
 
-def resolve_adjacent_trading_days(client: Any, trading_day: str) -> dict[str, Any]:
+def resolve_adjacent_trading_days(client: Any, trading_day: str, *, require_next: bool = True) -> dict[str, Any]:
     day = trading_day.strip()
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
         return {"ok": False, "error": "trading_day must use YYYY-MM-DD"}
@@ -128,13 +149,14 @@ def resolve_adjacent_trading_days(client: Any, trading_day: str) -> dict[str, An
     next_days = [item for item in days if item > day]
     if not prev_days:
         return {"ok": False, "error": f"No previous trading day found before {day}."}
-    if not next_days:
+    if require_next and not next_days:
         return {"ok": False, "error": f"No next trading day found after {day}."}
     return {
         "ok": True,
         "trading_day": day,
         "prev_day": prev_days[-1],
-        "next_day": next_days[0],
+        "next_day": next_days[0] if next_days else "",
+        "next_day_known": bool(next_days),
         "calendar_source": "jvQuant kline 000001",
     }
 

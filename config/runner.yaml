@@ -6,6 +6,7 @@ timezone: Asia/Shanghai
 loop_interval_seconds: 15
 reconnect_interval_seconds: 30
 stale_after_seconds: 180
+realtime_no_message_grace_seconds: 180
 
 trading_sessions:
   - name: morning
@@ -33,6 +34,14 @@ subscription:
     - lv2
     - lv10
 
+realtime_discovery:
+  enabled: true
+  interval_seconds: 300
+  max_symbols: 200
+  seed_turnover_yi: 30
+  include_current_large_turnover: true
+  include_current_limitup: true
+
 storage:
   status_path: data/runner_status.json
   sqlite_path: data/aegis_alpha.db
@@ -45,3 +54,23 @@ post_close:
 selection_validation:
   enabled: true
   after: "10:00"
+
+hermes_webhook:
+  enabled: false
+  url_env: HERMES_AEGIS_WEBHOOK_URL
+  secret_env: HERMES_AEGIS_WEBHOOK_SECRET
+  timeout_seconds: 3
+
+weclaw_notification:
+  enabled: false
+  api_url_env: AEGIS_ALPHA_WECLAW_API_URL
+  target_env: AEGIS_ALPHA_WECLAW_TO
+  timeout_seconds: 3
+  allowed_title_prefixes:
+    - BUYPOINT_ALERT
+    - SELECTION_VALIDATION
+  # AgentObservation 推送门控:notification_grade 由确定性策略计算,
+  # 默认只推 urgent + important。agent 不自填等级。
+  observation_grades:
+    - urgent
+    - important

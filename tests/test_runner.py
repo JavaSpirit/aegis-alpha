@@ -9,10 +9,12 @@ from aegis_alpha.runner import (
     is_trading_session_active,
     load_runner_config,
     reconnect_delay_seconds,
+    realtime_feed_health_error,
     status_payload,
     subscription_levels,
     subscription_symbols,
 )
+from aegis_alpha.models import RealtimeConnectionStatus
 
 
 def test_runner_config_defaults(monkeypatch) -> None:
@@ -61,6 +63,38 @@ def test_reconnect_delay_uses_exponential_backoff_with_jitter() -> None:
     assert reconnect_delay_seconds(config, 3, jitter=0.0) == 45
 
 
+def test_realtime_feed_health_marks_no_messages_after_grace() -> None:
+    tz = ZoneInfo("Asia/Shanghai")
+    connection = RealtimeConnectionStatus(provider="jvQuant", connected=True)
+
+    error = realtime_feed_health_error(
+        {"stale_after_seconds": 180},
+        connection,
+        connected_at="2026-06-23T09:15:00+08:00",
+        now=datetime(2026, 6, 23, 9, 18, 1, tzinfo=tz),
+    )
+
+    assert error == "no_realtime_messages_after_181s"
+
+
+def test_realtime_feed_health_marks_stale_messages() -> None:
+    tz = ZoneInfo("Asia/Shanghai")
+    connection = RealtimeConnectionStatus(
+        provider="jvQuant",
+        connected=True,
+        last_message_at="2026-06-23T09:15:00+08:00",
+    )
+
+    error = realtime_feed_health_error(
+        {"stale_after_seconds": 180},
+        connection,
+        connected_at="2026-06-23T09:14:00+08:00",
+        now=datetime(2026, 6, 23, 9, 18, 1, tzinfo=tz),
+    )
+
+    assert error == "stale_realtime_messages_after_181s"
+
+
 def test_runner_persists_buffer_outputs(tmp_path) -> None:
     config_path = tmp_path / "runner.yaml"
     db_path = tmp_path / "runner.db"
@@ -90,6 +124,96 @@ storage:
 
     assert runner.store.signal_snapshot_count("600000") == 1
     assert runner.store.market_event_count() >= 1
+
+
+def test_runner_expands_runtime_symbols_from_realtime_discovery(tmp_path, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    monkeypatch.setenv("JVQUANT_SUBSCRIBE_SYMBOLS", "600000")
+
+    config_path = tmp_path / "runner.yaml"
+    db_path = tmp_path / "runner.db"
+    status_path = tmp_path / "runner_status.json"
+    config_path.write_text(
+        f"""
+market: ab
+loop_interval_seconds: 5
+trading_sessions:
+  - name: all_day
+    start: "00:00"
+    end: "23:59"
+subscription:
+  default_symbols: ["600000"]
+  levels: ["lv1"]
+realtime_discovery:
+  enabled: true
+  interval_seconds: 30
+  max_symbols: 5
+  seed_turnover_yi: 30
+  include_current_large_turnover: true
+  include_current_limitup: true
+storage:
+  sqlite_path: "{db_path}"
+  status_path: "{status_path}"
+""".strip()
+    )
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.connected = False
+            self.subscribed: list[str] = []
+            self.calls: list[list[str]] = []
+
+        def status(self) -> RealtimeConnectionStatus:
+            return RealtimeConnectionStatus(
+                provider="jvQuant",
+                connected=self.connected,
+                subscribed=self.subscribed,
+            )
+
+        def subscribe(self, symbols: list[str], levels: list[str]) -> RealtimeConnectionStatus:
+            self.connected = True
+            self.calls.append(list(symbols))
+            for symbol in symbols:
+                if symbol not in self.subscribed:
+                    self.subscribed.append(symbol)
+            return self.status()
+
+        def disconnect(self) -> RealtimeConnectionStatus:
+            self.connected = False
+            return self.status()
+
+    class FakeAdapter:
+        def _query(self, query: str, sort_key: str = "") -> dict:
+            return {
+                "data": {
+                    "fields": ["股票代码", "股票简称", "成交额"],
+                    "list": [["000001", "平安银行", 8_000_000_000]],
+                }
+            }
+
+        def get_limitup_pool(self) -> list:
+            return [SimpleNamespace(symbol="002281")]
+
+        def get_theme_leaders(self, theme: str, trading_day: str) -> list:
+            return []
+
+    monkeypatch.setattr(
+        "aegis_alpha.runner.create_market_data_adapter",
+        lambda: FakeAdapter(),
+        raising=False,
+    )
+
+    runner = AegisAlphaRunner(str(config_path), connect=True)
+    fake_client = FakeClient()
+    runner.client = fake_client  # type: ignore[assignment]
+
+    status = runner.run_once()
+
+    assert status.state == "RUNNING"
+    assert runner._runtime_symbols == ["600000", "000001", "002281"]
+    assert fake_client.calls[0] == ["600000"]
+    assert fake_client.calls[1] == ["000001", "002281"]
 
 
 def test_persist_buffer_outputs_appends_sector_events_when_leader_breaks(tmp_path, monkeypatch):
