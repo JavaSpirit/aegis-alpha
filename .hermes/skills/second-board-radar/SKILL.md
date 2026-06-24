@@ -2,6 +2,7 @@
 name: second-board-radar
 description: Use when Hermes is asked to analyze A-share second-board candidates, one-to-two board setups, board-chasing market conditions, yesterday limit-up pools, theme co-movement, or Aegis Alpha MCP watchlist outputs. Guides Hermes to use Aegis Alpha read-only MCP tools with strict safety boundaries and no deterministic buy/sell instructions. The agent MUST walk all 5 factors per candidate and output a bucketed promotion_likelihood (high/medium/low) plus an agent-assigned grade (A/B/C/REJECT).
 license: Proprietary
+sync_version: 1
 metadata:
   hermes:
     tags: [Trading, A-share, Second Board, MCP, Risk]
@@ -12,6 +13,8 @@ metadata:
         default: ""
         prompt: Aegis Alpha workspace path (absolute path to your local clone)
 ---
+
+<!-- 中文翻译副本位于 SKILL.zh-CN.md (sync_version: 1)。修改本文件时请同步更新中文版。 -->
 
 # Second-Board Radar
 

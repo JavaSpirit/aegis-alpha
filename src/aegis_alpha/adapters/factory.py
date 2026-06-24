@@ -4,6 +4,7 @@ import os
 
 from aegis_alpha.adapters.jvquant import JvQuantMarketDataAdapter
 from aegis_alpha.adapters.mock_market_data import MockMarketDataAdapter
+from aegis_alpha.adapters.tdx_market_data import TdxMarketDataAdapter
 from aegis_alpha.config import load_project_env
 
 
@@ -13,5 +14,7 @@ def create_market_data_adapter():
 
     if provider == "jvquant":
         return JvQuantMarketDataAdapter.from_env()
+    if provider == "tdx":
+        return TdxMarketDataAdapter.from_env()
 
     return MockMarketDataAdapter()
